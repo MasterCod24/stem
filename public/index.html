@@ -46,6 +46,8 @@
 
   #state { bottom: 34px; left: 50%; transform: translateX(-50%); text-align: center; }
   #state .mode { font-size: 12px; font-weight: 400; letter-spacing: 0.5em; color: var(--ink); transition: color .3s; padding-left: .5em; }
+  #state .file { margin-top: 8px; height: 12px; color: var(--accent); opacity: 0; transition: opacity .4s; }
+  #state .file.on { opacity: .9; }
   #state .hint { margin-top: 10px; }
   #state .hint kbd { font-family: inherit; border: 1px solid var(--faint); border-radius: 3px; padding: 2px 7px; margin: 0 3px; color: var(--ink); }
   body[data-mode="listening"] #state .mode { color: var(--listen); }
@@ -105,6 +107,7 @@
 
   <div id="state" class="ui">
     <div class="mode" id="mode">IN ATTESA</div>
+    <div class="label file" id="file"></div>
     <div class="label hint">Tieni premuto <kbd>spazio</kbd> o il mouse, oppure di' «Stem»</div>
   </div>
 

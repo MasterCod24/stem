@@ -120,6 +120,15 @@ const VERBS = {
   select_option: 'Scelgo', wait_for: 'Attendo', tabs: 'Schede', evaluate: 'Analizzo', drag: 'Trascino',
   handle_dialog: 'Finestra', file_upload: 'Carico', close: 'Chiudo', resize: 'Ridimensiono', find: 'Cerco nella pagina',
 };
+// File: un'etichetta discreta sotto lo stato (cosa fa e su quale file), niente pannello
+const FILE_VERBS = { Read: 'Leggo', Write: 'Creo', Edit: 'Modifico', Glob: 'Cerco file', Grep: 'Cerco nei file' };
+let fileTimer = 0;
+function showFile(name, detail) {
+  $('file').textContent = `${FILE_VERBS[name] || name} · ${detail}`.toUpperCase();
+  $('file').classList.add('on');
+  clearTimeout(fileTimer);
+  fileTimer = setTimeout(() => $('file').classList.remove('on'), 6000);
+}
 let screenTimer = 0;
 function showScreen(on) { // il browser dentro l'HUD: si apre quando STEM naviga, si chiude 15 s dopo che ha finito
   clearTimeout(screenTimer);
@@ -266,6 +275,7 @@ async function ask(text) {
         if (ev.t === 'say') speak(ev.s);
         else if (ev.t === 'tool') { showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'page') $('p-host').textContent = '· ' + ev.detail;
+        else if (ev.t === 'file') { showFile(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'error') speak('Ho perso il filo, signore. Riprova tra un attimo.');
       }
     }

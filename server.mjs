@@ -27,6 +27,14 @@ const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
 const MODEL = env.STEM_MODEL || '';
 const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
 
+// File del Mac: STEM legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
+// la Libreria (portachiavi, cookie) e la cartella di STEM (chiave, profili). Niente Terminale.
+const HOME = process.env.HOME;
+const FILE_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', 'Library/Mobile Documents/com~apple~CloudDocs']
+  .map((d) => path.join(HOME, d)).filter((d) => fs.existsSync(d));
+const BRAIN = path.join(RUNTIME, 'cervello'); // cartella di lavoro vuota: nemmeno runtime/ (cookie, registri) è a portata
+fs.mkdirSync(BRAIN, { recursive: true });
+
 // --- Finestre: HUD a sinistra, Google a destra ---
 const CHROME = env.STEM_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const CDP_PORT = Number(env.STEM_CDP_PORT || 9333);
@@ -149,16 +157,18 @@ async function ask(text, onEvent, req) {
     '-p', text,
     '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--append-system-prompt', PERSONA,
-    '--tools', '',
+    '--tools', 'Read,Write,Edit,Glob,Grep',
+    '--add-dir', ...FILE_DIRS,
     '--mcp-config', MCP_CONFIG, '--strict-mcp-config',
     '--allowedTools', 'mcp__playwright',
     '--disallowedTools', 'mcp__playwright__browser_tabs', // una sola pagina: niente schede nuove
-    '--permission-mode', 'default',
+    '--permission-mode', 'acceptEdits',    // modifiche approvate da sole, ma solo dentro FILE_DIRS
+    '--permission-prompts', 'none',        // tutto il resto (fuori dalle cartelle) è negato senza chiedere
   ];
   if (MODEL) args.push('--model', MODEL);
   if (sessionId) args.push('--resume', sessionId);
 
-  const child = spawn('claude', args, { cwd: RUNTIME, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('claude', args, { cwd: BRAIN, stdio: ['ignore', 'pipe', 'pipe'] });
   current = child;
   req.child = child;
   activeEmit = onEvent;
@@ -192,6 +202,11 @@ async function ask(text, onEvent, req) {
       } else if (o.type === 'assistant') {
         for (const c of o.message?.content || []) {
           if (c.type === 'tool_use') {
+            if (!c.name.startsWith('mcp__playwright__')) { // file: nell'HUD solo il nome, mai il contenuto
+              const f = c.input?.file_path || c.input?.path || c.input?.pattern || '';
+              onEvent({ t: 'file', name: c.name, detail: path.basename(String(f)) });
+              continue;
+            }
             const name = c.name.replace('mcp__playwright__browser_', '');
             let detail = '';
             if (c.input?.url) { try { detail = new URL(c.input.url).hostname.replace(/^www\./, ''); } catch {} }
