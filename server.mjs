@@ -64,6 +64,7 @@ async function openBrowserWindow() {
 const screenClients = new Set();
 let lastFrame = null, castWs = null;
 function writeFrame(res, jpg) {
+  if (res.writableLength > 2e6) return; // conta solo l'ultimo fotogramma
   res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpg.length}\r\n\r\n`);
   res.write(jpg); res.write('\r\n');
 }
@@ -83,6 +84,17 @@ async function startScreencast() {
     if (m.method === 'Target.targetCreated' || m.method === 'Target.targetInfoChanged') {
       const t = m.params.targetInfo;
       if (t.type !== 'page' || t.url.startsWith('devtools:')) return;
+      // Una sola pagina: una scheda aperta da un'altra (link _blank, window.open, form…) viene chiusa
+      // e il suo indirizzo riaperto nella scheda principale. Le pagine di Playwright non hanno opener: restano.
+      if (t.openerId && castTarget && t.targetId !== castTarget) {
+        if (t.url && t.url !== 'about:blank') {
+          if (session) send('Page.navigate', { url: t.url }, session);
+          send('Target.closeTarget', { targetId: t.targetId });
+        } else if (m.method === 'Target.targetCreated') {
+          setTimeout(() => send('Target.closeTarget', { targetId: t.targetId }), 3000); // popup vuoto: lo chiudo comunque
+        }
+        return;
+      }
       if (t.targetId === castTarget && t.url !== pages.get(t.targetId)) {
         try { const host = new URL(t.url).hostname.replace(/^www\./, ''); if (host) activeEmit?.({ t: 'page', detail: host }); } catch {}
       }
@@ -260,12 +272,10 @@ function appendLog(line) {
 }
 
 // --- Avviato dall'app STEM (in background): quando chiudi l'HUD, STEM si spegne da solo ---
-let hudSeen = 0;
+let hudSeen = 0, hudMissed = 0, hudOpening = false;
 if (env.STEM_APP) {
-  const born = Date.now();
-  setInterval(() => {
-    const gone = hudSeen ? Date.now() - hudSeen > 150000 : Date.now() - born > 90000;
-    if (gone) { console.log('HUD chiuso: spengo STEM'); process.exit(0); }
+  setInterval(() => { // 15 giri da 10 s senza notizie dall'HUD: è chiuso
+    if (++hudMissed >= 15) { console.log('HUD chiuso: spengo STEM'); process.exit(0); }
   }, 10000);
 }
 
@@ -290,6 +300,7 @@ function readBody(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = url.pathname;
+  if (req.headers.host !== `localhost:${PORT}` && req.headers.host !== `127.0.0.1:${PORT}`) return res.writeHead(403).end(); // niente DNS rebinding
 
   if (req.method === 'GET' && p === '/') return serveFile(res, path.join(ROOT, 'public', 'index.html'));
   if (req.method === 'GET' && p.startsWith('/three/')) {
@@ -326,7 +337,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/api/status') {
-    hudSeen = Date.now();
+    if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; }
     return res.writeHead(200, { 'content-type': 'application/json' })
       .end(JSON.stringify({ voice: Boolean(ELEVEN_KEY), browser: browserReady }));
   }
@@ -342,8 +353,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && p === '/api/hud') { // l'app STEM, se STEM è già acceso, riapre solo l'HUD
-    openHud();
+  if (req.method === 'POST' && p === '/api/hud') { // l'app STEM, se STEM è già acceso, riapre l'HUD solo se non ce n'è uno
+    if (!hudOpening && Date.now() - hudSeen > 12000) openHud();
     return res.writeHead(204).end();
   }
 
@@ -375,16 +386,26 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404).end();
 });
 
+server.on('error', async (e) => {
+  if (e.code !== 'EADDRINUSE') throw e;
+  console.log(`Porta ${PORT} occupata: STEM è già acceso, riapro il suo HUD.`);
+  await fetch(`http://127.0.0.1:${PORT}/api/hud`, { method: 'POST', headers: { 'content-type': 'application/json' } }).catch(() => {});
+  process.exit(0);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`STEM online su http://localhost:${PORT}`);
   if (!ELEVEN_KEY) console.log('Voce ElevenLabs spenta: manca ELEVENLABS_API_KEY in .env (uso la voce di sistema).');
   if (env.STEM_NO_OPEN) return;
-  openHud();
-  ensureBrowserWindow();
+  // Prima il Chrome di Google, poi l'HUD: l'ultima finestra aperta prende il fuoco, e deve essere l'HUD a schermo intero
+  hudOpening = true; // anche mentre aspetto Chrome: un secondo clic sull'app non apre un altro HUD
+  ensureBrowserWindow().finally(openHud);
 });
 
 // HUD in una finestra-app sua, a schermo intero: profilo separato, audio libero di partire anche senza un clic
 function openHud() {
+  hudOpening = true;
+  setTimeout(() => { hudOpening = false; }, 15000);
   launchChrome([`--user-data-dir=${path.join(RUNTIME, 'hud-profile')}`, `--app=http://localhost:${PORT}`, '--start-fullscreen',
     '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
     '--disable-backgrounding-occluded-windows']);

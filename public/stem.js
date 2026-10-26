@@ -96,7 +96,7 @@ tickClock(); setInterval(tickClock, 10000);
 let voiceMode = 'eleven';
 async function pollStatus() {
   try {
-    const s = await (await fetch('/api/status')).json();
+    const s = await (await fetch('/api/status?hud=1')).json(); // ?hud=1: il server sa che un HUD è aperto
     $('d-brain').className = 'dot on';
     $('d-voice').className = 'dot ' + (s.voice ? 'on' : 'warn');
     $('v-voice').textContent = s.voice ? 'ElevenLabs' : 'Sistema';
@@ -335,9 +335,14 @@ function stopRec() {
 }
 function interrupt() { silence(); controller?.abort(); fetch('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' } }); }
 function showEar() {
-  $('d-ear').className = 'dot ' + (wake === 'on' ? 'on' : 'warn');
-  $('v-ear').textContent = EAR[wake];
+  const waiting = wake === 'on' && !earLock;
+  $('d-ear').className = 'dot ' + (wake === 'on' && !waiting ? 'on' : 'warn');
+  $('v-ear').textContent = waiting ? 'In un altro HUD' : EAR[wake];
 }
+// Chrome tiene un solo riconoscimento per processo: con due HUD aperti si interromperebbero a vicenda all'infinito.
+// Ascolta solo l'HUD che ha il lucchetto; un secondo HUD aspetta che il primo si chiuda.
+let earLock = !navigator.locks;
+navigator.locks?.request('stem-ear', () => { earLock = true; showEar(); scheduleWake(300); return new Promise(() => {}); });
 function micDenied() { wake = 'denied'; showEar(); warn('Serve il permesso del microfono.'); }
 
 // Il modello italiano locale si scarica una volta; se Chrome vuole un gesto, basta un clic o la barra spaziatrice
@@ -379,10 +384,15 @@ function beginPTT() {
       else interim += e.results[i][0].transcript;
     }
   };
-  r.onerror = (e) => { if (e.error === 'not-allowed') micDenied(); };
+  let failed = '';
+  r.onerror = (e) => { if (e.error === 'not-allowed') micDenied(); else if (e.error !== 'no-speech') failed = e.error; };
   r.onend = () => {
     if (rec !== r) return;
     rec = null; recKind = '';
+    if (holding && failed) { // errore vero: lo dico invece di riprovare in un ciclo continuo
+      warn(failed === 'network' ? 'Sono offline: il push-to-talk usa Google.' : failed === 'audio-capture' ? 'Microfono non disponibile.' : `Ascolto non riuscito (${failed}).`);
+      holding = false;
+    }
     if (holding) { heard += interim; interim = ''; return beginPTT(); } // Chrome ha chiuso la sessione ma stai ancora parlando
     const text = (heard + interim).trim();
     if (wantSend && text) ask(text);
@@ -405,7 +415,7 @@ function scheduleWake(ms = 300) {
   if (wake === 'on') wakeTimer = setTimeout(startWake, ms);
 }
 function startWake() {
-  if (wake !== 'on') return;
+  if (wake !== 'on' || !earLock) return;
   if (rec || holding || S.mode !== 'idle') return scheduleWake(1000); // occupato: riprovo tra un secondo
   const r = newRec(true); rec = r; recKind = 'wake';
   dbg('wake start');
@@ -445,8 +455,9 @@ function startWake() {
     if (e.error !== 'no-speech' && e.error !== 'aborted') report(`errore ascolto: ${e.error}`);
     if (e.error === 'not-allowed') return micDenied();
     if (e.error === 'service-not-allowed' || e.error === 'language-not-supported') { wake = 'nolocal'; return showEar(); }
-    if (e.error === 'network' || e.error === 'audio-capture') {
+    if (e.error === 'network' || e.error === 'audio-capture' || e.error === 'aborted') { // 'aborted' qui viene da fuori: stopRec toglie i gestori prima
       wakeBackoff = Math.min(10000, wakeBackoff * 2);
+      if (e.error === 'aborted' && wakeFails === 0) report('ascolto interrotto da un altro riconoscimento vocale');
       if (++wakeFails === 5) warn(e.error === 'audio-capture' ? 'Il microfono non risponde: «Stem» non mi sente.' : '«Stem» non riesce a partire.');
     }
   };
@@ -465,7 +476,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
     if (e.repeat || holding) return;
-    holding = true; startListening();
+    holding = 'key'; startListening();
   } else if (e.code === 'Escape') { // annulla tutto, anche un ascolto già partito
     wantSend = false; heard = ''; interim = '';
     stopRec(); interrupt(); setMode('idle');
@@ -474,16 +485,16 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => {
   if (e.code !== 'Space') return;
   e.preventDefault();
-  if (!holding) return;
+  if (holding !== 'key') return;
   holding = false; stopListening();
 });
 addEventListener('blur', () => { if (holding) { holding = false; stopListening(); } });
 addEventListener('pointerdown', (e) => { // un clic sblocca audio e «Stem»; tenuto premuto, parli come con lo spazio
   ensureAudio(); if (wake === 'click') prepareWake();
   if (e.button !== 0 || holding) return;
-  holding = true; startListening();
+  holding = 'pointer'; startListening();
 });
-const release = () => { if (holding) { holding = false; stopListening(); } };
+const release = () => { if (holding === 'pointer') { holding = false; stopListening(); } };
 addEventListener('pointerup', release);
 addEventListener('pointercancel', release);
 
