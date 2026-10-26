@@ -1,0 +1,6 @@
+# Segreti e dati locali: non vanno mai online
+.env
+runtime/
+node_modules/
+campione-*.mp3
+.DS_Store

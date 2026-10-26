@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STEM</title>
+<link rel="icon" href="/icona.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #03070c;
+    --ink: rgba(214, 226, 240, 0.86);
+    --dim: rgba(170, 190, 212, 0.42);
+    --faint: rgba(150, 175, 205, 0.18);
+    --accent: #3ea6ff;
+    --listen: #7fe0ff;
+    --think: #9fb8ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    font-feature-settings: "tnum" 1; -webkit-font-smoothing: antialiased; user-select: none; cursor: default; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { pointer-events: none; }
+
+  .ui { position: fixed; pointer-events: none; opacity: 0; transition: opacity 1.4s ease; }
+  body.ready .ui { opacity: 1; }
+  .label { font-size: 10px; font-weight: 400; letter-spacing: 0.28em; text-transform: uppercase; color: var(--dim); }
+
+  #brand { top: 32px; left: 40px; }
+  #brand .name { font-size: 15px; font-weight: 500; letter-spacing: 0.62em; color: var(--ink); }
+  #brand .label { margin-top: 8px; }
+
+  #clock { top: 28px; right: 40px; text-align: right; }
+  #clock .time { font-size: 34px; font-weight: 200; letter-spacing: 0.04em; color: var(--ink); }
+  #clock .label { margin-top: 4px; }
+
+  #systems { bottom: 34px; left: 40px; display: grid; gap: 9px; }
+  .sys { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); transition: background .4s, box-shadow .4s; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .dot.warn { background: #d9a25b; box-shadow: 0 0 8px #d9a25b; }
+  .sys .val { color: var(--ink); opacity: .7; }
+
+  #state { bottom: 34px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #state .mode { font-size: 12px; font-weight: 400; letter-spacing: 0.5em; color: var(--ink); transition: color .3s; padding-left: .5em; }
+  #state .hint { margin-top: 10px; }
+  #state .hint kbd { font-family: inherit; border: 1px solid var(--faint); border-radius: 3px; padding: 2px 7px; margin: 0 3px; color: var(--ink); }
+  body[data-mode="listening"] #state .mode { color: var(--listen); }
+  body[data-mode="thinking"] #state .mode { color: var(--think); }
+
+
+  /* Il browser dentro l'HUD: compare quando STEM naviga, la testa si sposta a sinistra */
+  #screen { position: fixed; right: 3.5vw; top: 50%; width: 55vw; transform: translate(3vw, -50%); opacity: 0;
+    transition: opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+  body.browsing #screen { opacity: 1; transform: translate(0, -50%); }
+  #screen .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  #screen .live { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: live 1.6s ease-in-out infinite; }
+  @keyframes live { 50% { opacity: .25; } }
+  #screen .host { color: var(--ink); opacity: .75; }
+  #screen .frame { position: relative; aspect-ratio: 1280 / 760; border-radius: 4px; overflow: hidden; background: #02060b;
+    border: 1px solid rgba(62, 166, 255, .28); box-shadow: 0 0 60px rgba(62, 166, 255, .10), inset 0 0 40px rgba(62, 166, 255, .06);
+    clip-path: inset(0 100% 0 0); transition: clip-path 1.1s cubic-bezier(.7,0,.2,1) .15s; }
+  body.browsing #screen .frame { clip-path: inset(0 0 0 0); }
+  #screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+  #screen .scan { position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(120, 200, 255, .035) 0 1px, transparent 1px 3px); }
+  #screen .scan::after { content: ""; position: absolute; left: 0; right: 0; height: 18%; top: -18%;
+    background: linear-gradient(180deg, transparent, rgba(95, 212, 255, .07), transparent); animation: sweep 4.5s linear infinite; }
+  @keyframes sweep { to { top: 100%; } }
+  #screen .c { position: absolute; width: 18px; height: 18px; border: 0 solid var(--accent); filter: drop-shadow(0 0 4px var(--accent)); }
+  #screen .tl { left: -1px; top: -1px; border-top-width: 2px; border-left-width: 2px; }
+  #screen .tr { right: -1px; top: -1px; border-top-width: 2px; border-right-width: 2px; }
+  #screen .bl { left: -1px; bottom: -1px; border-bottom-width: 2px; border-left-width: 2px; }
+  #screen .br { right: -1px; bottom: -1px; border-bottom-width: 2px; border-right-width: 2px; }
+
+  #warn { top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; display: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "/three/build/three.module.js", "three/addons/": "/three/examples/jsm/" } }
+</script>
+</head>
+<body data-mode="idle">
+  <canvas id="gl"></canvas>
+  <canvas id="hud"></canvas>
+
+  <div id="brand" class="ui">
+    <div class="name">STEM</div>
+    <div class="label">Sistema online</div>
+  </div>
+
+  <div id="clock" class="ui">
+    <div class="time">--:--</div>
+    <div class="label date">&nbsp;</div>
+  </div>
+
+  <div id="systems" class="ui">
+    <div class="sys label"><span class="dot" id="d-brain"></span>Cervello <span class="val" id="v-brain">Claude</span></div>
+    <div class="sys label"><span class="dot" id="d-voice"></span>Voce <span class="val" id="v-voice">—</span></div>
+    <div class="sys label"><span class="dot" id="d-browser"></span>Browser <span class="val" id="v-browser">—</span></div>
+    <div class="sys label"><span class="dot" id="d-ear"></span>Ascolto <span class="val" id="v-ear">—</span></div>
+  </div>
+
+  <div id="state" class="ui">
+    <div class="mode" id="mode">IN ATTESA</div>
+    <div class="label hint">Tieni premuto <kbd>spazio</kbd> o il mouse, oppure di' «Stem»</div>
+  </div>
+
+  <div id="screen">
+    <div class="head label"><span class="live"></span><span id="p-what">Browser</span><span class="host" id="p-host"></span></div>
+    <div class="frame">
+      <img src="/api/screen" alt="">
+      <div class="scan"></div>
+      <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+    </div>
+  </div>
+
+  <div id="warn" class="ui label"></div>
+
+  <script type="module" src="/stem.js"></script>
+</body>
+</html>
