@@ -94,9 +94,13 @@ function tickClock() {
 tickClock(); setInterval(tickClock, 10000);
 
 let voiceMode = 'eleven';
+let micPeak = 0; // livello massimo del microfono tra un controllo e l'altro
 async function pollStatus() {
   try {
-    const s = await (await fetch('/api/status?hud=1')).json(); // ?hud=1: il server sa che un HUD è aperto
+    // ?hud=1: il server sa che un HUD è aperto; lo stato dell'ascolto finisce nel registro (solo stati, niente audio né testo)
+    const q = new URLSearchParams({ hud: 1, ear: wake, lock: earLock ? 1 : 0, rec: recKind || '-', mic: micPeak.toFixed(3), mode: S.mode });
+    micPeak = 0;
+    const s = await (await fetch('/api/status?' + q)).json();
     $('d-brain').className = 'dot on';
     $('d-voice').className = 'dot ' + (s.voice ? 'on' : 'warn');
     $('v-voice').textContent = s.voice ? 'ElevenLabs' : 'Sistema';
@@ -107,7 +111,7 @@ async function pollStatus() {
     $('d-brain').className = 'dot warn';
   }
 }
-pollStatus(); setInterval(pollStatus, 5000);
+setTimeout(pollStatus, 0); setInterval(pollStatus, 5000); // dopo il caricamento del modulo: usa lo stato dell'ascolto, definito più sotto
 
 // ---------- Azione nel browser (solo cosa sta facendo, mai cosa dice) ----------
 const VERBS = {
@@ -422,8 +426,14 @@ function startWake() {
   ensureAudio(); ensureMic(); // l'anello si muove quando parli: così vedi che ti sente
   let wakeAt = -1, text = '', confirmed = false;
   const mine = () => rec === r;
-  const send = () => { if (!mine()) return; if (!confirmed) return reset(); stopRec(); ask(text); };
-  const reset = () => { if (!mine()) return; stopRec(); setMode('idle'); };
+  // Con la voce vera il riconoscitore può metterci più di 1,5 s a chiudere la frase: gli do un altro attimo, poi invio comunque
+  const send = (late) => {
+    if (!mine()) return;
+    if (!confirmed && !late) { clearTimeout(wakeWait); wakeWait = setTimeout(() => send(true), 1500); return; }
+    report(`domanda inviata dopo «Stem»${confirmed ? '' : ' (frase non ancora chiusa dal riconoscitore)'}`);
+    stopRec(); ask(text);
+  };
+  const reset = () => { if (!mine()) return; if (wakeAt >= 0) report('«Stem» senza domanda: annullato'); stopRec(); setMode('idle'); };
   r.onresult = (e) => {
     if (!mine()) return;
     wakeBackoff = 300; wakeFails = 0;
@@ -466,7 +476,7 @@ function startWake() {
     if (!mine()) return;
     rec = null; recKind = '';
     clearTimeout(wakeWait);
-    if (wakeAt >= 0 && text && confirmed) return ask(text);
+    if (wakeAt >= 0 && text) { report('domanda inviata dopo «Stem» (sessione chiusa da Chrome)'); return ask(text); }
     if (S.mode === 'listening') setMode('idle'); else scheduleWake(wakeBackoff);
   };
   try { if (debugTrack) r.start(debugTrack); else r.start(); } catch { if (mine()) { rec = null; recKind = ''; } scheduleWake(1000); }
@@ -521,6 +531,7 @@ function loop(now) {
   const mic = micAnalyser && (S.mode === 'listening' || S.mode === 'idle') ? Math.min(1, rms(micAnalyser) * 6) : 0;
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
   S.mic += (mic - S.mic) * Math.min(1, dt * 18);
+  if (micAnalyser) micPeak = Math.max(micPeak, rms(micAnalyser));
   scene.frame(t, (now - t0) / 1000, dt);
   drawHud(t, dt, scene.anchor());
   requestAnimationFrame(loop);

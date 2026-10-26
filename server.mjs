@@ -271,6 +271,17 @@ function appendLog(line) {
   fs.writeFileSync(LOG_FILE, old.slice(-300).join('\n') + '\n');
 }
 
+// Stato dell'ascolto dell'HUD nel registro: solo quando cambia, e il microfono solo se passa da silenzio a suono o viceversa
+let lastHud = '', silentPolls = 0, micState = '';
+function noteHud(q) {
+  const st = `ascolto=${q.get('ear')} lucchetto=${q.get('lock')} riconoscimento=${q.get('rec')} modo=${q.get('mode')}`;
+  if (st !== lastHud) { appendLog(`HUD: ${st}`); lastHud = st; }
+  const mic = Number(q.get('mic') || 0);
+  silentPolls = mic < 0.002 ? silentPolls + 1 : 0;
+  const now = silentPolls >= 6 ? 'muto' : mic >= 0.002 ? 'sente' : micState;
+  if (now !== micState) { appendLog(now === 'muto' ? 'microfono: silenzio totale da 30 s (nessun segnale)' : `microfono: arriva suono (picco ${mic.toFixed(3)})`); micState = now; }
+}
+
 // --- Avviato dall'app STEM (in background): quando chiudi l'HUD, STEM si spegne da solo ---
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
 if (env.STEM_APP) {
@@ -337,7 +348,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/api/status') {
-    if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; }
+    if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; noteHud(url.searchParams); }
     return res.writeHead(200, { 'content-type': 'application/json' })
       .end(JSON.stringify({ voice: Boolean(ELEVEN_KEY), browser: browserReady }));
   }
