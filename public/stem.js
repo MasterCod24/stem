@@ -17,18 +17,18 @@ function setMode(m) {
   else clearTimeout(screenTimer);
 }
 function drawStatus(t, at) {
-  // con il report aperto la testa sta nell'angolo in basso a destra: la scritta va sopra, allineata a destra
+  // con il report aperto la testa sta nell'angolo in basso a destra: la scritta va sopra, centrata e corta, per non finire sulle schede
   const docked = S.dock > 0.5, el = $('status');
-  const x = Math.round(docked ? at.x + at.r * 0.75 : at.x + at.r * 1.35), y = Math.round(docked ? at.y - at.r * 1.7 : at.y - at.r * 0.35);
-  const right = docked ? ' translateX(-100%)' : '';
-  el.style.transform = `translate(${x}px, ${y}px)${right}`;
-  $('small').style.transform = `translate(${x}px, ${y + 22}px)${right}`;
+  const x = Math.round(docked ? at.x : at.x + at.r * 1.35), y = Math.round(docked ? at.y - at.r * 1.7 : at.y - at.r * 0.35);
+  const center = docked ? ' translateX(-50%)' : '';
+  el.style.transform = `translate(${x}px, ${y}px)${center}`;
+  $('small').style.transform = `translate(${x}px, ${y + 22}px)${center}`;
   // GIF accanto alla testa: a destra, oppure a sinistra quando a destra c'è il browser
   const mx = S.split > 0.5 ? Math.round(at.x - at.r * 1.35 - 300) : x;
   $('media').style.transform = `translate(${Math.max(16, mx)}px, ${y + 48}px)`;
   if (booting) { el.textContent = `ASSEMBLING... ${Math.min(99, Math.round(scene.assembling(t) * 100))}%`; return; }
   el.textContent = ear !== 'on' && S.mode === 'idle' ? `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()
-    : S.mode === 'speaking' && S.audio > 0.35 ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode];
+    : S.mode === 'speaking' && S.audio > 0.35 && !docked ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode];
 }
 
 // ---------- Stato dei sistemi (al server, per il registro: solo stati, niente audio né testo) ----------
@@ -443,7 +443,7 @@ function loop(now) {
   if (micAnalyser) micPeak = Math.max(micPeak, rms(micAnalyser));
   if (S.mode === 'listening' && !S.hearing && !pending && performance.now() - heardAt > 4000) setMode('idle');
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
-  S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 3);
+  S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 6); // nell'angolo in mezzo secondo: prima che atterri il protagonista
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
   drawStatus(t, scene.anchor());
 }
