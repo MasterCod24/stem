@@ -722,10 +722,13 @@ export async function createScene(canvas, S) {
     const speak = sm.speak * (0.25 + 0.75 * sm.audio);
     const mic = Math.min(1, Math.max(0, S.mic || 0));
 
-    // busto: posizione e scala (S.split lo sposta a sinistra)
+    // busto: posizione e scala (S.split lo sposta a sinistra, S.dock lo rimpicciolisce nell'angolo del report)
     const split = Math.min(1, Math.max(0, S.split || 0));
-    const sc = 1 - 0.12 * split;
-    bust.position.set(-split * 0.255 * aspect / k, HEAD_Y - 0.02 * split, 0);
+    const dock = Math.min(1, Math.max(0, S.dock || 0));
+    const sc = (1 - 0.12 * split) * (1 - 0.7 * dock);
+    const bx = -split * 0.255 * aspect / k, by = HEAD_Y - 0.02 * split;
+    const dx = ((S.dockX ?? W) - W / 2) / (H * k), dy = (H / 2 - (S.dockY ?? H)) / (H * k);
+    bust.position.set(bx + (dx - bx) * dock, by + (dy - by) * dock, 0);
     bust.scale.setScalar(sc);
     head.set(bust.position.x, bust.position.y);
     const unitsPerPx = 1 / (H * k * pr);
@@ -755,7 +758,7 @@ export async function createScene(canvas, S) {
 
     // montagne: compaiono dai lati verso il centro mentre passa l'anello
     const side = 1.05 - 1.4 * ease(TIMING.reveal + 0.1, TIMING.ready + 0.05, t);
-    mountains.update({ aspect, k, clock, side: t < TIMING.reveal ? 2 : side, shift: -split * 0.12, pr, bright: 1 + 0.08 * speak });
+    mountains.update({ aspect, k, clock, side: t < TIMING.reveal ? 2 : side, shift: -split * 0.12, pr, bright: (1 + 0.08 * speak) * (1 - 0.8 * dock) }); // col report le montagne si abbassano: lo sfondo torna scuro
 
     bloom.strength = 0.85 + 0.12 * speak + 0.1 * sm.listen * mic;
     composer.render(dt);

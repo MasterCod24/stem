@@ -1,5 +1,6 @@
 // STEM — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni. La grafica sta in humanoid.js.
-const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, hearing: false };
+import { showReport, hideReport, reportDock } from './report.js';
+const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, dock: 0, dockTarget: 0, hearing: false };
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -16,9 +17,12 @@ function setMode(m) {
   else clearTimeout(screenTimer);
 }
 function drawStatus(t, at) {
-  const el = $('status'), x = Math.round(at.x + at.r * 1.35), y = Math.round(at.y - at.r * 0.35);
-  el.style.transform = `translate(${x}px, ${y}px)`;
-  $('small').style.transform = `translate(${x}px, ${y + 22}px)`;
+  // con il report aperto la testa sta nell'angolo in basso a destra: la scritta va sopra, allineata a destra
+  const docked = S.dock > 0.5, el = $('status');
+  const x = Math.round(docked ? at.x + at.r * 0.75 : at.x + at.r * 1.35), y = Math.round(docked ? at.y - at.r * 1.7 : at.y - at.r * 0.35);
+  const right = docked ? ' translateX(-100%)' : '';
+  el.style.transform = `translate(${x}px, ${y}px)${right}`;
+  $('small').style.transform = `translate(${x}px, ${y + 22}px)${right}`;
   // GIF accanto alla testa: a destra, oppure a sinistra quando a destra c'è il browser
   const mx = S.split > 0.5 ? Math.round(at.x - at.r * 1.35 - 300) : x;
   $('media').style.transform = `translate(${Math.max(16, mx)}px, ${y + 48}px)`;
@@ -65,6 +69,15 @@ function showSmall(name, detail) {
   clearTimeout(smallTimer);
   smallTimer = setTimeout(() => $('small').classList.remove('on'), 6000);
 }
+
+// ---------- Report a schermo intero (STEM lo manda con lo strumento mostra_report) ----------
+function openReport(r) {
+  if (!showReport(r)) return closeReport(); // zero blocchi: STEM lo sta chiudendo
+  clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0; // il report prende il posto del browser
+  Object.assign(S, reportDock()); S.dockTarget = 1;
+}
+function closeReport() { hideReport(); S.dockTarget = 0; }
+addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, reportDock()); });
 
 // ---------- GIF e animazioni accanto alla testa ----------
 let mediaTimer = 0;
@@ -185,7 +198,8 @@ async function ask(text) {
         if (!line.trim() || gen !== generation) continue;
         const ev = JSON.parse(line);
         if (ev.t === 'say') speak(ev.s);
-        else if (ev.t === 'show') showScreen(true);
+        else if (ev.t === 'show') { closeReport(); showScreen(true); } // ricerca nuova: il report vecchio lascia il posto al browser
+        else if (ev.t === 'report') openReport(ev);
         else if (ev.t === 'tool') { showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'page') $('p-host').textContent = '· ' + ev.detail;
         else if (ev.t === 'file' || ev.t === 'mac') { showSmall(ev.name, ev.detail); if (!playing) setMode('thinking'); }
@@ -391,7 +405,7 @@ function heard(text) {
 }
 
 // ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce, un clic sblocca l'audio se Chrome lo blocca ----------
-addEventListener('keydown', (e) => { if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); } });
+addEventListener('keydown', (e) => { if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); } });
 addEventListener('pointerdown', () => { ensureAudio(); if (ear !== 'on' && ear !== 'install') prepareEar(); });
 
 function warn(msg) {
@@ -400,7 +414,7 @@ function warn(msg) {
 }
 
 // ---------- Avvio ----------
-if (DEBUG) window.stemAsk = ask; // prove senza microfono
+if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; } // prove senza microfono e senza ricerca
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
 const { createScene, TIMING } = await import('./humanoid.js');
@@ -429,6 +443,7 @@ function loop(now) {
   if (micAnalyser) micPeak = Math.max(micPeak, rms(micAnalyser));
   if (S.mode === 'listening' && !S.hearing && !pending && performance.now() - heardAt > 4000) setMode('idle');
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
+  S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 3);
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
   drawStatus(t, scene.anchor());
 }

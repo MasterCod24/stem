@@ -509,6 +509,35 @@ const TOOLS = [
     },
   },
 ];
+// Il report non passa da qui: brain.mjs legge i blocchi dalla chiamata nel flusso del cervello e li manda all'HUD.
+// Lo strumento esiste per dare al cervello la forma dei dati e una risposta.
+TOOLS.push({
+  name: 'mostra_report',
+  description: 'Apre a schermo intero, nell\'HUD di STEM, un report fatto di blocchi che arrivano dal fondo e si incastrano in una griglia. ' +
+    'Usalo alla fine di una ricerca che Tony vuole vedere. Da 6 a 14 blocchi, misti: il primo video è il protagonista. ' +
+    'Ci stanno circa 2 video, 4 testi, 3 grafici, 1 immagine e 1 dato; i blocchi in più dello stesso tipo si impilano e si alternano. ' +
+    'Solo cose trovate nelle fonti. Con zero blocchi il report si chiude.',
+  inputSchema: { type: 'object', properties: {
+    titolo: { type: 'string', description: 'titolo corto del report (es. «Lo stato della VR»)' },
+    blocchi: { type: 'array', items: { type: 'object', properties: {
+      tipo: { type: 'string', enum: ['testo', 'grafico', 'dato', 'immagine', 'video'] },
+      titolo: { type: 'string', description: 'corto, compare in maiuscolo' },
+      testo: { type: 'string', description: 'testo: 2–4 frasi; grafico e dato: cosa dice il numero e i suoi limiti; immagine: didascalia' },
+      fonte: { type: 'string', description: 'da dove viene: sito e anno' },
+      valori: { type: 'array', description: 'solo grafico: da 2 a 8 barre', items: { type: 'object', properties: {
+        etichetta: { type: 'string' }, valore: { type: 'number' } }, required: ['etichetta', 'valore'] } },
+      unita: { type: 'string', description: 'solo grafico: unità dei valori (es. «milioni di pezzi»)' },
+      valore: { type: 'string', description: 'solo dato: il numero da mostrare grande, al massimo 8 caratteri (es. «≈20 mln»)' },
+      url: { type: 'string', description: 'solo immagine: indirizzo https diretto dell\'immagine, preso dalla pagina' },
+      youtube: { type: 'string', description: 'solo video: link di YouTube (anche Shorts) trovato cercando' },
+    }, required: ['tipo'] } },
+  }, required: ['blocchi'] },
+  annotations: { title: 'Report sullo schermo', readOnlyHint: true },
+  run: async (a) => {
+    const n = Array.isArray(a.blocchi) ? a.blocchi.length : 0;
+    return n ? `Report sullo schermo: ${n} blocchi. Immagini e video che non si caricano restano vuoti.` : 'Report chiuso.';
+  },
+});
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // --- JSON-RPC su stdio ---
