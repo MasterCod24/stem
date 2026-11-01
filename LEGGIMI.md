@@ -2,26 +2,41 @@
 
 ![STEM](public/icona.png)
 
-Assistente vocale stile JARVIS: ragiona col tuo `~/.claude/CLAUDE.md`, parla con voce ElevenLabs e naviga su Google mostrandoti ogni clic.
+Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con voce ElevenLabs, naviga su Google, usa le app e lo schermo al posto tuo.
 
 ## Avvio
-- **App STEM:** doppio clic su `STEM.app` (o cercala con Spotlight; trascinala nel Dock per averla sempre a portata). Si apre l'HUD a schermo intero. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti.
+- **App STEM:** doppio clic su `STEM.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: il busto si assembla dalle particelle, poi si svelano le montagne. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti.
 - **Da Terminale:** `./avvia.command`, utile anche la prima volta per inserire la chiave ElevenLabs. Ctrl-C o chiudere la finestra spegne tutto.
-- La prima volta: `npm install` lo fanno da soli entrambi; serve Google Chrome e Claude Code col tuo login.
 
-## Uso
-- **Parlare:** tieni premuta la barra spaziatrice o il tasto del mouse, oppure di' «Stem» seguito dalla domanda ("Stem, che tempo fa a Roma?"). Se dici solo «Stem», ti aspetta per 8 secondi. Spazio mentre parla lo interrompe; `Esc` annulla tutto.
-- **In attesa** l'anello attorno alla testa si muove quando parli: se non si muove, STEM non ti sente (permesso del microfono o microfono sbagliato).
-- **Browser:** quando STEM naviga, la pagina compare dentro l'HUD, a destra, e la testa si sposta a sinistra. Vedi il mirino che vola dove clicca, l'aggancio e l'onda d'urto del clic, la cornice sui campi in cui scrive. Lavora sempre in una sola pagina dello stesso Chrome (profilo separato in `runtime/browser-profile`). La finestra vera di quel Chrome sta dietro all'HUD: scorri tra le scrivanie per usarla, per esempio per accedere a Google. Non usarci account delicati (banca, email di lavoro): quel Chrome è comandabile da altri programmi del Mac tramite la porta di debug 9333.
-- **Privacy:** l'ascolto continuo di «Stem» usa il riconoscimento vocale locale di Chrome, quindi l'audio della stanza non esce dal Mac. Al primo avvio Chrome scarica il modello italiano (circa 30 secondi, l'HUD mostra "Installo…"). Il push-to-talk usa il riconoscimento di Google, più preciso, perché lo avvii tu. In `runtime/ascolto.log` STEM annota solo se ha riconosciuto «Stem» e, quando no, la prima parola sentita: serve a capire come il riconoscitore scrive il tuo «Stem».
-- **File del Mac:** STEM legge, cerca, crea e modifica file in Scrivania, Documenti, Download, Immagini, Filmati, Musica e iCloud Drive (anche PDF e immagini). Prima di modificare un file esistente ti dice cosa cambia e aspetta il tuo sì. Il resto del Mac gli è chiuso: file nascosti (`.ssh`, `.config`…), Libreria (portachiavi, cookie) e la cartella di STEM. Non ha il Terminale, quindi non cancella né sposta file. La prima volta che tocca Scrivania, Documenti o Download, macOS ti chiede il permesso per "STEM": rispondi Consenti. Le cartelle si cambiano in `FILE_DIRS` dentro `server.mjs`.
-- **Coscienza:** il carattere (voce, tono, freni) sta in `stem-persona.md`; il modo di ragionare è il tuo CLAUDE.md, riletto a ogni domanda.
-- **Voce:** la chiave ElevenLabs va in `.env` (mai nella repository). Senza chiave, o finiti i caratteri del mese, usa la voce di sistema italiana.
-- **Nuova conversazione:** riavvia STEM.
+## Parlare con STEM
+- **Sempre in ascolto**, senza tasti: STEM capisce da solo quando parli con lui. Una frase è per lui se:
+  - contiene il suo nome (anche storpiato dal riconoscitore);
+  - arriva entro 25 secondi dalla sua ultima risposta, cioè siete in conversazione;
+  - comincia con un comando ("apri…", "cerca…", "dimmi…", "puoi…").
+
+  Se una frase non era per lui, il cervello risponde `[ignora]` e tace.
+- **Più rapido:** il cervello è un processo Claude Code sempre acceso, quindi la prima frase arriva in circa 2 secondi. Se fai una pausa a metà di una richiesta, STEM parte già e, se poi continui, riparte con la frase completa.
+- **Interromperlo:** mentre parla di' "stop", "basta" o "aspetta", oppure chiamalo per nome. `Esc` lo zittisce.
+- **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. In `runtime/ascolto.log` STEM annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.
+
+## Cosa fa
+- **Browser:** lavora su Google in un Chrome suo, sempre nella stessa pagina. Il pannello compare nell'HUD **solo per i compiti complessi** (ricerche lunghe, creazioni); le cose banali le fa in silenzio e ti dice il risultato.
+- **GIF ed esempi:** quando spiega, mostra accanto alla testa animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
+- **Il Mac:** apre e chiude app, guarda lo schermo, clicca, scrive e usa la tastiera (strumenti in `mac/`). Per le azioni normali procede da solo; prima di inviare, cancellare, comprare, pubblicare, cambiare impostazioni o installare chiede il tuo sì. Non scrive mai nei campi password. Serve il permesso in Impostazioni di Sistema → Privacy e sicurezza: **Accessibilità** e **Registrazione schermo e audio di sistema** per l'app che lo avvia (STEM o il Terminale).
+- **File:** legge, crea e modifica in Scrivania, Documenti, Download, Immagini, Filmati, Musica e iCloud Drive; il resto del Mac (file nascosti, Libreria, cartella di STEM) gli è chiuso.
+
+## La voce
+- ElevenLabs con il modello `eleven_v4_turbo` (il più espressivo e veloce, mezzo credito a carattere). Ogni risposta usa **una sola voce** dall'inizio alla fine.
+- Quando i crediti finiscono STEM passa alla voce del Mac per tutta la risposta, e torna a ElevenLabs da solo quando si rinnovano. Con il piano gratuito (10.000 caratteri al mese) bastano poche decine di risposte.
+- La voce del Mac migliore è **Luca (Avanzata)**: Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema → Gestisci voci → Italiano.
 
 ## Come funziona
-`server.mjs` fa girare Claude Code in modalità headless (usa il tuo login, nessuna chiave Anthropic), con il solo strumento browser: Playwright, collegato via CDP a un Chrome dedicato che resta aperto. Lo stesso Chrome manda la pagina all'HUD come video (screencast), e `browser-fx.js`, caricato in ogni pagina, disegna l'animazione dei clic. Ogni frase che Claude scrive diventa audio ElevenLabs mentre lui continua a lavorare. Il server accetta comandi solo dall'HUD, non da altre pagine web.
+- `server.mjs`: avvio, finestre, pannello del browser (screencast), voce e cervello.
+- `brain.mjs`: un processo Claude Code sempre acceso (stream-json), interrotto quando arriva una domanda nuova.
+- `voice.mjs`: ElevenLabs o Mac, uno per risposta.
+- `media.mjs`: GIF e animazioni.
+- `public/`: l'HUD (`humanoid.js` per la grafica, `sfx.js` per i suoni sintetizzati, `stem.js` per ascolto e logica).
+- `mac/`: controllo del Mac (server MCP + aiutante Swift).
+- `stem-persona.md`: il carattere. STEM ha una memoria sua, separata dalla repository.
 
-Prove senza microfono: apri `http://localhost:4321/?debug&wav=file.wav` e «Stem» ascolta il file invece del microfono.
-
-Modello 3D della testa: "Infinite, 3D Head Scan" di Lee Perry-Smith, licenza CC BY 3.0 (`public/models/LeePerrySmith_License.txt`).
+Prove senza microfono: `http://localhost:4321/?debug&wav=file.wav` fa ascoltare un file a STEM.

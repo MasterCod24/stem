@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STEM lab</title>
+<!-- Pagina di prova della grafica: ?t=SECONDI ferma la formazione, ?mode=idle|listening|thinking|speaking,
+     ?audio=0..1, ?mic=0..1, ?split=0..1. Senza audio/mic fissati, li anima da sola. -->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #050912; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #info { position: fixed; left: 12px; bottom: 10px; font: 11px ui-monospace, Menlo, monospace; color: #4f86b8; opacity: .7; pointer-events: none; }
+  #mark { position: fixed; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 1px solid #ff4fa3; border-radius: 50%; pointer-events: none; display: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="info"></div>
+<div id="mark"></div>
+<script type="module">
+import { createScene, TIMING } from '/public/humanoid.js';
+
+const q = new URLSearchParams(location.search);
+const num = (k) => (q.has(k) ? Number(q.get(k)) : null);
+const frozenT = num('t'), fixedAudio = num('audio'), fixedMic = num('mic');
+const S = { mode: q.get('mode') || 'idle', audio: fixedAudio ?? 0, mic: fixedMic ?? 0, split: num('split') ?? 0 };
+
+const scene = await createScene(document.getElementById('gl'), S);
+const info = document.getElementById('info'), mark = document.getElementById('mark');
+if (q.has('anchor')) mark.style.display = 'block';
+const t0 = performance.now();
+let last = t0, frames = 0, fpsT = t0, fps = 0;
+
+// voce finta: sillabe a raffiche
+function fakeVoice(c) {
+  const syl = Math.max(0, Math.sin(c * 11.0) * 0.6 + Math.sin(c * 4.3) * 0.4);
+  const phrase = 0.5 + 0.5 * Math.sin(c * 0.9);
+  return Math.min(1, syl * (0.45 + 0.55 * phrase) * 1.3);
+}
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const clock = (now - t0) / 1000;
+  const t = frozenT ?? clock;
+  if (fixedAudio === null) S.audio = S.mode === 'speaking' ? fakeVoice(clock) : 0;
+  if (fixedMic === null) S.mic = S.mode === 'listening' ? 0.5 * fakeVoice(clock * 0.8 + 3) : 0;
+  scene.frame(t, clock, dt);
+  const a = scene.anchor();
+  mark.style.left = a.x + 'px'; mark.style.top = a.y + 'px';
+  frames++;
+  if (now - fpsT > 1000) { fps = frames * 1000 / (now - fpsT); frames = 0; fpsT = now; }
+  if (!q.has('clean')) info.textContent = `t ${t.toFixed(2)}  ${S.mode}  audio ${S.audio.toFixed(2)}  mic ${S.mic.toFixed(2)}  ` +
+    `assembling ${(scene.assembling(t) * 100).toFixed(0)}%  ${fps.toFixed(0)} fps`;
+  window.__frames = (window.__frames || 0) + 1;
+  window.__fps = fps;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+window.__timing = TIMING;
+</script>
+</body>
+</html>

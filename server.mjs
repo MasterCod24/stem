@@ -1,9 +1,12 @@
-// STEM — server locale: HUD, cervello (Claude Code headless), voce (ElevenLabs), browser (Playwright MCP).
+// STEM — server locale: HUD, cervello (Claude Code sempre acceso), voce, browser (Playwright MCP), controllo del Mac.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createBrain } from './brain.mjs';
+import { createVoice } from './voice.mjs';
+import { createMedia } from './media.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, 'runtime');
@@ -23,8 +26,8 @@ const PORT = Number(env.STEM_PORT || 4321);
 const PW_PORT = Number(env.STEM_BROWSER_PORT || 8931);
 const ELEVEN_KEY = env.ELEVENLABS_API_KEY || '';
 let VOICE_ID = env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'; // George, finché non trovo una voce italiana
-const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
-const MODEL = env.STEM_MODEL || '';
+const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_v4_turbo'; // il più veloce ed emotivo, mezzo credito a carattere
+const MODEL = env.STEM_MODEL || 'sonnet'; // veloce a rispondere; STEM_MODEL=opus per ragionare più a fondo
 const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
 
 // File del Mac: STEM legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
@@ -32,7 +35,9 @@ const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
 const HOME = process.env.HOME;
 const FILE_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', 'Library/Mobile Documents/com~apple~CloudDocs']
   .map((d) => path.join(HOME, d)).filter((d) => fs.existsSync(d));
-const BRAIN = path.join(RUNTIME, 'cervello'); // cartella di lavoro vuota: nemmeno runtime/ (cookie, registri) è a portata
+// Cartella di lavoro del cervello: vuota e FUORI dalla repository, così STEM ha una memoria sua
+// e non mescola i suoi ricordi con quelli delle sessioni di sviluppo (prima condividevano ~/STEM)
+const BRAIN = path.join(HOME, 'Library', 'Application Support', 'STEM', 'cervello');
 fs.mkdirSync(BRAIN, { recursive: true });
 
 // --- Finestre: HUD a sinistra, Google a destra ---
@@ -104,7 +109,7 @@ async function startScreencast() {
         return;
       }
       if (t.targetId === castTarget && t.url !== pages.get(t.targetId)) {
-        try { const host = new URL(t.url).hostname.replace(/^www\./, ''); if (host) activeEmit?.({ t: 'page', detail: host }); } catch {}
+        try { const host = new URL(t.url).hostname.replace(/^www\./, ''); if (host) brain.notify({ t: 'page', detail: host }); } catch {}
       }
       pages.set(t.targetId, t.url);
       if (!castTarget) attach(t.targetId);
@@ -126,8 +131,12 @@ async function startScreencast() {
 
 // --- Browser: Playwright MCP sempre acceso, collegato alla finestra di Google ---
 const MCP_CONFIG = path.join(RUNTIME, 'mcp.json');
+const MAC_MCP = path.join(ROOT, 'mac', 'mac-mcp.mjs');
 fs.writeFileSync(MCP_CONFIG, JSON.stringify({
-  mcpServers: { playwright: { type: 'http', url: `http://localhost:${PW_PORT}/mcp` } },
+  mcpServers: {
+    playwright: { type: 'http', url: `http://localhost:${PW_PORT}/mcp` },
+    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath, args: [MAC_MCP] } }), // app, schermo, mouse e tastiera
+  },
 }));
 const browser = spawn('npx', [
   '-y', '@playwright/mcp@0.0.83',
@@ -141,104 +150,23 @@ browser.stdout.on('data', watchBrowser);
 browser.stderr.on('data', (d) => { watchBrowser(d); if (!browserReady || /error/i.test(d)) process.stderr.write(`[browser] ${d}`); });
 browser.on('exit', (code) => { browserReady = false; console.error(`[browser] uscito (${code})`); });
 
-// --- Cervello ---
-let sessionId = null;
-let current = null; // processo claude in corso
-let activeEmit = null; // eventi verso l'HUD della domanda in corso
-let askSeq = 0;     // ogni domanda nuova, stop o reset rende vecchie quelle in attesa
-
-// req: { open, child } della singola richiesta HTTP
-async function ask(text, onEvent, req) {
-  const my = ++askSeq;
-  if (current) current.kill('SIGTERM');
-  await ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro
-  if (my !== askSeq || !req.open) return; // annullata o superata mentre aspettavo Chrome
-  const args = [
-    '-p', text,
-    '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
+// --- Cervello: un processo sempre acceso (brain.mjs) ---
+const brain = createBrain({
+  cwd: BRAIN,
+  onLog: (l) => { console.error(l); },
+  args: [
     '--append-system-prompt', PERSONA,
     '--tools', 'Read,Write,Edit,Glob,Grep',
     '--add-dir', ...FILE_DIRS,
     '--mcp-config', MCP_CONFIG, '--strict-mcp-config',
-    '--allowedTools', 'mcp__playwright',
+    '--allowedTools', 'mcp__playwright', 'mcp__mac',
     '--disallowedTools', 'mcp__playwright__browser_tabs', // una sola pagina: niente schede nuove
     '--permission-mode', 'acceptEdits',    // modifiche approvate da sole, ma solo dentro FILE_DIRS
     '--permission-prompts', 'none',        // tutto il resto (fuori dalle cartelle) è negato senza chiedere
-  ];
-  if (MODEL) args.push('--model', MODEL);
-  if (sessionId) args.push('--resume', sessionId);
-
-  const child = spawn('claude', args, { cwd: BRAIN, stdio: ['ignore', 'pipe', 'pipe'] });
-  current = child;
-  req.child = child;
-  activeEmit = onEvent;
-  let buf = '';
-  let speech = '';
-  let stderr = '';
-
-  // Manda alla voce una frase alla volta, appena è completa
-  const flush = (all) => {
-    const re = /^([\s\S]*?[.!?…])(\s+)/;
-    let m;
-    while ((m = speech.match(re)) && (m[1].trim().length >= 12 || all)) {
-      onEvent({ t: 'say', s: m[1].trim() });
-      speech = speech.slice(m[0].length);
-    }
-    if (all && speech.trim()) { onEvent({ t: 'say', s: speech.trim() }); speech = ''; }
-  };
-
-  child.stdout.on('data', (chunk) => {
-    buf += chunk;
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i); buf = buf.slice(i + 1);
-      if (!line.trim()) continue;
-      let o; try { o = JSON.parse(line); } catch { continue; }
-      if (o.session_id) sessionId = o.session_id;
-      if (o.type === 'stream_event') {
-        const e = o.event;
-        if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') { speech += e.delta.text; flush(false); }
-        if (e.type === 'content_block_stop') flush(true);
-      } else if (o.type === 'assistant') {
-        for (const c of o.message?.content || []) {
-          if (c.type === 'tool_use') {
-            if (!c.name.startsWith('mcp__playwright__')) { // file: nell'HUD solo il nome, mai il contenuto
-              const f = c.input?.file_path || c.input?.path || c.input?.pattern || '';
-              onEvent({ t: 'file', name: c.name, detail: path.basename(String(f)) });
-              continue;
-            }
-            const name = c.name.replace('mcp__playwright__browser_', '');
-            let detail = '';
-            if (c.input?.url) { try { detail = new URL(c.input.url).hostname.replace(/^www\./, ''); } catch {} }
-            onEvent({ t: 'tool', name, detail });
-          }
-        }
-      } else if (o.type === 'result' && o.is_error) {
-        onEvent({ t: 'error', s: o.result || 'errore' });
-      }
-    }
-  });
-  child.stderr.on('data', (d) => { stderr += d; });
-  return new Promise((resolve) => {
-    child.on('error', (e) => {
-      if (current === child) current = null;
-      console.error(`[claude] non parte: ${e.message}`);
-      onEvent({ t: 'error', s: 'Il cervello non parte.' });
-      resolve();
-    });
-    child.on('exit', (code, signal) => {
-      if (current === child) current = null;
-      if (activeEmit === onEvent) activeEmit = null;
-      flush(true);
-      if (code && !signal) {
-        console.error(`[claude] uscito ${code}: ${stderr.slice(-500)}`);
-        if (/session|resume/i.test(stderr)) sessionId = null; // sessione persa: si riparte
-        onEvent({ t: 'error', s: 'Il cervello non ha risposto.' });
-      }
-      resolve();
-    });
-  });
-}
+    ...(MODEL !== 'default' ? ['--model', MODEL] : []),
+  ],
+});
+const media = createMedia({ giphyKey: env.GIPHY_API_KEY || '', onLog: (l) => console.error(l) });
 
 // --- Voce ---
 // Senza ELEVENLABS_VOICE_ID scelgo da solo una voce maschile italiana tra quelle del tuo account
@@ -263,20 +191,7 @@ async function pickVoice() {
 }
 pickVoice();
 
-async function tts(text) {
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128`, {
-    method: 'POST',
-    headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json', accept: 'audio/mpeg' },
-    body: JSON.stringify({
-      text,
-      model_id: VOICE_MODEL,
-      language_code: VOICE_MODEL.includes('flash') || VOICE_MODEL.includes('turbo') ? 'it' : undefined,
-      voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
-    }),
-  });
-  if (!r.ok) throw new Error(`ElevenLabs ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  return Buffer.from(await r.arrayBuffer());
-}
+const voice = createVoice({ key: ELEVEN_KEY, voiceId: () => VOICE_ID, model: VOICE_MODEL, macVoice: env.STEM_MAC_VOICE, onLog: (l) => console.error(l) });
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
 const LOG_FILE = path.join(RUNTIME, 'ascolto.log');
@@ -365,17 +280,24 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/status') {
     if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; noteHud(url.searchParams); }
     return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ voice: Boolean(ELEVEN_KEY), browser: browserReady }));
+      .end(JSON.stringify({ voice: voice.status, browser: browserReady, gifs: media.gifs }));
   }
 
   if (req.method === 'POST' && p === '/api/ask') {
     const { text } = await readBody(req);
     if (!text?.trim()) return res.writeHead(400).end();
     res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' });
-    const state = { open: true, child: null };
-    res.on('close', () => { if (state.open) state.child?.kill('SIGTERM'); state.open = false; });
-    await ask(text.trim(), (ev) => { if (state.open) res.write(JSON.stringify(ev) + '\n'); }, state);
-    if (state.open) { res.end(JSON.stringify({ t: 'done' }) + '\n'); state.open = false; }
+    let open = true, pending = 0, finished = false;
+    const write = (ev) => { if (open) res.write(JSON.stringify(ev) + '\n'); };
+    const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
+    res.on('close', () => { open = false; });
+    ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
+    await brain.ask(text.trim(), (ev) => {
+      if (ev.t !== 'media') return write(ev);
+      pending++; // GIF e animazioni: le cerco mentre STEM parla, arrivano quando sono pronte
+      media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
+    });
+    finished = true; close();
     return;
   }
 
@@ -385,27 +307,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && p === '/api/stop') {
-    askSeq++;
-    if (current) current.kill('SIGTERM');
+    brain.stop();
     return res.writeHead(204).end();
   }
 
-  if (req.method === 'POST' && p === '/api/reset') {
-    askSeq++;
-    if (current) current.kill('SIGTERM');
-    sessionId = null;
+  if (req.method === 'POST' && p === '/api/reset') { // nuova conversazione: il cervello riparte da zero
+    brain.kill(true);
     return res.writeHead(204).end();
   }
 
-  if (req.method === 'POST' && p === '/api/tts') {
-    if (!ELEVEN_KEY) return res.writeHead(503, { 'content-type': 'application/json' }).end('{"fallback":true}');
-    const { text } = await readBody(req);
+  if (req.method === 'POST' && p === '/api/tts') { // sempre audio vero: ElevenLabs o voce del Mac, mai mescolate in una risposta
+    const { text, answer } = await readBody(req);
     try {
-      const audio = await tts(String(text || '').slice(0, 2000));
-      return res.writeHead(200, { 'content-type': 'audio/mpeg' }).end(audio);
+      const a = await voice.speak(String(text || '').slice(0, 2000), String(answer || 'x'));
+      return res.writeHead(200, { 'content-type': a.type, 'x-stem-voce': a.provider + (a.switched ? ';cambio' : '') }).end(a.data);
     } catch (e) {
       console.error(`[voce] ${e.message}`);
-      return res.writeHead(502, { 'content-type': 'application/json' }).end('{"fallback":true}');
+      return res.writeHead(502).end();
     }
   }
 
@@ -421,7 +339,7 @@ server.on('error', async (e) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`STEM online su http://localhost:${PORT}`);
-  if (!ELEVEN_KEY) console.log('Voce ElevenLabs spenta: manca ELEVENLABS_API_KEY in .env (uso la voce di sistema).');
+  if (!ELEVEN_KEY) console.log('Voce ElevenLabs spenta: manca ELEVENLABS_API_KEY in .env (uso la voce del Mac).');
   if (env.STEM_NO_OPEN) return;
   // Prima il Chrome di Google, poi l'HUD: l'ultima finestra aperta prende il fuoco, e deve essere l'HUD a schermo intero
   hudOpening = true; // anche mentre aspetto Chrome: un secondo clic sull'app non apre un altro HUD
@@ -439,7 +357,7 @@ function openHud() {
 
 // All'uscita, per qualunque motivo (Ctrl-C, finestra del Terminale chiusa, crash), spengo tutto quello che ho acceso
 process.on('exit', () => {
-  if (current) current.kill('SIGTERM');
+  brain.kill();
   for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di STEM
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));

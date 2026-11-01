@@ -1,0 +1,573 @@
+#!/usr/bin/env node
+// STEM — server MCP per il controllo del Mac (stdio, JSON-RPC 2.0, un messaggio JSON per riga). Senza dipendenze.
+// Le azioni native le fa runtime/stem-mac, compilato al volo da mac/helper.swift.
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+import { fileURLToPath } from 'node:url';
+
+const DIR = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.dirname(DIR);
+const RUNTIME = path.join(ROOT, 'runtime');
+const SRC = path.join(DIR, 'helper.swift');
+const BIN = path.join(RUNTIME, 'stem-mac');
+const LAST = path.join(RUNTIME, 'schermo-ultimo.json'); // come convertire i pixel dell'ultima schermata in punti
+const STEM_OWNED = path.join(ROOT, 'runtime') + path.sep; // i Chrome di STEM (HUD e finestra di Google) hanno il profilo qui
+
+// Niente tastiera nei terminali e nei gestori di password: server.mjs esclude già il Terminale («Niente Terminale»),
+// e una pagina web non deve poter far scrivere comandi a STEM.
+// Anche gli editor di codice (hanno un terminale dentro) e le app che eseguono script: i file STEM li modifica con i suoi strumenti.
+const NO_TYPING = [
+  'com.apple.Terminal', 'com.googlecode.iterm2', 'dev.warp.Warp-Stable', 'com.mitchellh.ghostty', 'net.kovidgoyal.kitty',
+  'org.alacritty', 'com.github.wez.wezterm', 'co.zeit.hyper', 'org.tabby', 'com.raphaelamorim.rio',
+  'com.apple.ScriptEditor2', 'com.apple.Automator', 'com.apple.shortcuts', 'com.apple.dt.Xcode',
+  'com.microsoft.VSCode', 'com.microsoft.VSCodeInsiders', 'com.todesktop.230313mzl4w4u92', 'dev.zed.Zed', 'com.sublimetext.4',
+  'com.jetbrains.intellij', 'com.jetbrains.pycharm', 'com.jetbrains.WebStorm', 'com.jetbrains.goland', 'com.google.android.studio',
+  'com.apple.Passwords', 'com.apple.keychainaccess', 'com.1password.1password', 'com.bitwarden.desktop',
+];
+
+// Le schermate restano entro 1440 px e circa 1,15 megapixel: così il modello le vede senza ulteriori riduzioni
+// e le coordinate che legge sono quelle vere.
+const MAX_SIDE = 1440;
+const MAX_PIXELS = 1_150_000;
+
+// --- Processi ---
+
+function run(file, args, { input, timeout = 20_000, track } = {}) {
+  return new Promise((resolve) => {
+    const child = execFile(file, args, { timeout, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' }, (error, stdout, stderr) => {
+      track?.delete(child);
+      resolve({ code: error ? (error.code ?? 1) : 0, stdout, stderr, error });
+    });
+    track?.add(child);
+    if (input != null) child.stdin.end(input); else child.stdin.end();
+  });
+}
+
+let building = null;
+function ensureHelper() {
+  return (building ??= (async () => {
+    const src = fs.statSync(SRC).mtimeMs;
+    let bin = 0;
+    try { bin = fs.statSync(BIN).mtimeMs; } catch {}
+    if (bin >= src) return;
+    fs.mkdirSync(RUNTIME, { recursive: true });
+    const tmp = `${BIN}.${process.pid}.tmp`; // due server insieme non si pestano i piedi
+    const r = await run('/usr/bin/swiftc', ['-O', '-swift-version', '5', '-o', tmp, SRC], { timeout: 240_000 });
+    if (r.code !== 0) {
+      try { fs.unlinkSync(tmp); } catch {}
+      throw new Error(`non riesco a compilare l'aiutante: ${(r.stderr || r.error?.message || '').slice(-600)}`);
+    }
+    fs.renameSync(tmp, BIN);
+  })().catch((e) => { building = null; throw e; }));
+}
+
+const inFlight = new Set(); // aiutanti in corso: si fermano se il cervello annulla (Tony dice "stop")
+async function helper(args, input) {
+  await ensureHelper();
+  const r = await run(BIN, args, { input, timeout: 120_000, track: inFlight });
+  const line = r.stdout.trim().split('\n').pop() || '';
+  try { return JSON.parse(line); } catch {
+    throw new Error(`l'aiutante non ha risposto (${r.code}): ${(r.stderr || r.error?.message || '').slice(-300)}`);
+  }
+}
+
+// --- Permessi ---
+
+const PANELS = {
+  accessibilita: { nome: 'Accessibilità', url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility', serve: 'usare mouse e tastiera' },
+  schermo: { nome: 'Registrazione schermo e audio di sistema', url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture', serve: 'vedere lo schermo' },
+};
+
+class ToolError extends Error {}
+
+// STEM.app avvia il server e poi esce: allora l'app responsabile non si trova più, ma è lei
+const LAUNCHER = '«STEM» (STEM.app nella cartella di STEM), oppure «Terminale» se lo avvii da avvia.command';
+const who = (p) => (p.app ? `«${p.app}»${p.percorso ? ` (${p.percorso})` : ''}` : LAUNCHER);
+
+function permissionText(kind, p = {}) {
+  const k = PANELS[kind];
+  const app = who(p);
+  return `Non ho il permesso per ${k.serve}. Apri Impostazioni di Sistema → Privacy e sicurezza → ${k.nome} e attiva ${app}. ` +
+    `Se è già attiva, spegnila e riaccendila, poi riavvia STEM. Lo strumento «permessi» con apri="${kind}" apre quel pannello.`;
+}
+
+// Errori dell'aiutante → frase italiana chiara
+function check(r, expected) {
+  if (r.ok) return r;
+  if (r.permesso) throw new ToolError(permissionText(r.permesso, r));
+  if (r.rifiuto === 'password') throw new ToolError(`Non scrivo: ${r.errore}. Le password le scrive solo Tony.`);
+  if (r.rifiuto === 'app_vietata') throw new ToolError(`Non scrivo in ${clean(r.primo_piano || "quest'app")}: nei terminali e nei gestori di password la tastiera la usa solo Tony.`);
+  if (r.rifiuto === 'primo_piano') {
+    throw new ToolError(`Non ho premuto niente: in primo piano c'è ${clean(r.primo_piano || "un'altra app")}, non ${expected || "l'app chiesta"}. Portala davanti (apri_app) e riprova.`);
+  }
+  throw new ToolError(r.errore || 'errore sconosciuto');
+}
+
+// --- Schermo e coordinate ---
+
+function pngSize(file) {
+  const b = Buffer.alloc(24);
+  const fd = fs.openSync(file, 'r');
+  try { fs.readSync(fd, b, 0, 24, 0); } finally { fs.closeSync(fd); }
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+}
+
+function fit(w, h) { // fattore di riduzione per stare nei limiti, mai ingrandire
+  return Math.min(1, MAX_SIDE / Math.max(w, h), Math.sqrt(MAX_PIXELS / (w * h)));
+}
+
+// Mappa di uno schermo intero, anche senza schermata: stessa formula di «schermo»
+async function fullMapping() {
+  const d = check(await helper(['display']));
+  const pw = Math.round(d.larghezza * d.scala), ph = Math.round(d.altezza * d.scala);
+  const s = fit(pw, ph);
+  const w = Math.round(pw * s), h = Math.round(ph * s);
+  return { ox: d.x, oy: d.y, k: d.larghezza / w, w, h };
+}
+
+async function mapping() {
+  try {
+    const m = JSON.parse(fs.readFileSync(LAST, 'utf8'));
+    if ([m.ox, m.oy, m.k, m.w, m.h].every(Number.isFinite)) return m;
+  } catch {}
+  return fullMapping();
+}
+
+function num(v, name) {
+  const n = typeof v === 'string' ? Number(v) : v;
+  if (typeof n !== 'number' || !Number.isFinite(n)) throw new ToolError(`«${name}» deve essere un numero`);
+  return n;
+}
+
+async function toPoints(x, y, nx = 'x', ny = 'y') {
+  const m = await mapping();
+  x = num(x, nx); y = num(y, ny);
+  if (x < 0 || y < 0 || x > m.w || y > m.h) {
+    throw new ToolError(`(${x}, ${y}) è fuori dall'ultima schermata, che è ${m.w}×${m.h} px. Rifai «schermo» se serve.`);
+  }
+  const r = (v) => Math.round(v * 10) / 10;
+  return [r(m.ox + x * m.k), r(m.oy + y * m.k)];
+}
+
+async function schermo(a) {
+  const perm = await helper(['permessi']);
+  if (!perm.schermo) throw new ToolError(permissionText('schermo', perm));
+  let rect, which = ''; // rect in punti
+  const region = ['x', 'y', 'larghezza', 'altezza'].some((k) => a[k] != null);
+  if (region) {
+    const m = await mapping();
+    const x = num(a.x ?? 0, 'x'), y = num(a.y ?? 0, 'y');
+    const w = num(a.larghezza ?? m.w - x, 'larghezza'), h = num(a.altezza ?? m.h - y, 'altezza');
+    if (w < 4 || h < 4 || x < 0 || y < 0 || x + w > m.w + 1 || y + h > m.h + 1) {
+      throw new ToolError(`regione fuori dall'ultima schermata (${m.w}×${m.h} px)`);
+    }
+    rect = [m.ox + x * m.k, m.oy + y * m.k, w * m.k, h * m.k].map((v) => Math.round(v));
+  } else {
+    // Più schermi: fotografo quello dove sta la finestra in primo piano (o quello chiesto), non sempre il principale
+    const { schermi = [] } = await helper(['schermi']).catch(() => ({}));
+    let d = schermi.find((s) => s.principale) || schermi[0] || check(await helper(['display']));
+    if (a.schermo != null && schermi[num(a.schermo, 'schermo') - 1]) d = schermi[num(a.schermo, 'schermo') - 1];
+    else {
+      const f = await helper(['finestra']).catch(() => ({}));
+      if (Number.isFinite(f.x)) {
+        const cx = f.x + f.larghezza / 2, cy = f.y + f.altezza / 2;
+        d = schermi.find((s) => cx >= s.x && cx < s.x + s.larghezza && cy >= s.y && cy < s.y + s.altezza) || d;
+      }
+    }
+    rect = [d.x, d.y, d.larghezza, d.altezza].map((v) => Math.round(v));
+    which = schermi.length > 1 ? ` (schermo ${schermi.indexOf(d) + 1} di ${schermi.length}${d.principale ? ', il principale' : ''}; ` +
+      `per un altro usa il parametro «schermo»)` : '';
+  }
+  const tmp = path.join(os.tmpdir(), `stem-schermo-${process.pid}-${Date.now()}.png`);
+  try {
+    const cap = ['-x', '-t', 'png', `-R${rect.join(',')}`, tmp];
+    const r = await run('/usr/sbin/screencapture', cap);
+    if (r.code !== 0 || !fs.existsSync(tmp)) throw new ToolError(`screencapture non ha funzionato: ${(r.stderr || '').trim() || r.code}`);
+    let { w, h } = pngSize(tmp);
+    const s = fit(w, h);
+    if (s < 1) {
+      const side = Math.floor(Math.max(w, h) * s);
+      const z = await run('/usr/bin/sips', ['--resampleHeightWidthMax', String(side), tmp]);
+      if (z.code !== 0) throw new ToolError(`sips non ha ridimensionato la schermata: ${(z.stderr || '').trim()}`);
+      ({ w, h } = pngSize(tmp));
+    }
+    const m = { ox: rect[0], oy: rect[1], k: rect[2] / w, w, h, quando: new Date().toISOString() };
+    fs.mkdirSync(RUNTIME, { recursive: true });
+    fs.writeFileSync(LAST, JSON.stringify(m));
+    const front = (await helper(['app-aperte'])).app?.find((x) => x.primo_piano)?.nome;
+    const k = m.k.toFixed(4).replace('.', ',');
+    const text = `Schermata ${region ? `della regione (${a.x ?? 0}, ${a.y ?? 0}) ` : 'dello schermo'}${which} ${w}×${h} px. ` +
+      `1 px della schermata = ${k} punti dello schermo; origine in punti (${rect[0]}, ${rect[1]}). ` +
+      `Da ora clic, muovi, trascina e scorri usano i pixel di QUESTA immagine.` +
+      (front ? ` In primo piano: ${clean(front)}.` : '');
+    return [{ type: 'image', data: fs.readFileSync(tmp).toString('base64'), mimeType: 'image/png' }, { type: 'text', text }];
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+}
+
+// --- App ---
+
+const STOP = new Set(['app', 'applicazione', 'programma', 'il', 'lo', 'la', 'l', 'i', 'gli', 'le', 'di', 'del', 'della', 'apri', 'chiudi', 'the']);
+function norm(s) {
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\.app$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function query(s) { return norm(s).split(' ').filter((w) => w && !STOP.has(w)).join(' '); }
+
+function lev(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return d[b.length];
+}
+
+function score(q, name) {
+  const n = query(name) || norm(name); // stesse parole vuote tolte da domanda e nome
+  if (!q || !n) return 0;
+  if (n === q) return 1;
+  if (n.replace(/ /g, '') === q.replace(/ /g, '')) return 0.97; // «chat gpt», «whats app»: la voce spezza le parole
+  if (n.startsWith(q)) return 0.92 - Math.min(0.1, (n.length - q.length) / 200);
+  if (` ${n}`.includes(` ${q}`)) return 0.88 - Math.min(0.1, (n.length - q.length) / 200);
+  if (q.length >= 3 && n.includes(q)) return 0.8;
+  if (n.length >= 3 && ` ${q} `.includes(` ${n} `)) return 0.75;
+  // errori di battitura o di riconoscimento vocale, sul nome intero o su una sua parola
+  let best = 0;
+  for (const cand of [n, ...n.split(' ')]) {
+    if (cand.length < 3) continue;
+    const sim = 1 - lev(q, cand) / Math.max(q.length, cand.length);
+    best = Math.max(best, sim * (cand === n ? 0.72 : 0.65));
+  }
+  return best;
+}
+
+function rank(q, apps, names = (a) => a.nomi ?? [a.nome]) {
+  const qq = query(q) || norm(q);
+  return apps.map((app) => ({ app, s: Math.max(...names(app).map((n) => score(qq, n))) }))
+    .filter((r) => r.s >= 0.5)
+    .sort((a, b) => b.s - a.s || a.app.nome.length - b.app.nome.length);
+}
+
+let installedCache = null;
+async function installed() {
+  if (!installedCache) installedCache = check(await helper(['app-installate'])).app.map((a) => ({ ...a, nome: clean(a.nome), nomi: a.nomi.map(clean) }));
+  return installedCache;
+}
+const clean = (s) => String(s).replace(/[\u200e\u200f]/g, ''); // segni di direzione (es. «\u200eWhatsApp»)
+
+async function running() {
+  const list = check(await helper(['app-aperte'])).app.map((a) => ({ ...a, nome: clean(a.nome) }));
+  const byBundle = new Map((await installed()).map((a) => [a.bundle, a]));
+  for (const a of list) a.nomi = [...new Set([a.nome, ...(byBundle.get(a.bundle)?.nomi ?? [])])];
+  return list;
+}
+
+async function stemOwned(pids) { // i processi avviati da STEM col profilo in runtime/
+  if (!pids.length) return new Set();
+  const r = await run('/bin/ps', ['-o', 'pid=,command=', '-p', pids.join(',')]);
+  const own = new Set();
+  for (const line of r.stdout.split('\n')) {
+    const m = line.match(/^\s*(\d+)\s+(.*)$/);
+    if (m && m[2].includes(STEM_OWNED)) own.add(Number(m[1]));
+  }
+  return own;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function apriApp(a) {
+  const nome = String(a.nome ?? '').trim();
+  if (!nome) throw new ToolError('dimmi il nome dell\'app');
+  const found = rank(nome, await installed());
+  if (!found.length) {
+    const near = (await installed()).map((app) => ({ app, s: Math.max(...app.nomi.map((n) => score(query(nome), n))) }))
+      .sort((x, y) => y.s - x.s).slice(0, 5).map((r) => r.app.nome);
+    throw new ToolError(`Non trovo un'app che somigli a «${nome}». Le più vicine: ${near.join(', ')}.`);
+  }
+  const app = found[0].app;
+  const others = found.slice(1).filter((r) => r.s >= found[0].s - 0.02).map((r) => r.app.nome);
+  // Se gira solo il Chrome di STEM, ne apro uno di Tony a parte invece di riattivare quello dell'HUD
+  const inst = (await running()).filter((r) => r.bundle && r.bundle === app.bundle);
+  const own = await stemOwned(inst.map((r) => r.pid));
+  const onlyStem = inst.length > 0 && inst.every((r) => own.has(r.pid));
+  const r = await run('/usr/bin/open', onlyStem ? ['-n', '-a', app.percorso] : ['-a', app.percorso]);
+  if (r.code !== 0) throw new ToolError(`open non è riuscito ad aprire ${app.nome}: ${(r.stderr || '').trim()}`);
+  let front = false;
+  for (let i = 0; i < 24 && !front; i++) { // aspetto fino a 6 s che sia davanti
+    await sleep(250);
+    front = (await helper(['app-aperte'])).app?.some((x) => x.primo_piano && x.bundle === app.bundle) ?? false;
+  }
+  return `Ho aperto ${app.nome} (${app.percorso}). ` + (front ? 'Ora è in primo piano.' : 'Si sta ancora avviando o è rimasta dietro.') +
+    (others.length ? ` Somigliavano anche: ${others.join(', ')}.` : '');
+}
+
+async function resolveRunning(nome) {
+  const list = await running();
+  const found = rank(nome, list);
+  if (!found.length) throw new ToolError(`«${nome}» non risulta aperta. Aperte ora: ${list.map((x) => x.nome).join(', ')}.`);
+  return { app: found[0].app, all: list.filter((x) => x.bundle === found[0].app.bundle) };
+}
+
+async function chiudiApp(a) {
+  const nome = String(a.nome ?? '').trim();
+  if (!nome) throw new ToolError('dimmi il nome dell\'app');
+  const { app, all } = await resolveRunning(nome);
+  const own = await stemOwned(all.map((x) => x.pid));
+  const pids = all.filter((x) => !own.has(x.pid)).map((x) => x.pid);
+  if (!pids.length) throw new ToolError(`L'unico ${app.nome} aperto è quello di STEM (HUD e finestra di Google): non lo chiudo.`);
+  const r = check(await helper(['chiudi', ...pids.map(String)]));
+  if (r.ancora_aperte.length) {
+    return `Ho chiesto a ${app.nome} di chiudersi, ma è ancora aperta: forse chiede di salvare qualcosa. Guarda lo schermo.`;
+  }
+  return `Ho chiuso ${app.nome}.` + (own.size ? ' Il Chrome di STEM resta aperto.' : '');
+}
+
+async function frontGuard(a) { // facoltativo: «app» = scrivi solo se davanti c'è lei
+  const args = ['--vieta', NO_TYPING.join(',')];
+  if (!a.app) return { args };
+  const { app } = await resolveRunning(String(a.app));
+  if (!app.bundle) throw new ToolError(`non riesco a riconoscere ${app.nome} con certezza: riprova senza «app»`);
+  args.push('--solo-se', app.bundle);
+  return { args, expected: app.nome };
+}
+
+const said = (r) => (r.primo_piano ? ` In primo piano: ${clean(r.primo_piano)}.` : '');
+
+// --- Strumenti ---
+
+const XY = {
+  x: { type: 'number', description: 'pixel orizzontale nell\'ultima schermata' },
+  y: { type: 'number', description: 'pixel verticale nell\'ultima schermata' },
+};
+
+const TOOLS = [
+  {
+    name: 'schermo',
+    description: 'Fotografa lo schermo del Mac dove sta la finestra in primo piano (con più schermi; «schermo»: 1, 2… per sceglierne uno) e restituisce l\'immagine. Le coordinate di clic, muovi, trascina e scorri ' +
+      'sono sempre in pixel dell\'ULTIMA immagine restituita. Facoltativo: una regione (x, y, larghezza, altezza in pixel dell\'ultima ' +
+      'immagine) per ingrandire un dettaglio; dopo, le coordinate valgono per la regione.',
+    inputSchema: { type: 'object', properties: {
+      x: { type: 'number' }, y: { type: 'number' }, larghezza: { type: 'number' }, altezza: { type: 'number' },
+      schermo: { type: 'number', description: 'numero dello schermo (1, 2…) se ce n\'è più di uno' },
+    } },
+    annotations: { title: 'Guarda lo schermo', readOnlyHint: true },
+    run: schermo,
+  },
+  {
+    name: 'clic',
+    description: 'Clic del mouse in un punto (pixel dell\'ultima schermata). Fai prima «schermo» per sapere dove cliccare.',
+    inputSchema: { type: 'object', properties: {
+      ...XY,
+      pulsante: { type: 'string', enum: ['sinistro', 'destro'], default: 'sinistro' },
+      doppio: { type: 'boolean', default: false, description: 'doppio clic' },
+    }, required: ['x', 'y'] },
+    annotations: { title: 'Clic' },
+    run: async (a) => {
+      const [X, Y] = await toPoints(a.x, a.y);
+      const btn = a.pulsante === 'destro' ? 'destro' : 'sinistro';
+      const r = check(await helper(['clic', String(X), String(Y), btn, a.doppio ? '2' : '1']));
+      return `${a.doppio ? 'Doppio clic' : 'Clic'} ${btn} in (${a.x}, ${a.y}) px = (${X}, ${Y}) punti.${said(r)}`;
+    },
+  },
+  {
+    name: 'muovi',
+    description: 'Sposta il puntatore del mouse (pixel dell\'ultima schermata), per esempio per far comparire un menu al passaggio.',
+    inputSchema: { type: 'object', properties: XY, required: ['x', 'y'] },
+    annotations: { title: 'Muovi il mouse' },
+    run: async (a) => {
+      const [X, Y] = await toPoints(a.x, a.y);
+      check(await helper(['muovi', String(X), String(Y)]));
+      return `Puntatore in (${a.x}, ${a.y}) px = (${X}, ${Y}) punti.`;
+    },
+  },
+  {
+    name: 'trascina',
+    description: 'Tiene premuto il tasto sinistro e trascina da un punto a un altro (pixel dell\'ultima schermata): finestre, file, cursori.',
+    inputSchema: { type: 'object', properties: {
+      da_x: { type: 'number' }, da_y: { type: 'number' }, a_x: { type: 'number' }, a_y: { type: 'number' },
+    }, required: ['da_x', 'da_y', 'a_x', 'a_y'] },
+    annotations: { title: 'Trascina' },
+    run: async (a) => {
+      const [X1, Y1] = await toPoints(a.da_x, a.da_y, 'da_x', 'da_y');
+      const [X2, Y2] = await toPoints(a.a_x, a.a_y, 'a_x', 'a_y');
+      const r = check(await helper(['trascina', String(X1), String(Y1), String(X2), String(Y2)]));
+      return `Trascinato da (${a.da_x}, ${a.da_y}) a (${a.a_x}, ${a.a_y}) px.${said(r)}`;
+    },
+  },
+  {
+    name: 'scorri',
+    description: 'Scorre con la rotella sopra un punto (pixel dell\'ultima schermata). dy positivo = in giù, negativo = in su; ' +
+      'dx positivo = a destra. Unità: righe (5–15 per mezza pagina).',
+    inputSchema: { type: 'object', properties: {
+      ...XY, dx: { type: 'integer', default: 0 }, dy: { type: 'integer', default: 0 },
+    }, required: ['x', 'y'] },
+    annotations: { title: 'Scorri' },
+    run: async (a) => {
+      const [X, Y] = await toPoints(a.x, a.y);
+      const dx = Math.round(num(a.dx ?? 0, 'dx')), dy = Math.round(num(a.dy ?? 0, 'dy'));
+      check(await helper(['scorri', String(X), String(Y), String(dx), String(dy)]));
+      return `Scorso di ${dy} righe in verticale e ${dx} in orizzontale sopra (${a.x}, ${a.y}) px.`;
+    },
+  },
+  {
+    name: 'scrivi',
+    description: 'Scrive del testo (anche accenti ed emoji) nell\'app in primo piano, dove c\'è il cursore; "\\n" = Invio. ' +
+      'Rifiuta i campi password, i terminali e i gestori di password. Facoltativo «app»: scrive solo se davanti c\'è quell\'app.',
+    inputSchema: { type: 'object', properties: {
+      testo: { type: 'string' }, app: { type: 'string', description: 'nome dell\'app che deve essere in primo piano' },
+    }, required: ['testo'] },
+    annotations: { title: 'Scrivi' },
+    run: async (a) => {
+      const testo = String(a.testo ?? '');
+      if (!testo) throw new ToolError('testo vuoto');
+      if (testo.length > 5000) throw new ToolError('testo troppo lungo (massimo 5000 caratteri): per testi lunghi crea un file');
+      const g = await frontGuard(a);
+      const r = check(await helper(['scrivi', ...g.args], testo), g.expected);
+      return `Scritti ${[...testo].length} caratteri.${said(r)}`;
+    },
+  },
+  {
+    name: 'tasti',
+    description: 'Preme una combinazione di tasti: "cmd+s", "cmd+shift+4", "cmd+tab", "return", "esc", "tab", "space", "delete", ' +
+      '"up"/"down"/"left"/"right", "home", "end", "pageup", "pagedown", "f1"…"f12", oppure un carattere ("cmd+c"). ' +
+      'Modificatori: cmd, shift, alt, ctrl, fn. Facoltativi: «volte» (ripetizioni) e «app» (solo se davanti c\'è quell\'app).',
+    inputSchema: { type: 'object', properties: {
+      combinazione: { type: 'string' },
+      volte: { type: 'integer', minimum: 1, maximum: 50, default: 1 },
+      app: { type: 'string', description: 'nome dell\'app che deve essere in primo piano' },
+    }, required: ['combinazione'] },
+    annotations: { title: 'Tasti' },
+    run: async (a) => {
+      const combo = String(a.combinazione ?? '').trim();
+      if (!combo) throw new ToolError('combinazione vuota');
+      const volte = Math.max(1, Math.min(50, Math.round(Number(a.volte) || 1)));
+      const g = await frontGuard(a);
+      const r = check(await helper(['tasti', ...g.args, combo, String(volte)]), g.expected);
+      return `Premuto ${combo}${volte > 1 ? ` ${volte} volte` : ''}.${said(r)}`;
+    },
+  },
+  {
+    name: 'apri_app',
+    description: 'Apre un\'app del Mac (o la porta in primo piano se è già aperta). Il nome può essere approssimato, ' +
+      'in italiano o in inglese: "calcolatrice", "chrome", "impostazioni", "word". Restituisce l\'app esatta aperta.',
+    inputSchema: { type: 'object', properties: { nome: { type: 'string' } }, required: ['nome'] },
+    annotations: { title: 'Apri app', openWorldHint: false },
+    run: apriApp,
+  },
+  {
+    name: 'chiudi_app',
+    description: 'Chiude un\'app aperta in modo normale, come cmd+Q (mai forzato: se chiede di salvare, la domanda resta sullo schermo).',
+    inputSchema: { type: 'object', properties: { nome: { type: 'string' } }, required: ['nome'] },
+    annotations: { title: 'Chiudi app', destructiveHint: true },
+    run: chiudiApp,
+  },
+  {
+    name: 'app_aperte',
+    description: 'Elenca le app aperte, con quella in primo piano segnata.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { title: 'App aperte', readOnlyHint: true },
+    run: async () => (await running()).map((x) => `${x.primo_piano ? '▶ ' : '  '}${x.nome}${x.primo_piano ? ' (in primo piano)' : ''}`).join('\n'),
+  },
+  {
+    name: 'app_installate',
+    description: 'Elenca le app installate che si possono aprire con apri_app.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { title: 'App installate', readOnlyHint: true },
+    run: async () => {
+      const list = (await installed()).map((x) => (x.nomi.length > 1 ? `${x.nome} (${x.nomi.slice(1).join(', ')})` : x.nome));
+      return [...new Set(list)].sort((p, q) => p.localeCompare(q, 'it')).join('\n');
+    },
+  },
+  {
+    name: 'permessi',
+    description: 'Dice se STEM ha i permessi di Accessibilità (mouse e tastiera) e di Registrazione schermo, e per quale app vanno dati. ' +
+      'Con apri="accessibilita" o "schermo" apre il pannello giusto delle Impostazioni.',
+    inputSchema: { type: 'object', properties: { apri: { type: 'string', enum: ['accessibilita', 'schermo'] } } },
+    annotations: { title: 'Permessi', readOnlyHint: false },
+    run: async (a) => {
+      const p = await helper(['permessi']);
+      const lines = [
+        `Accessibilità (mouse e tastiera): ${p.accessibilita ? 'sì' : 'NO'}`,
+        `Registrazione schermo: ${p.schermo ? 'sì' : 'NO'}`,
+        `App che riceve i permessi: ${who(p)}`,
+      ];
+      if (a.apri && PANELS[a.apri]) {
+        await helper(['chiedi', a.apri]); // la mette nell'elenco, poi va attivata a mano
+        await run('/usr/bin/open', [PANELS[a.apri].url]);
+        lines.push(`Ho aperto Impostazioni di Sistema → Privacy e sicurezza → ${PANELS[a.apri].nome}: attiva ${who(p)}.`);
+      }
+      return lines.join('\n');
+    },
+  },
+];
+const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
+
+// --- JSON-RPC su stdio ---
+
+const send = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+const log = (...a) => process.stderr.write(`[mac] ${a.join(' ')}\n`);
+
+let queue = Promise.resolve(); // un'azione alla volta: mouse e tastiera non si accavallano
+
+async function callTool(params) {
+  const tool = BY_NAME.get(params?.name);
+  if (!tool) return { error: { code: -32602, message: `strumento sconosciuto: ${params?.name}` } };
+  const args = params.arguments && typeof params.arguments === 'object' ? params.arguments : {};
+  try {
+    const r = await tool.run(args);
+    return { result: { content: typeof r === 'string' ? [{ type: 'text', text: r }] : r } };
+  } catch (e) {
+    if (!(e instanceof ToolError)) log(params.name, e.stack || e.message);
+    return { result: { content: [{ type: 'text', text: e.message }], isError: true } };
+  }
+}
+
+async function handle(msg) {
+  const { id, method, params } = msg;
+  const reply = (r) => { if (id !== undefined && id !== null) send({ id, ...r }); };
+  switch (method) {
+    case 'initialize':
+      return reply({ result: {
+        protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'stem-mac', version: '1.0.0' },
+        instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
+          'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse.',
+      } });
+    case 'ping':
+      return reply({ result: {} });
+    case 'tools/list':
+      return reply({ result: { tools: TOOLS.map(({ run: _, ...t }) => t) } });
+    case 'tools/call':
+      queue = queue.then(async () => reply(await callTool(params))).catch((e) => log(e.message));
+      return queue;
+    default:
+      if (method === 'notifications/cancelled') { for (const c of inFlight) c.kill('SIGTERM'); return; } // "stop": mouse e tastiera si fermano
+      if (method?.startsWith('notifications/')) return; // initialized…: nessuna risposta
+      return reply({ error: { code: -32601, message: `metodo sconosciuto: ${method}` } });
+  }
+}
+
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', (line) => {
+  if (!line.trim()) return;
+  let msg;
+  try { msg = JSON.parse(line); } catch { return send({ id: null, error: { code: -32700, message: 'JSON non valido' } }); }
+  for (const m of Array.isArray(msg) ? msg : [msg]) {
+    Promise.resolve(handle(m)).catch((e) => {
+      log(e.stack || e.message);
+      if (m.id != null) send({ id: m.id, error: { code: -32603, message: e.message } });
+    });
+  }
+});
+rl.on('close', () => queue.finally(() => process.exit(0)));
+ensureHelper().catch((e) => log(e.message)); // compila subito, se serve, mentre il client si presenta
