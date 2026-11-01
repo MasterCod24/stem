@@ -228,16 +228,32 @@ const NAME_ALIASES = new Set(['system', 'sistem', 'sistemm', 'charge']);
 const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && (lev1(n, 'stem') || NAME_ALIASES.has(n)); };
 const COMMANDS = /^(apri|chiudi|cerca|trova|dimmi|dammi|fammi|mostrami|fai|crea|scrivi|leggi|leggimi|metti|ricordami|calcola|traduci|spiegami|raccontami|avvia|controlla|prepara|manda|riassumi|aiutami|puoi|potresti|sai|mi\s+(dici|fai|trovi|apri|cerchi|spieghi|racconti))\b/i;
 const STOP = /^(stop|basta|zitto|fermati|aspetta|silenzio)\b/i;
+const GREETING = /^(buongiorno|buon\s?giorno|buonasera|buona\s?sera|buonanotte|ciao|ehi|ehy|hey|salve|eccomi|sono\s+tornato)\b/i;
 const FOLLOW_UP_MS = 25000;
+
+// Per il registro: la prima parola e quella più simile a "stem" (per scoprire come il riconoscitore storpia il nome), mai la frase
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function clue(text) {
+  const words = text.trim().split(/\s+/).map(norm).filter(Boolean);
+  const best = words.map((w) => [w, editDistance(w, 'stem')]).sort((x, y) => x[1] - y[1])[0];
+  return `${words.length} parole; prima: "${words[0] || ''}"` + (best && best[1] <= 3 ? `; più simile a stem: "${best[0]}" (distanza ${best[1]})` : '');
+}
 
 // È per STEM? Il nome (anche storpiato), la conversazione in corso, o un comando all'inizio della frase
 function addressed(text) {
   const words = text.trim().split(/\s+/);
   const nameAt = words.findIndex(isName);
   if (nameAt >= 0) return { why: 'nome', text: [...words.slice(0, nameAt), ...words.slice(nameAt + 1)].join(' ').replace(/^[\s,.:;!?]+/, '').trim() || 'Ciao!' };
-  if (words.length < 2) return null; // un "sì" isolato fuori conversazione è quasi sempre per qualcun altro
+  if (words.length < 2) return GREETING.test(text.trim()) ? { why: 'saluto', text } : null; // un "sì" isolato è quasi sempre per altri, un "ciao" no
   if (performance.now() - lastReplyAt < FOLLOW_UP_MS && S.mode !== 'thinking') return { why: 'conversazione', text };
   if (COMMANDS.test(text.trim())) return { why: 'comando', text };
+  if (GREETING.test(text.trim()) && words.length <= 5) return { why: 'saluto', text }; // "Buongiorno!": se poi non era per lui, il cervello risponde [ignora]
   return null;
 }
 
@@ -362,7 +378,7 @@ function heard(text) {
     const full = pending; pending = '';
     const a = addressed(full);
     dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per STEM');
-    if (!a) { report(`non per STEM; prima parola: "${norm(full.split(/\s+/)[0] || '')}"`); if (S.mode === 'listening') setMode('idle'); return; }
+    if (!a) { report(`non per STEM; ${clue(full)}`); if (S.mode === 'listening') setMode('idle'); return; }
     // già partito in anticipo con lo stesso identico testo: non ricomincio; se è cambiato anche di una parola, riparto
     const sameAsEarly = earlySent && norm(a.text) === norm(earlySent);
     earlySent = '';
