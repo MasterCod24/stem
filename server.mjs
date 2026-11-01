@@ -190,6 +190,8 @@ async function pickVoice() {
   } catch (e) { console.error(`[voce] ${e.message}`); }
 }
 pickVoice();
+// Se passi a un piano a pagamento le voci italiane della Voice Library diventano usabili: ricontrollo ogni 10 minuti
+setInterval(() => { if (VOICE_ID === 'JBFqnCBsd6RMkjVDRZzb') pickVoice(); }, 10 * 60 * 1000).unref();
 
 const voice = createVoice({ key: ELEVEN_KEY, voiceId: () => VOICE_ID, model: VOICE_MODEL, macVoice: env.STEM_MAC_VOICE, onLog: (l) => console.error(l) });
 
