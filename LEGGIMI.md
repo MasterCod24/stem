@@ -28,7 +28,7 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 ## La voce
 - ElevenLabs con il modello `eleven_v4_turbo` (il più espressivo e veloce, mezzo credito a carattere). Ogni risposta usa **una sola voce** dall'inizio alla fine.
 - Quando i crediti finiscono STEM passa alla voce del Mac per tutta la risposta, e torna a ElevenLabs da solo quando si rinnovano. Con il piano gratuito (10.000 caratteri al mese) bastano poche decine di risposte.
-- La voce del Mac migliore è **Luca (Avanzata)**: Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema → Gestisci voci → Italiano.
+- La voce del Mac è quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata.
 
 ## Come funziona
 - `server.mjs`: avvio, finestre, pannello del browser (screencast), voce e cervello.
