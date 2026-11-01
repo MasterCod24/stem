@@ -18,9 +18,9 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Crediti ElevenLabs a zero fino al 19/11/2026 alle 05:19.** È il piano gratuito: 10.000 crediti al mese, e non se ne comprano altri a parte. Intanto STEM parla con la voce di sistema, oggi Siri Paolo. Se Tony passa a un piano a pagamento, STEM sceglie da solo la prima voce maschile italiana del suo account.
 - **`GIPHY_API_KEY` assente:** `[gif: …]` non mostra niente, mentre le animazioni `[anim: …]` di Wikimedia funzionano.
 - **Mai provati:** come suona `eleven_v4_turbo` (servono crediti) e le prestazioni dell'HUD nelle sessioni lunghe.
-- **Report a schermo intero, mai provato con una ricerca vera** (aggiunto il 1/11). L'animazione è stata misurata in un Chrome headless con dati finti: il report si assembla in circa 2 s e i video di YouTube partono da localhost. Restano da vedere sull'HUD vero:
-  - se il cervello chiama `mostra_report` da solo e con dati buoni (immagini con indirizzo diretto, link di YouTube veri);
-  - la fluidità delle sfocature sopra la grafica WebGL.
+- **Report a schermo intero: provato una volta con una ricerca vera** (1/11). Alla domanda «fammi una ricerca sullo stato della realtà virtuale… mettimela a schermo» il cervello ha chiamato `mostra_report` da solo dopo 54 s. Il report aveva 10 blocchi e 9 fonti (IDC, Wikimedia, due video YouTube), e video e immagine si sono caricati.
+  - **Fluidità:** in quella prova, con la voce e il browser attivi, l'entrata ha avuto scatti fino a 284 ms. Riaprendo lo stesso report a riposo, 17 aperture su 19 sono state pulite (circa 50 fotogrammi al secondo, il limite della grafica WebGL).
+  - Se gli scatti si notano, il primo indiziato è la sfocatura (`filter: blur`) delle schede in volo. Toglierla dal lampo non ha cambiato le misure.
 
 ## Come è fatto
 - **`server.mjs`** avvia e collega tutto:
@@ -71,6 +71,12 @@ Restano decisioni di Tony, non lavoro sul codice:
   - Suona in loop finché la scheda resta aperta: chiudila subito dopo la prova.
   - Poi cancella il file: `*.wav` non è nel `.gitignore`, e una registrazione della voce di Tony non deve finire online.
   - Con `?debug` ci sono anche `window.stemAsk('domanda')` e `window.stemReport({ titolo, blocchi })`, che apre un report senza fare la ricerca. I blocchi hanno la forma dello strumento `mostra_report`.
+- **HUD vero comandato da te, senza microfono né voce di Tony:**
+  1. avvia il server con `STEM_NO_OPEN=1 node server.mjs`, che non apre finestre;
+  2. apri l'HUD con lo stesso profilo e gli stessi flag di `openHud` in `server.mjs`, più `--remote-debugging-port=9556` e l'indirizzo `/?debug`;
+  3. via CDP chiama `stemAsk` o `stemReport`, fotografa con `Page.captureScreenshot` e misura con `Page.startScreencast`.
+
+  Alla fine chiudi quel Chrome tu: il server chiude solo quelli che ha aperto lui.
 - **Voce:**
   ```bash
   curl -s -X POST localhost:4321/api/tts -H 'content-type: application/json' -d '{"text":"prova","answer":"prova-1"}' -o /tmp/prova.audio -D -
