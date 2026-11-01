@@ -13,6 +13,7 @@ const SIZES = { video: [[4, 2]], verticale: [[2, 3], [2, 2]], testo: [[3, 2], [2
 const KICKER = { testo: 'NOTA', grafico: 'GRAFICO', dato: 'DATO', immagine: 'IMMAGINE', video: 'VIDEO', verticale: 'VIDEO' };
 const EASE = 'cubic-bezier(.16, .84, .24, 1)';
 const SWAP_MS = 9000;
+const LAND_MS = 480;                // durata del volo di una scheda
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -196,12 +197,13 @@ function land(card, delay, from, onLand) {
     { transform: from, opacity: 0, filter: 'blur(14px)' },
     { opacity: 0.75, offset: 0.35 },
     { transform: 'none', opacity: 1, filter: 'blur(0px)' },
-  ], { duration: 480, delay, easing: EASE, fill: 'backwards' }).finished.then(() => {
+  ], { duration: LAND_MS, delay, easing: EASE, fill: 'backwards' }).finished.then(() => {
     card.classList.add('landed');
     onLand?.();
   }).catch(() => {});
 }
 
+// Restituisce quando atterrano le schede (secondi dall'apertura): sfx.js ci aggancia i suoni
 function assemble(grid, cards) {
   // 1. lampo (0–0,8 s): copie dei pannelli che attraversano lo schermo dal fondo e svaniscono
   cards.forEach(({ card }, i) => {
@@ -224,6 +226,7 @@ function assemble(grid, cards) {
     const s = Math.random() < 0.5 ? -1 : 1;
     land(card, 860 + i * gap, `translate3d(${s * 50}px, 30px, -700px) rotateY(${-s * 16}deg) rotateX(9deg)`, live);
   });
+  return { hero: (420 + LAND_MS) / 1000, lands: rest.map((_, i) => (860 + i * gap + LAND_MS) / 1000) };
 }
 
 // ---------- Apri e chiudi ----------
@@ -238,11 +241,11 @@ document.body.append(root);
 
 let timers = [], shown = 0;
 
-// Restituisce false se non c'è niente da mostrare (e allora il report si chiude)
+// Restituisce i tempi di atterraggio per i suoni, oppure null se non c'è niente da mostrare (e allora il report si chiude)
 export function showReport(data) {
   const blocks = (Array.isArray(data?.blocchi) ? data.blocchi : []).slice(0, 30).map(clean).filter(Boolean);
   const slots = blocks.length ? pack(blocks) : [];
-  if (!slots.length) { hideReport(); return false; }
+  if (!slots.length) { hideReport(); return null; }
   const id = ++shown;
   timers.forEach(clearInterval); timers = [];
   root.getAnimations({ subtree: true }).forEach((a) => a.cancel()); // anche la chiusura di un report precedente
@@ -260,14 +263,14 @@ export function showReport(data) {
   });
   grid.replaceChildren(dock, ...cards.map((c) => c.card));
   root.classList.add('on');
-  assemble(grid, cards);
+  const plan = assemble(grid, cards);
   top.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 500, delay: 300, fill: 'backwards' });
 
   // le pile cambiano la prima volta dopo 9 s, come nel video, e poi ogni 9 s, sfasate di 1,3 s l'una dall'altra
   cards.filter(({ slot }) => slot.items.length > 1).forEach(({ card, slot }, j) => {
     setTimeout(() => { if (shown === id) timers.push(setInterval(() => next(card, slot), SWAP_MS)); }, j * 1300);
   });
-  return true;
+  return plan;
 }
 
 export function hideReport() {

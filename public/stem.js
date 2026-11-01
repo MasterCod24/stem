@@ -72,7 +72,9 @@ function showSmall(name, detail) {
 
 // ---------- Report a schermo intero (STEM lo manda con lo strumento mostra_report) ----------
 function openReport(r) {
-  if (!showReport(r)) return closeReport(); // zero blocchi: STEM lo sta chiudendo
+  const plan = showReport(r);
+  if (!plan) return closeReport(); // zero blocchi: STEM lo sta chiudendo
+  sfx?.report(plan);
   clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0; // il report prende il posto del browser
   Object.assign(S, reportDock()); S.dockTarget = 1;
 }

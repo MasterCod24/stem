@@ -6,6 +6,9 @@
 //   rivelazione ronzio ~207 Hz (Sol#3) con ronzio di Sol#1 sotto, attacco morbido, ~0.7 s
 //   ascolto     due seni a ~207 Hz che battono a ~1.5 Hz: gli "impulsi" sonar
 //   conferma    pop basso, poi ~294 Hz (Re4) e ~880 Hz (La5) sfalsati
+//   report      dal video di ROSE (34,4–36,6 s): salita a gradini prima di ogni ondata di pannelli,
+//               tappeto di toni fissi pulsati a ~24 Hz mentre volano, colpo quando atterra il
+//               protagonista, blip acuto ~10,6 kHz per ogni scheda che atterra
 // Ogni metodo accetta un istante facoltativo (secondi di ctx) da cui partire: serve al
 // rendering offline; senza argomenti parte subito.
 
@@ -273,6 +276,77 @@ export function createSfx(ctx) {
     osc('sine', 1106, ts, ts + 0.3, s);
   }
 
+  // ── report: i pannelli che entrano. plan = { hero, lands } in secondi dall'apertura (da report.js) ──
+  function report({ hero, lands }, t0 = now()) {
+    steps(t0, 0.22);                                          // prima ondata: lampo e protagonista
+    shimmer(t0 + 0.2, t0 + hero);
+    thud(t0 + hero);
+    if (!lands.length) return;
+    steps(t0 + hero + 0.04, 0.2);                             // seconda ondata: le schede
+    shimmer(t0 + hero + 0.24, t0 + Math.max(...lands) + 0.12);
+    for (const t of lands) blip(t0 + t);
+  }
+  // salita a gradini: due file di note brevi, 1,45 → 2,9 kHz e 6,9 → 8,6 kHz
+  function steps(a, len) {
+    const v = voice(1, 0.3), n = 6;
+    v.gain.setValueAtTime(1, a);
+    for (let k = 0; k < n; k++) {
+      const t = a + (len * k) / n, u = k / (n - 1);
+      for (const [f0, f1, lv] of [[1450, 2900, 0.011], [6900, 8600, 0.007]]) {
+        const g = ctx.createGain(); g.gain.value = 0; g.connect(v);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(lv, t + 0.006);
+        g.gain.setTargetAtTime(0, t + 0.018, 0.014);
+        osc('sine', f0 * Math.pow(f1 / f0, u), t, t + 0.12, g);
+      }
+    }
+  }
+  // tappeto di dati: toni fissi con un tremolo a ~24 Hz (i puntini dello spettrogramma)
+  function shimmer(a, b) {
+    if (b - a < 0.05) return;
+    const v = voice(1, 0.25), am = ctx.createGain(), d = ctx.createGain();
+    am.gain.value = 0.5; d.gain.value = 0.5;                  // tremolo pieno: puntini netti, come nel riferimento
+    osc('sine', 24, a, b + 0.3, d);
+    d.connect(am.gain); am.connect(v);
+    for (const [f, lv] of [[1850, 0.012], [7600, 0.004], [8500, 0.006], [10400, 0.002], [10800, 0.011]]) {
+      const g = ctx.createGain(); g.gain.value = lv; g.connect(am);
+      osc('sine', f, a, b + 0.3, g);
+    }
+    v.gain.setValueAtTime(0, a);
+    v.gain.linearRampToValueAtTime(1, a + 0.03);
+    v.gain.setValueAtTime(1, b - 0.02);
+    v.gain.setTargetAtTime(0, b - 0.02, 0.04);
+  }
+  // il protagonista atterra: schiocco largo (rumore sui 2 kHz) e un tonfo che scende
+  function thud(a) {
+    const v = voice(1, 0.3);
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    chain(src, filt('bandpass', 2000, 0.8), v);
+    src.start(a, 0.3); src.stop(a + 0.1);
+    v.gain.setValueAtTime(0, a);
+    v.gain.linearRampToValueAtTime(0.05, a + 0.004);
+    v.gain.setTargetAtTime(0, a + 0.01, 0.018);
+    const p = voice(1, 0.15);
+    const o = osc('sine', 150, a, a + 0.35, p);
+    o.frequency.exponentialRampToValueAtTime(62, a + 0.14);
+    p.gain.setValueAtTime(0, a);
+    p.gain.linearRampToValueAtTime(0.12, a + 0.008);
+    p.gain.setTargetAtTime(0, a + 0.03, 0.05);
+  }
+  // una scheda atterra: soffio stretto sui 10,6 kHz. Modulazione ad anello (seno × rumore sotto i 450 Hz):
+  // un passa-banda sul rumore lascerebbe fianchi larghi fino a 1 kHz, il riferimento invece è una macchia stretta
+  function blip(a) {
+    const v = voice(1, 0.35), ring = ctx.createGain();
+    ring.gain.value = 0; ring.connect(v);
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    chain(src, filt('lowpass', 450, 0.7), filt('lowpass', 450, 0.7), ring.gain);
+    src.start(a, (a * 7.3) % 1.5); src.stop(a + 0.12);
+    osc('sine', 10600, a, a + 0.12, ring);
+    v.gain.setValueAtTime(0, a);
+    v.gain.linearRampToValueAtTime(0.5, a + 0.008);
+    v.gain.setTargetAtTime(0, a + 0.025, 0.02);
+  }
+
   // ── elaborazione: letto quasi impercettibile ───────────────────────────────
   let thinking = null;
   function think(on, t0 = now()) {
@@ -311,5 +385,5 @@ export function createSfx(ctx) {
     return b;
   }
 
-  return { out, boot, reveal, listen, ack, think };
+  return { out, boot, reveal, listen, ack, think, report };
 }

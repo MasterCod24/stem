@@ -45,6 +45,8 @@ const SCENES = {
   ack:    { label: 'CONFERMA', note: 'blip a due toni (come da 22.6 s)', dur: 1.0, run: (s, t) => s.ack(t + 0.27) },
   think:  { label: 'ELABORA', note: 'letto quasi impercettibile (acceso 4 s)', dur: 6.0, run: (s, t) => { s.think(true, t + 0.2); s.think(false, t + 4.2); } },
   chat:   { label: 'DIALOGO', note: 'ascolto → conferma, due volte (la seconda più discreta)', dur: 9, run: (s, t) => { s.listen(t + 0.1); s.ack(t + 1.6); s.think(true, t + 1.9); s.think(false, t + 3.5); s.listen(t + 5); s.ack(t + 6.4); } },
+  report: { label: 'REPORT', note: 'salita, tappeto, colpo del protagonista, blip delle schede (come da 34,4 s)', dur: 2.8,
+            run: (s, t) => s.report({ hero: 0.9, lands: Array.from({ length: 9 }, (_, i) => 1.34 + i * 0.09) }, t) },
   seq:    { label: 'SEQUENZA', note: 'formazione → rivelazione → ascolto → conferma', dur: 13, run: (s, t) => { s.boot(t); s.reveal(t + 5.58); s.listen(t + 6.34); s.ack(t + 11.5); } },
 };
 
