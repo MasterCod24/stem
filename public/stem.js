@@ -225,6 +225,8 @@ function lev1(a, b) { // distanza di modifica ≤ 1?
 const NOT_NAME = new Set(['item', 'step', 'stei', 'sto', 'tema', 'ste']); // "Ste" è un diminutivo di Stefano
 // Storpiature reali del riconoscitore: "System" (locale it-IT), "Charge them" per "Ciao STEM" (memoria di STEM)
 const NAME_ALIASES = new Set(['system', 'sistem', 'sistemm', 'charge']);
+// "Stemma" (registro del 1/11: due richieste perse) è anche una parola vera: vale come nome solo a inizio frase o dopo un saluto
+const NAME_AT_START = new Set(['stemma']);
 const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && (lev1(n, 'stem') || NAME_ALIASES.has(n)); };
 const COMMANDS = /^(apri|chiudi|cerca|trova|dimmi|dammi|fammi|mostrami|fai|crea|scrivi|leggi|leggimi|metti|ricordami|calcola|traduci|spiegami|raccontami|avvia|controlla|prepara|manda|riassumi|aiutami|puoi|potresti|sai|mi\s+(dici|fai|trovi|apri|cerchi|spieghi|racconti))\b/i;
 const STOP = /^(stop|basta|zitto|fermati|aspetta|silenzio)\b/i;
@@ -248,7 +250,7 @@ function clue(text) {
 // È per STEM? Il nome (anche storpiato), la conversazione in corso, o un comando all'inizio della frase
 function addressed(text) {
   const words = text.trim().split(/\s+/);
-  const nameAt = words.findIndex(isName);
+  const nameAt = words.findIndex((w, i) => isName(w) || (NAME_AT_START.has(norm(w)) && (i === 0 || (i === 1 && GREETING.test(words[0])))));
   if (nameAt >= 0) return { why: 'nome', text: [...words.slice(0, nameAt), ...words.slice(nameAt + 1)].join(' ').replace(/^[\s,.:;!?]+/, '').trim() || 'Ciao!' };
   if (words.length < 2) return GREETING.test(text.trim()) ? { why: 'saluto', text } : null; // un "sì" isolato è quasi sempre per altri, un "ciao" no
   if (performance.now() - lastReplyAt < FOLLOW_UP_MS && S.mode !== 'thinking') return { why: 'conversazione', text };
