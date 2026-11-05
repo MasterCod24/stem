@@ -19,6 +19,13 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **A batteria il Mac va in stop, e l'agenda con lui.** L'orologio gira solo con STEM acceso e il Mac sveglio. A batteria lo schermo si spegne dopo 10 minuti senza tocchi e il Mac va in stop circa 5 secondi dopo (`pmset -g custom` e `pmset -g log` del 1/11); a corrente non va mai in stop. Parlare a STEM non conta come tocco. Non è misurato se l'HUD acceso basta a tenerlo sveglio.
   - Oggi `ricorda`, a batteria, dice al cervello di avvisare Tony.
   - Il rimedio sarebbe `caffeinate -i` finché un compito è vicino, al costo di un po' di batteria: lo decide Tony.
+- **Opus 5.5 al posto di Sonnet** (5/11, scelta di Tony). Con `prove/latenza.mjs` (8 domande brevi, persona di STEM, misure una dopo l'altra), la prima parola dal secondo turno in poi è arrivata così:
+  - Sonnet 5.5: mediana 0,8 s, massimo 1,3 s;
+  - Opus 5.5 a `xhigh`, l'effort ereditato da Claude Code: mediana 4,1 s, massimo 10,4 s;
+  - Opus 5.5 a `medium`, la scelta: mediana 2,3 s, massimo 3,4 s;
+  - Opus 5.5 a `low`: mediana 2,2 s, massimo 2,4 s.
+
+  Se a Tony la pausa sembra lunga, in `.env` può mettere `STEM_MODEL=sonnet` oppure `STEM_EFFORT=low`. Mai provato sulle ricerche lunghe nel browser, dove l'effort più alto potrebbe valere l'attesa.
 - **Memoria provata una volta** (5/11, cervello vero). Detto di passaggio «L'evocazione l'ho già visto», entro 13 secondi dalla chiusura dell'HUD finto STEM ha cominciato a fare memoria e ha salvato un ricordo sui gusti horror di Tony; prima, il 1/11, la stessa frase non era stata salvata. Dopo il riavvio ha ripreso la conversazione e sapeva l'ora esatta della domanda. Dopo `/api/reset` sapeva ancora che L'evocazione era già visto, dalla memoria. Il ricordo di prova è stato tolto: la memoria vera è com'era.
   - Le 184 domande del 1/11 non sono mai state rilette: lì ci sono persone e gusti che STEM non ha salvato. Se Tony vuole, si può fargliele rileggere una volta.
 - **Orologio provato una volta** (5/11, HUD headless e muto, cervello vero). «Ricordami tra due minuti di bere»: `ricorda` è stato chiamato al primo colpo, il server è stato riavviato in mezzo, il compito è arrivato alle 04:20:20 esatte e STEM ha parlato per primo. «Che ore sono a Tokyo?»: risposta giusta in un secondo, senza browser. Mai provato con la voce vera e l'HUD a schermo intero.
@@ -36,7 +43,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - Playwright MCP 0.0.83 sulla porta 8931, agganciato a quel Chrome, perché un browser lanciato da Playwright verrebbe chiuso alla fine di ogni risposta. Le schede nuove il server le chiude e ne apre l'indirizzo nella pagina principale;
   - lo screencast CDP mandato all'HUD come MJPEG su `/api/screen`;
   - l'HUD stesso, un Chrome `--app` a schermo intero con il profilo `runtime/hud-profile`.
-- **`brain.mjs`** è il cervello: un solo `claude -p` in stream-json, sempre acceso. Il modello è `sonnet`, scelto con `STEM_MODEL`.
+- **`brain.mjs`** è il cervello: un solo `claude -p` in stream-json, sempre acceso. Il modello è Opus 5.5 (`claude-opus-5-5`) a effort `medium`, scelti con `STEM_MODEL` e `STEM_EFFORT`. Senza `--effort` il cervello prenderebbe l'effort delle impostazioni di Claude Code di Tony (`modelSettings` in `~/.claude/settings.json`, oggi `xhigh` per Opus 5.5), che servono a programmare.
   - **Cosa può fare** (flag in `server.mjs`): `Read`, `Write`, `Edit`, `Glob` e `Grep`, ma non `Bash`. I file sono solo quelli delle cartelle dei documenti (`--add-dir`), e come MCP ha solo `playwright` e `mac`. Non ci sono domande di permesso: è approvato quello che sta dentro le cartelle, il resto è negato.
   - **Dove vive:** il suo `cwd` è `~/Library/Application Support/STEM/cervello`, fuori dalla repository. La sua memoria è quella di Claude Code per quella cartella: `~/.claude/projects/-Users-tony-Library-Application-Support-STEM-cervello/memory/`. Lì STEM scrive da solo. `runtime/cervello` e `~/.claude/projects/-Users-tony-STEM-runtime-cervello` sono avanzi del vecchio `cwd`, usato fino al 1/11.
   - **Fare memoria:** da solo salvava quasi niente (3 ricordi in 184 domande al 1/11), quindi glielo chiede il server. Dopo 3 minuti senza domande, o circa 20 secondi dopo che l'HUD si è chiuso, gli manda un messaggio `[memoria]` che non viene letto ad alta voce. Le frasi finite in `[ignora]` non contano. Con `STEM_APP`, chiuso l'HUD, il server aspetta che la memoria finisca prima di spegnersi, ma non oltre 5 minuti dalla chiusura.
@@ -91,6 +98,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 
   Alla fine chiudi quel Chrome tu: il server chiude solo quelli che ha aperto lui.
   - Per non far comparire la finestra di Google, prima del server avvia tu un Chrome headless con `--remote-debugging-port=9333` e un profilo temporaneo: il server lo trova sulla porta e lo usa. Sull'HUD di prova metti `--mute-audio`.
+- **Latenza del cervello:** `node prove/latenza.mjs <modello> [effort]`. Fa 8 domande a un `claude -p` sempre acceso con la persona di STEM, in una cartella vuota, e stampa il tempo alla prima parola per ogni turno, con mediana e massimo dal secondo. Consuma come 8 domande a STEM.
 - **Memoria:** una prova con il cervello vero scrive nella memoria vera di STEM. Prima copia la cartella `memory/` del cervello, dopo confrontala e rimettila com'era. Per provare la chiusura dell'HUD senza HUD: `STEM_APP=1 STEM_NO_OPEN=1 node server.mjs`, un ciclo di `curl` su `/api/status?hud=1` ogni 5 secondi, la domanda con `curl` su `/api/ask`, poi si ferma il ciclo. Il registro scrive `[memoria] rileggo la conversazione` e, dopo un riavvio, `[cervello] riprendo la conversazione di prima`.
 - **Agenda:** con `?debug`, `stemAsk('ricordami tra due minuti di …')`. Il compito compare in `runtime/agenda.json`, e quando STEM lo dice il registro del server scrive `[agenda] parlo per primo`. Gli strumenti da soli si provano anche senza cervello, con `ricorda` nella prova a mano di `mac/LEGGIMI-mac.md`.
 - **Voce:**
@@ -122,4 +130,5 @@ Restano decisioni di Tony, non lavoro sul codice:
   - usa un Chrome headless tuo, con profilo in una cartella temporanea e una porta diversa da 9333;
   - rallentala con il comando CDP `Animation.setPlaybackRate`.
   - Quel comando rallenta anche il tempo passato a `requestAnimationFrame`. Non mescolarlo con `performance.now()`: la scrittura a macchina delle note restava vuota proprio per questo.
+- **La latenza di un modello si misura in fila e su più turni.** Il 5/11 avevo previsto Opus 5.5 a `xhigh` tra 3 e 8 secondi, e a `low` vicino a Sonnet. Una prima misura con quattro processi in parallelo dava Opus quasi pari a Sonnet e `low` come il più lento: era rumore. Le misure una dopo l'altra, su 8 turni, hanno mostrato altro: Opus ha un fondo di circa 2 secondi a qualunque effort, e `xhigh` aggiunge pause fino a 10 secondi nei turni in cui pensa di più (più token in uscita).
 - **Un CLAUDE.md scritto a memoria sbaglia.** La prima versione di questo file, scritta da un riassunto, aveva una ventina di errori o mancanze contro il codice. Ogni affermazione nuova va controllata sul codice prima del commit.

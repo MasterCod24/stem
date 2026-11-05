@@ -28,7 +28,10 @@ const PW_PORT = Number(env.STEM_BROWSER_PORT || 8931);
 const ELEVEN_KEY = env.ELEVENLABS_API_KEY || '';
 let VOICE_ID = env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'; // George, finché non trovo una voce italiana
 const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_v4_turbo'; // il più veloce ed emotivo, mezzo credito a carattere
-const MODEL = env.STEM_MODEL || 'sonnet'; // veloce a rispondere; STEM_MODEL=opus per ragionare più a fondo
+// Opus 5.5 a effort medium. L'effort va scelto qui: se no il cervello eredita quello di Claude Code di Tony (xhigh, per programmare),
+// e misurato il 5/11 (prove/latenza.mjs) xhigh tace fino a 10 s prima della prima parola, medium circa 2,3 s, Sonnet 0,8 s.
+const MODEL = env.STEM_MODEL || 'claude-opus-5-5';
+const EFFORT = env.STEM_EFFORT || 'medium';
 const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
 
 // File del Mac: STEM legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
@@ -166,6 +169,7 @@ const brain = createBrain({
     '--permission-mode', 'acceptEdits',    // modifiche approvate da sole, ma solo dentro FILE_DIRS
     '--permission-prompts', 'none',        // tutto il resto (fuori dalle cartelle) è negato senza chiedere
     ...(MODEL !== 'default' ? ['--model', MODEL] : []),
+    ...(EFFORT !== 'default' ? ['--effort', EFFORT] : []),
   ],
 });
 const media = createMedia({ giphyKey: env.GIPHY_API_KEY || '', onLog: (l) => console.error(l) });

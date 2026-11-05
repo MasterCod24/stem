@@ -15,7 +15,7 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
   - comincia con un comando ("apri…", "cerca…", "dimmi…", "puoi…").
 
   Se una frase non era per lui, il cervello risponde `[ignora]` e tace.
-- **Più rapido:** il cervello è un processo Claude Code sempre acceso, quindi la prima frase arriva in circa 2 secondi. Se fai una pausa a metà di una richiesta, STEM parte già e, se poi continui, riparte con la frase completa.
+- **Più rapido:** il cervello è un processo Claude Code sempre acceso, con Opus 5.5 a effort medio, quindi comincia a rispondere in circa 2 secondi (con Sonnet, `STEM_MODEL=sonnet` in `.env`, in meno di 1). Se fai una pausa a metà di una richiesta, STEM parte già e, se poi continui, riparte con la frase completa.
 - **Interromperlo:** mentre parla di' "stop", "basta" o "aspetta", oppure chiamalo per nome. `Esc` lo zittisce.
 - **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. In `runtime/ascolto.log` STEM annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.
 
