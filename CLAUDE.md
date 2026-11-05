@@ -15,6 +15,17 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 5/11/2026)
+- **Ologrammi 3D: studiati e decisi, non ancora costruiti** (5/11, sessione interrotta per il limite di utilizzo). Tony ha chiesto: modelli 3D a schermo intero nell'HUD da sezionare ed esplodere, comandati con le mani, e una mappa degli sforzi dal blu al rosso.
+  - **Le scelte di Tony:** si fa tutto, ma le mani si collegano solo se, misurando sul suo M2, l'HUD resta sopra 45 fps. MediaPipe `@mediapipe/tasks-vision` 0.10.35, in locale: dalla 1.0 manda statistiche a Google ogni 60 s.
+  - **Cosa si sa:**
+    - Tony non ha file CAD; i modelli di oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello scaricato da Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
+    - L'ologramma va nello stesso renderer dell'HUD: un RenderPass prima del bloom, +2,4 ms. La sezione piena con lo stencil funziona solo se il composer usa un render target con `stencilBuffer: true` (misurato).
+    - Dopo una tool_use il flusso stream-json manda una riga `user` con il `tool_result`. Lo stato dell'ologramma conviene che sia solo del server, con gli strumenti MCP come client sottili.
+    - Il calcolo degli sforzi è vero: `prove/fea/voxel-fea.mjs` (elasticità lineare a voxel, multigriglia), provato contro la trave a sbalzo con freccia −0,88% a 80×8×8 (`node prove/fea/test-trave.mjs --mg 4 8`). È veloce sui pezzi compatti, lento sui gusci sottili (14 s per 50.400 voxel), e non regge gli assiemi bullonati. Cambiare lega non richiede di risolvere di nuovo.
+  - **Cose finte da non fare:** fisica molecolare, flussi di energia, surriscaldamento senza sorgenti di calore, feedback aptico, precisione millimetrica (MediaPipe sbaglia di circa 1 cm).
+  - **Gli studi completi** (cinque agenti) stanno in `~/.claude/projects/-Users-tony-STEM--claude-worktrees-stem-cognitive-architecture-60f739/7c2c4e0b-d6ea-417a-b9d4-12b592bfe457/subagents/workflows/wf_88db52c5-2a9/journal.jsonl`.
+  - **Resta da fare:** il contratto dei dati (forme in mm, carichi e vincoli sulle facce), i moduli (forme, stato nel server, sforzi in un worker, scena dell'HUD, mani), gli strumenti `mostra_ologramma`, `modifica_ologramma` e `analizza_struttura`, che restituiscono anche una foto del render così STEM vede quello che ha fatto, la misura delle mani e la prova vera.
+
 Restano decisioni di Tony, non lavoro sul codice:
 - **A batteria il Mac va in stop, e l'agenda con lui.** L'orologio gira solo con STEM acceso e il Mac sveglio. A batteria lo schermo si spegne dopo 10 minuti senza tocchi e il Mac va in stop circa 5 secondi dopo (`pmset -g custom` e `pmset -g log` del 1/11); a corrente non va mai in stop. Parlare a STEM non conta come tocco. Non è misurato se l'HUD acceso basta a tenerlo sveglio.
   - Oggi `ricorda`, a batteria, dice al cervello di avvisare Tony.
