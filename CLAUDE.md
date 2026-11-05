@@ -6,15 +6,20 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
 1. **Cosa è stato fatto:** `git log --oneline -10`. Ogni commit dice nel titolo cosa è cambiato per Tony e nel corpo il perché.
 2. **Lavoro lasciato a metà:** `git status`. File non committati vogliono dire che una sessione si è interrotta prima di chiudere.
 3. **Lo stato vivo** non è scritto qui, perché invecchierebbe: si guarda.
-   - `curl -s localhost:4321/api/status`: se non stampa niente, STEM è spento. Da acceso risponde `{"voice":{"provider":"eleven"|"mac","credits":…,"mac":"voce del Mac"},"browser":…,"gifs":…}`.
+   - `curl -s localhost:4321/api/status`: se non stampa niente, STEM è spento. Da acceso risponde `{"voice":{"provider":"eleven"|"mac","credits":…,"mac":"voce del Mac"},"browser":…,"gifs":…,"agenda":…}`.
      - `provider` dice quale voce useranno le prossime risposte.
      - `browser` dice che Playwright è pronto, non che la finestra di Google sia aperta.
+     - `agenda` conta i compiti arrivati all'ora e non ancora detti. Tutta l'agenda sta in `runtime/agenda.json`.
    - `tail -50 runtime/server.log` mostra server, cervello e voce. Le righe non hanno l'ora: gli avvii si separano dalle righe «STEM online». Il file si riempie solo se STEM è partito da `STEM.app`.
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per STEM (nome, conversazione, comando, saluto), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «stem». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 1/11/2026)
+## Aperto (al 5/11/2026)
 Restano decisioni di Tony, non lavoro sul codice:
+- **A batteria il Mac va in stop, e l'agenda con lui.** L'orologio gira solo con STEM acceso e il Mac sveglio. A batteria lo schermo si spegne dopo 10 minuti senza tocchi e il Mac va in stop circa 5 secondi dopo (`pmset -g custom` e `pmset -g log` del 1/11); a corrente non va mai in stop. Parlare a STEM non conta come tocco. Non è misurato se l'HUD acceso basta a tenerlo sveglio.
+  - Oggi `ricorda`, a batteria, dice al cervello di avvisare Tony.
+  - Il rimedio sarebbe `caffeinate -i` finché un compito è vicino, al costo di un po' di batteria: lo decide Tony.
+- **Orologio provato una volta** (5/11, HUD headless e muto, cervello vero). «Ricordami tra due minuti di bere»: `ricorda` è stato chiamato al primo colpo, il server è stato riavviato in mezzo, il compito è arrivato alle 04:20:20 esatte e STEM ha parlato per primo. «Che ore sono a Tokyo?»: risposta giusta in un secondo, senza browser. Mai provato con la voce vera e l'HUD a schermo intero.
 - **Crediti ElevenLabs a zero fino al 19/11/2026 alle 05:19.** È il piano gratuito: 10.000 crediti al mese, e non se ne comprano altri a parte. Intanto STEM parla con la voce di sistema, oggi Siri Paolo. Se Tony passa a un piano a pagamento, STEM sceglie da solo la prima voce maschile italiana del suo account.
 - **`GIPHY_API_KEY` assente:** `[gif: …]` non mostra niente, mentre le animazioni `[anim: …]` di Wikimedia funzionano.
 - **Mai provati:** come suona `eleven_v4_turbo` (servono crediti) e le prestazioni dell'HUD nelle sessioni lunghe.
@@ -41,8 +46,12 @@ Restano decisioni di Tony, non lavoro sul codice:
   - Se fallisce dopo aver già parlato, la frase si salta invece di cambiare voce.
   - La voce del Mac è quella di sistema, se italiana, anche Siri, letta da `defaults`. `STEM_MAC_VOICE` la scavalca.
 - **`media.mjs`** cerca le immagini: `[gif: …]` su GIPHY (senza chiave non trova niente), `[anim: …]` su Wikimedia Commons.
+- **`orologio.mjs`** è l'ora e l'agenda.
+  - **L'ora:** il server mette `[adesso: giorno, ora (fuso, UTC±n)]` davanti a ogni messaggio per il cervello, perché Claude Code gli dà solo la data.
+  - **L'agenda** è `runtime/agenda.json`. La scrivono gli strumenti `ricorda` e `agenda` di `mac/mac-mcp.mjs`, durante un turno del cervello, e il server, che toglie i compiti quando li consegna. I numeri dei compiti non si riusano mai.
+  - **La consegna:** l'HUD chiede `/api/status` ogni 5 s. Se `agenda` è più di zero e STEM è fermo, senza nessuno che parla, manda `/api/ask` con `{"agenda":true}`. Il server toglie i compiti scaduti e passa al cervello un messaggio `[agenda]` che contiene tutto il compito: serve perché, dopo un riavvio, il cervello non ricorda di averlo segnato. I compiti scaduti mentre STEM era spento arrivano appena si riaccende, detti come in ritardo.
 - **`public/`** è l'HUD:
-  - `stem.js`: ascolto sempre acceso, decide se una frase è per STEM, coda audio;
+  - `stem.js`: ascolto sempre acceso, decide se una frase è per STEM, coda audio, consegna dell'agenda;
   - `report.js`: il report a schermo intero, ricalcato sui secondi 34–46 del video di ROSE. È una griglia 12×6; le ultime due colonne delle ultime due righe restano alla testa, che ci scivola rimpicciolita (`S.dock` in `humanoid.js`). I blocchi entrano in quattro tempi: un lampo di copie in profondità (0–0,8 s), il primo video (0,4–0,9 s), gli altri uno alla volta (fino a circa 2 s), poi partono i video. I suoni dell'entrata stanno in `sfx.js` (`report`), agganciati ai tempi di atterraggio che `showReport` restituisce. I blocchi in più si impilano e cambiano ogni 9 s. Il testo del cervello entra solo con `textContent`, le immagini solo da `https`, i video solo come ID di YouTube;
   - `humanoid.js` e `mountains.js`: grafica (three.js 0.160 con bloom);
   - `sfx.js`: suoni sintetizzati.
@@ -77,6 +86,8 @@ Restano decisioni di Tony, non lavoro sul codice:
   3. via CDP chiama `stemAsk` o `stemReport`, fotografa con `Page.captureScreenshot` e misura con `Page.startScreencast`.
 
   Alla fine chiudi quel Chrome tu: il server chiude solo quelli che ha aperto lui.
+  - Per non far comparire la finestra di Google, prima del server avvia tu un Chrome headless con `--remote-debugging-port=9333` e un profilo temporaneo: il server lo trova sulla porta e lo usa. Sull'HUD di prova metti `--mute-audio`.
+- **Agenda:** con `?debug`, `stemAsk('ricordami tra due minuti di …')`. Il compito compare in `runtime/agenda.json`, e quando STEM lo dice il registro del server scrive `[agenda] parlo per primo`. Gli strumenti da soli si provano anche senza cervello, con `ricorda` nella prova a mano di `mac/LEGGIMI-mac.md`.
 - **Voce:**
   ```bash
   curl -s -X POST localhost:4321/api/tts -H 'content-type: application/json' -d '{"text":"prova","answer":"prova-1"}' -o /tmp/prova.audio -D -

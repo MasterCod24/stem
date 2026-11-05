@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { agenda, adesso, quandoIt, traQuanto } from '../orologio.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(DIR);
@@ -538,6 +539,76 @@ TOOLS.push({
     return n ? `Report sullo schermo: ${n} blocchi. Immagini e video che non si caricano restano vuoti.` : 'Report chiuso.';
   },
 });
+
+// --- Agenda: qui il cervello si segna i compiti; server.mjs guarda l'ora e, quando arriva, glieli ripassa (orologio.mjs) ---
+function elenco() {
+  const list = agenda.list();
+  if (!list.length) return 'Agenda vuota.';
+  return 'In agenda:\n' + list.map((x) => `- n. ${x.id}, ${quandoIt(x.quando)} (${traQuanto(x.quando - Date.now())}): ${x.cosa}`).join('\n');
+}
+function parseAlle(v) {
+  const s = String(v).trim();
+  const hm = s.match(/^(\d{1,2})[:.](\d{2})$/); // solo l'ora: la prossima volta che arriva, oggi o domani
+  if (hm) {
+    const h = Number(hm[1]), m = Number(hm[2]);
+    if (h > 23 || m > 59) return NaN;
+    const d = new Date(); d.setHours(h, m, 0, 0);
+    if (d.getTime() < Date.now() - 60_000) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  return new Date(s).getTime(); // «2026-11-07T08:30» senza fuso è ora locale
+}
+// A batteria il Mac va in stop dopo un po' che nessuno lo tocca (parlare a STEM non conta): lì niente gira, nemmeno l'orologio
+async function aBatteria() {
+  const r = await run('/usr/bin/pmset', ['-g', 'batt'], { timeout: 3000 });
+  return r.stdout.includes("'Battery Power'");
+}
+TOOLS.push({
+  name: 'ricorda',
+  description: 'Segna nell\'agenda un compito da fare più tardi: un promemoria, una sveglia, un controllo da fare a un\'ora precisa. ' +
+    'All\'ora giusta ricevi un messaggio che comincia con [agenda] e fai il compito, parlando tu per primo. ' +
+    '«cosa» è un\'istruzione completa per te stesso, chiara anche senza questa conversazione ' +
+    '(es. «Ricorda a Tony di chiamare la mamma», «Cerca se è uscito il trailer di GTA 6 e di\' a Tony cosa hai trovato»). ' +
+    'Il momento si dà in uno dei due modi: «tra_minuti» oppure «alle». Funziona solo con STEM acceso e il Mac sveglio: se no, il compito aspetta.',
+  inputSchema: { type: 'object', properties: {
+    cosa: { type: 'string', description: 'che cosa dovrai fare, scritto come istruzione per te stesso' },
+    tra_minuti: { type: 'number', description: 'fra quanti minuti da adesso, es. 90' },
+    alle: { type: 'string', description: 'ora locale: «18:00» (la prossima volta che arriva) oppure data e ora, «2026-11-07T08:30»' },
+  }, required: ['cosa'] },
+  annotations: { title: 'Segna in agenda' },
+  run: async (a) => {
+    const cosa = String(a.cosa ?? '').trim();
+    if (!cosa) throw new ToolError('«cosa» è vuoto: scrivi che cosa dovrai fare');
+    if (cosa.length > 600) throw new ToolError('«cosa» è troppo lungo (al massimo 600 caratteri)');
+    const hasMin = a.tra_minuti != null && a.tra_minuti !== '', hasAlle = String(a.alle ?? '').trim() !== '';
+    if (hasMin === hasAlle) throw new ToolError('dai il momento in uno dei due modi: «tra_minuti» oppure «alle»');
+    if (hasMin && num(a.tra_minuti, 'tra_minuti') <= 0) throw new ToolError('«tra_minuti» deve essere più di zero');
+    const quando = hasMin ? Date.now() + num(a.tra_minuti, 'tra_minuti') * 60_000 : parseAlle(a.alle);
+    if (!Number.isFinite(quando)) throw new ToolError(`«alle» non è un'ora che capisco: usa «18:00» oppure «2026-11-07T08:30». Adesso è ${adesso()}.`);
+    if (quando < Date.now() - 60_000) throw new ToolError(`${quandoIt(quando)} è già passato. Adesso è ${adesso()}.`);
+    if (quando > Date.now() + 366 * 864e5) throw new ToolError('è più in là di un anno: troppo lontano per l\'agenda');
+    const id = agenda.add(cosa, quando);
+    const nota = (await aBatteria())
+      ? '\nIl Mac va a batteria: se resta fermo va in stop, e il compito aspetta finché non si risveglia. Se l\'attesa è lunga (una sveglia, più di qualche minuto), dillo a Tony in mezza frase.'
+      : '';
+    return `Segnato, n. ${id}: ${quandoIt(quando)}, ${traQuanto(quando - Date.now())}.${nota}\n${elenco()}`;
+  },
+});
+TOOLS.push({
+  name: 'agenda',
+  description: 'Elenca i compiti segnati con «ricorda», con numero e ora. Con «togli» (i loro numeri) li cancella, per esempio se Tony cambia idea.',
+  inputSchema: { type: 'object', properties: {
+    togli: { type: 'array', items: { type: 'integer' }, description: 'numeri dei compiti da cancellare' },
+  } },
+  annotations: { title: 'Agenda' },
+  run: async (a) => {
+    const ids = Array.isArray(a.togli) ? a.togli.map(Number).filter(Number.isInteger) : [];
+    if (!ids.length) return elenco();
+    const n = agenda.remove(ids);
+    const fatto = n === 1 ? 'Tolto 1 compito' : `Tolti ${n} compiti`;
+    return `${fatto}${n < ids.length ? ' (gli altri numeri non c\'erano)' : ''}.\n${elenco()}`;
+  },
+});
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // --- JSON-RPC su stdio ---
@@ -570,7 +641,7 @@ async function handle(msg) {
         capabilities: { tools: {} },
         serverInfo: { name: 'stem-mac', version: '1.0.0' },
         instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
-          'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse.',
+          'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda».',
       } });
     case 'ping':
       return reply({ result: {} });

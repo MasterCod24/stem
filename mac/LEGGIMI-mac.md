@@ -23,6 +23,9 @@ con `--allowedTools mcp__mac` (gli strumenti diventano `mcp__mac__<nome>`).
 | `apri_app`, `chiudi_app` | nome approssimato, in italiano o in inglese («calcolatrice», «chat gpt»); chiusura sempre gentile, come cmd+Q |
 | `app_aperte`, `app_installate` | elenchi |
 | `permessi` | stato dei permessi, quale app li riceve; `apri` apre il pannello delle Impostazioni |
+| `mostra_report` | il report a schermo intero nell'HUD; lo strumento risponde e basta, i blocchi li legge `brain.mjs` dalla chiamata |
+| `ricorda` | segna un compito in `runtime/agenda.json` con `tra_minuti` oppure `alle` («18:00», o «2026-11-07T08:30»); a batteria aggiunge l'avviso che il Mac può andare in stop |
+| `agenda` | elenca i compiti; `togli` li cancella per numero. All'ora giusta li consegna `server.mjs` (vedi `orologio.mjs`) |
 
 ## Permessi
 
@@ -46,3 +49,5 @@ risponde con il pannello da aprire invece di fallire in silenzio. Ricompilare l'
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"permessi","arguments":{}}}' | node mac/mac-mcp.mjs
 ```
+
+Con `"name":"ricorda","arguments":{"cosa":"Prova","tra_minuti":2}` il compito finisce in `runtime/agenda.json`, e uno STEM acceso lo dirà davvero: toglilo dopo, con `agenda` e `togli`.

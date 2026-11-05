@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createBrain } from './brain.mjs';
 import { createVoice } from './voice.mjs';
 import { createMedia } from './media.mjs';
+import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, 'runtime');
@@ -214,6 +215,20 @@ function noteHud(q) {
   if (now !== micState) { appendLog(now === 'muto' ? 'microfono: silenzio totale da 30 s (nessun segnale)' : `microfono: arriva suono (picco ${mic.toFixed(3)})`); micState = now; }
 }
 
+// --- Agenda: i compiti che il cervello si è segnato con «ricorda» (orologio.mjs) ---
+// L'HUD chiede /api/status ogni 5 s: quando un compito è arrivato all'ora e STEM è fermo, chiede /api/ask con agenda:true
+// e STEM parla per primo. Il messaggio contiene tutto il compito, perché dopo un riavvio il cervello non ricorda di averlo segnato.
+function agendaText(due) {
+  const now = Date.now();
+  const righe = due.map((x) => {
+    const tardi = now - x.quando > 2 * 60_000
+      ? `, in ritardo di ${traQuanto(x.quando - now).replace(/ fa$/, '')} perché STEM era spento o il Mac in stop` : '';
+    return `- per ${quandoIt(x.quando, now)}${tardi}: ${x.cosa}`;
+  });
+  const quali = due.length === 1 ? 'un compito che ti eri segnato' : 'alcuni compiti che ti eri segnato';
+  return `[agenda] È l'ora di ${quali}. Tony non ha detto niente: parli tu per primo.\n${righe.join('\n')}`;
+}
+
 // --- Avviato dall'app STEM (in background): quando chiudi l'HUD, STEM si spegne da solo ---
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
 if (env.STEM_APP) {
@@ -282,19 +297,28 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/status') {
     if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; noteHud(url.searchParams); }
     return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ voice: voice.status, browser: browserReady, gifs: media.gifs }));
+      .end(JSON.stringify({ voice: voice.status, browser: browserReady, gifs: media.gifs, agenda: agenda.due().length }));
   }
 
   if (req.method === 'POST' && p === '/api/ask') {
-    const { text } = await readBody(req);
-    if (!text?.trim()) return res.writeHead(400).end();
+    const body = await readBody(req);
+    let text = String(body.text || '').trim();
+    if (body.agenda) { // li tolgo dall'agenda subito: un secondo HUD, o il giro dopo, non li ripete
+      const due = agenda.due();
+      if (!due.length) return res.writeHead(200, { 'content-type': 'application/x-ndjson' }).end(JSON.stringify({ t: 'done' }) + '\n');
+      agenda.remove(due.map((x) => x.id));
+      console.error(`[agenda] parlo per primo: ${due.length} ${due.length === 1 ? 'compito' : 'compiti'}`);
+      text = agendaText(due);
+    }
+    if (!text) return res.writeHead(400).end();
+    text = `[adesso: ${adesso()}]\n${text}`; // l'ora a ogni domanda: Claude Code gli dà solo la data
     res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' });
     let open = true, pending = 0, finished = false;
     const write = (ev) => { if (open) res.write(JSON.stringify(ev) + '\n'); };
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
     ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
-    await brain.ask(text.trim(), (ev) => {
+    await brain.ask(text, (ev) => {
       if (ev.t !== 'media') return write(ev);
       pending++; // GIF e animazioni: le cerco mentre STEM parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });

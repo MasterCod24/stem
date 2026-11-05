@@ -32,12 +32,14 @@ function drawStatus(t, at) {
 }
 
 // ---------- Stato dei sistemi (al server, per il registro: solo stati, niente audio né testo) ----------
+// La risposta dice anche quanti compiti dell'agenda sono arrivati all'ora: se STEM è fermo e nessuno sta parlando, parla per primo
 let micPeak = 0;
 async function pollStatus() {
   try {
     const q = new URLSearchParams({ hud: 1, ear: ear, lock: earLock ? 1 : 0, rec: rec ? 'ear' : '-', mic: micPeak.toFixed(3), mode: S.mode });
     micPeak = 0;
-    await fetch('/api/status?' + q);
+    const st = await (await fetch('/api/status?' + q)).json();
+    if (st.agenda > 0 && S.mode === 'idle' && !S.hearing && !pending) { report('agenda: STEM parla per primo'); ask('', { agenda: true }); }
   } catch {}
 }
 setTimeout(pollStatus, 0); setInterval(pollStatus, 5000);
@@ -61,7 +63,8 @@ function showAction(name, detail) {
 
 // File e Mac: un'etichetta discreta sotto la scritta di stato, niente pannello
 const SMALL_VERBS = { Read: 'Leggo', Write: 'Creo', Edit: 'Modifico', Glob: 'Cerco file', Grep: 'Cerco nei file',
-  schermo: 'Guardo lo schermo', clic: 'Clicco', scrivi: 'Scrivo', tasti: 'Tasti', apri_app: 'Apro', chiudi_app: 'Chiudo', scorri: 'Scorro', trascina: 'Trascino' };
+  schermo: 'Guardo lo schermo', clic: 'Clicco', scrivi: 'Scrivo', tasti: 'Tasti', apri_app: 'Apro', chiudi_app: 'Chiudo', scorri: 'Scorro', trascina: 'Trascino',
+  ricorda: 'Segno in agenda', agenda: 'Guardo l\'agenda' };
 let smallTimer = 0;
 function showSmall(name, detail) {
   $('small').textContent = `${SMALL_VERBS[name] || name.replace(/_/g, ' ')}${detail ? ' · ' + detail : ''}`.toUpperCase();
@@ -176,7 +179,7 @@ function silence() {
 
 // ---------- Cervello ----------
 let controller = null, lastReplyAt = -1e9;
-async function ask(text) {
+async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il server prende i compiti arrivati all'ora
   silence();
   spokeThisAnswer = false; earlySent = '';
   const gen = generation;
@@ -186,7 +189,7 @@ async function ask(text) {
   sfx?.ack();
   streamDone = false;
   try {
-    const r = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }), signal: controller.signal });
+    const r = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(agenda ? { agenda } : { text }), signal: controller.signal });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
     let rest = '';
