@@ -154,6 +154,7 @@ browser.on('exit', (code) => { browserReady = false; console.error(`[browser] us
 // --- Cervello: un processo sempre acceso (brain.mjs) ---
 const brain = createBrain({
   cwd: BRAIN,
+  sessionFile: path.join(RUNTIME, 'cervello.json'), // quale conversazione riprendere dopo un riavvio
   onLog: (l) => { console.error(l); },
   args: [
     '--append-system-prompt', PERSONA,
@@ -229,11 +230,34 @@ function agendaText(due) {
   return `[agenda] È l'ora di ${quali}. Tony non ha detto niente: parli tu per primo.\n${righe.join('\n')}`;
 }
 
+// --- Memoria: dopo 3 minuti di silenzio, o appena l'HUD si chiude, il cervello rilegge la conversazione e salva quello che vale ---
+// Da solo salvava quasi niente (3 ricordi in 184 domande, al 1/11): chiederglielo al momento giusto è il meccanismo.
+const MEMORY_TEXT = `[memoria] Tony non sta parlando: è il momento di fare memoria, e quello che scrivi adesso non viene letto ad alta voce.
+Rileggi la conversazione da dove eri arrivato l'ultima volta che hai fatto memoria, e salva nella tua memoria quello che ti servirà nelle prossime conversazioni:
+- le persone: chi sono per Tony e come si chiamano nelle sue app (per esempio il nome del contatto su WhatsApp);
+- i gusti e le abitudini di Tony: film e serie già visti o che non gli piacciono, i posti, gli orari, come vuole le risposte;
+- le correzioni: dove hai sbagliato e che cosa voleva invece.
+Solo quello che varrà ancora tra un mese, niente cose di un giorno solo. Niente salute, soldi, password o fatti privati di altre persone, a meno che Tony non ti abbia chiesto di ricordarli. Se un ricordo c'è già, aggiornalo invece di farne un doppione. Se non c'è niente di nuovo, non scrivere niente.
+Alla fine rispondi solo: fatto.`;
+let memoryDue = false, memoryBusy = false, memoryTimer = 0;
+function conversationTurn() { memoryDue = true; clearTimeout(memoryTimer); memoryTimer = setTimeout(rememberNow, 3 * 60_000); }
+async function rememberNow() {
+  clearTimeout(memoryTimer);
+  if (!memoryDue || memoryBusy || brain.busy) return; // se sta lavorando, la fine di quel turno riarma l'attesa
+  memoryDue = false; memoryBusy = true;
+  console.error('[memoria] rileggo la conversazione');
+  await brain.ask(`[adesso: ${adesso()}]\n${MEMORY_TEXT}`, () => {}); // nessuno ascolta: niente voce. Una domanda di Tony la interrompe
+  memoryBusy = false;
+}
+
 // --- Avviato dall'app STEM (in background): quando chiudi l'HUD, STEM si spegne da solo ---
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
 if (env.STEM_APP) {
   setInterval(() => { // 15 giri da 10 s senza notizie dall'HUD: è chiuso
-    if (++hudMissed >= 15) { console.log('HUD chiuso: spengo STEM'); process.exit(0); }
+    hudMissed++;
+    if (hudMissed >= 2) rememberNow(); // 20 s senza HUD: la conversazione è finita, faccio memoria (anche di un compito che finisce dopo)
+    const memoryPending = memoryBusy || memoryDue;
+    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo STEM'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
   }, 10000);
 }
 
@@ -318,12 +342,15 @@ const server = http.createServer(async (req, res) => {
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
     ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
+    let ignored = false;
     await brain.ask(text, (ev) => {
+      if (ev.t === 'ignore') ignored = true;
       if (ev.t !== 'media') return write(ev);
       pending++; // GIF e animazioni: le cerco mentre STEM parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
     });
     finished = true; close();
+    if (!ignored) conversationTurn(); // una frase non per STEM non è conversazione: niente memoria da fare
     return;
   }
 

@@ -2,6 +2,7 @@
 // Niente avvio a ogni domanda: dalla seconda in poi il primo testo arriva in circa un secondo invece di tre.
 // Una domanda nuova interrompe quella in corso (control_request interrupt) senza uccidere il processo.
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 
 // Segnali che STEM scrive nel testo e che non vanno letti ad alta voce:
@@ -10,7 +11,11 @@ import path from 'node:path';
 //   [gif: parole]   GIF simpatica (GIPHY)      [anim: words]   animazione che spiega (Wikimedia Commons)
 const TAG = /\[\[?\s*([a-zà-ù]+)\s*(?::\s*([^\]]*?))?\s*\]\]?/gi;
 
-export function createBrain({ cwd, args, onLog = () => {} }) {
+// Dopo un riavvio di STEM riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
+// riaprendo l'HUD poco dopo, "e il secondo film che mi hai detto?" ha ancora senso. Più in là vale la memoria.
+const RESUME_MS = 2 * 3600_000;
+
+export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
   let child = null, buf = '', stderr = '';
   let turn = null;          // turno in corso
   let waiting = null;       // domanda da mandare appena il turno interrotto si chiude
@@ -18,16 +23,19 @@ export function createBrain({ cwd, args, onLog = () => {} }) {
 
   let bornAt = 0, fails = 0;
   let sessionId = null, resume = true; // se il processo muore riparte nella stessa conversazione (tranne dopo un reset)
+  try { const s = JSON.parse(fs.readFileSync(sessionFile, 'utf8')); if (Date.now() - s.at < RESUME_MS) sessionId = s.id; } catch {}
+  const saveSession = () => { try { fs.writeFileSync(sessionFile, JSON.stringify({ id: sessionId, at: Date.now() })); } catch {} };
   function start() {
     if (child) return;
     bornAt = Date.now();
     const extra = resume && sessionId ? ['--resume', sessionId] : [];
+    if (extra.length) onLog('[cervello] riprendo la conversazione di prima');
     const c = spawn('claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', ...extra, ...args], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     child = c;
     resume = true;
     buf = ''; stderr = '';
-    c.stdout.on('data', onData);
+    c.stdout.on('data', (d) => { if (child === c) onData(d); }); // righe arrivate dopo la morte: non devono riscrivere sessionId
     c.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
     c.stdin.on('error', () => {}); // EPIPE se il processo è appena morto: non deve far cadere il server
     let gone = false;
@@ -35,7 +43,10 @@ export function createBrain({ cwd, args, onLog = () => {} }) {
       if (gone) return; gone = true;
       onLog(`[cervello] fermo (${why}) ${stderr.trim().slice(-300)}`);
       if (child === c) child = null;
-      fails = Date.now() - bornAt < 20000 ? fails + 1 : 0; // se muore appena nato, aspetto sempre di più (prima di endTurn, che può farlo ripartire)
+      const quick = Date.now() - bornAt < 20000;
+      // Ripreso e morto subito (conversazione sparita o rovinata): riparto da una nuova, se no riproverei la stessa all'infinito
+      if (quick && extra.length && sessionId) { onLog('[cervello] non riesco a riprendere la conversazione: ne apro una nuova'); sessionId = null; }
+      fails = quick ? fails + 1 : 0; // se muore appena nato, aspetto sempre di più (prima di endTurn, che può farlo ripartire)
       if (turn) endTurn({ error: 'Il cervello si è fermato.' });
       clearTimeout(respawnTimer);
       if (!child) respawnTimer = setTimeout(start, Math.min(60000, 1500 * 2 ** fails));
@@ -128,6 +139,7 @@ export function createBrain({ cwd, args, onLog = () => {} }) {
     if (!T) return;
     if (!T.ignored && !T.interrupted) speakable(true);
     if (error && !T.interrupted) T.emit({ t: 'error', s: error });
+    if (sessionFile && sessionId) saveSession(); // anche l'ora dell'ultima risposta: dice se dopo un riavvio vale la pena riprenderla
     turn = null;
     T.resolve();
     if (waiting) { const w = waiting; waiting = null; begin(w); }
@@ -159,7 +171,10 @@ export function createBrain({ cwd, args, onLog = () => {} }) {
   }
 
   function stop() { if (waiting) { waiting.resolve(); waiting = null; } interrupt(); }
-  function kill(reset = false) { if (reset) { resume = false; sessionId = null; } child?.kill('SIGTERM'); }
+  function kill(reset = false) {
+    if (reset) { resume = false; sessionId = null; try { fs.unlinkSync(sessionFile); } catch {} }
+    child?.kill('SIGTERM');
+  }
   function notify(ev) { turn?.emit(ev); } // eventi esterni (es. il sito cambiato) verso la domanda in corso
 
   start(); // acceso subito: la prima domanda non aspetta l'avvio

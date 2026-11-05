@@ -5,7 +5,7 @@
 Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con voce ElevenLabs, naviga su Google, usa le app e lo schermo al posto tuo.
 
 ## Avvio
-- **App STEM:** doppio clic su `STEM.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: il busto si assembla dalle particelle, poi si svelano le montagne. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti.
+- **App STEM:** doppio clic su `STEM.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: il busto si assembla dalle particelle, poi si svelano le montagne. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
 - **Da Terminale:** `./avvia.command`, utile anche la prima volta per inserire la chiave ElevenLabs. Ctrl-C o chiudere la finestra spegne tutto.
 
 ## Parlare con STEM
@@ -25,6 +25,7 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 - **Report a schermo intero:** alla fine di una ricerca che vuoi vedere, STEM apre un report come quello di ROSE. È una griglia di note, grafici, un dato in grande, immagini e video di YouTube muti, che arrivano dal fondo e si mettono a fuoco uno alla volta, con i loro suoni, mentre lui si sposta nell'angolo in basso a destra. Le note in più si alternano ogni 9 secondi. Si chiude con `Esc`, oppure chiedendoglielo.
 - **Il Mac:** apre e chiude app, guarda lo schermo, clicca, scrive e usa la tastiera (strumenti in `mac/`). Per le azioni normali procede da solo; prima di inviare, cancellare, comprare, pubblicare, cambiare impostazioni o installare chiede il tuo sì. Non scrive mai nei campi password. Serve il permesso in Impostazioni di Sistema → Privacy e sicurezza: **Accessibilità** e **Registrazione schermo e audio di sistema** per l'app che lo avvia (STEM o il Terminale).
 - **File:** legge, crea e modifica in Scrivania, Documenti, Download, Immagini, Filmati, Musica e iCloud Drive; il resto del Mac (file nascosti, Libreria, cartella di STEM) gli è chiuso.
+- **Memoria:** quando una conversazione finisce (3 minuti di silenzio, o chiudi l'HUD), STEM la rilegge e si segna quello che varrà ancora tra un mese: persone, gusti, abitudini, correzioni. Niente salute, soldi o password, a meno che tu non glielo chieda. Se riapri STEM entro 2 ore, riprende la conversazione da dove eravate. Puoi chiedergli «cosa ricordi di me?» o dirgli «dimentica…».
 - **Orologio e agenda:** sa sempre che ore sono. Se gli chiedi qualcosa per dopo («ricordami alle 18 di chiamare la mamma», «tra un'ora guarda se è uscito il trailer di GTA 6»), se lo segna e all'ora giusta parla lui per primo, anche se nel frattempo STEM si è riavviato. Funziona solo con STEM acceso e il Mac sveglio: se a quell'ora era spento o in stop, te lo dice appena si riaccende. A batteria il Mac va in stop dopo un po' che nessuno lo tocca, e parlargli non conta: per una sveglia, attaccalo alla corrente.
 
 ## La voce
