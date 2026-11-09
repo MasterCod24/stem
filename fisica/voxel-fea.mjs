@@ -4,7 +4,7 @@
 // Unità coerenti consigliate: mm, N, MPa (= N/mm²). Spostamenti in mm, sforzi in MPa.
 // Ogni voxel pieno è un esaedro a 8 nodi (trilineare); la matrice di rigidezza
 // dell'elemento si calcola una volta per materiale (Gauss 2×2×2) e il prodotto
-// K·u si fa elemento per elemento, senza assemblare K. Il sistema si risolve con
+// K·u si fa elemento per elemento, senza assemblare K, solo sui nodi usati. Il sistema si risolve con
 // il gradiente coniugato precondizionato con la diagonale (Jacobi).
 
 const ora = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
@@ -78,19 +78,48 @@ export function matriceKe(E, nu, hx, hy, hz) {
   return K;
 }
 
+// Numerazione compatta: hanno gradi di libertà solo i nodi usati, nell'ordine della griglia, così somme e
+// prodotti visitano gli stessi numeri nello stesso ordine della griglia intera (risultati identici). Con i
+// vettori sulla griglia intera un'asta in diagonale, 4761 voxel in 2,95 milioni di celle, chiedeva 827 MB e 25 s.
+function numera(usato) {
+  const mappa = new Int32Array(usato.length).fill(-1);
+  let k = 0;
+  for (let n = 0; n < usato.length; n++) if (usato[n]) mappa[n] = k++;
+  const nodi = new Int32Array(k);
+  for (let n = 0; n < usato.length; n++) if (usato[n]) nodi[mappa[n]] = n;
+  return { mappa, nodi };
+}
+
+// I 24 gradi di libertà (compatti) di ogni elemento, nell'ordine locale nodo per nodo, x y z.
+function gradi(base, off, mappa) {
+  const dofs = new Int32Array(24 * base.length);
+  for (let e = 0; e < base.length; e++) {
+    for (let a = 0; a < 8; a++) {
+      const c = 3 * mappa[base[e] + off[a]];
+      for (let d = 0; d < 3; d++) dofs[24 * e + 3 * a + d] = c + d;
+    }
+  }
+  return dofs;
+}
+
 /**
  * Crea il modello.
- * voxel: Uint8Array di nx·ny·nz, indice v = i + nx·(j + ny·k); 0 = vuoto, n = materiali[n − 1].
+ * voxel: Uint8Array o Uint16Array di nx·ny·nz, indice v = i + nx·(j + ny·k); 0 = vuoto, n = materiali[n − 1].
  * h: lato del voxel, numero o [hx, hy, hz]. origine: angolo (i, j, k) = (0, 0, 0).
- * materiali: [{ E, nu, snervamento? }].
+ * materiali: [{ E, nu, snervamento?, frazione? }], fino a 65535.
+ * I materiali con lo stesso ν condividono una Ke, scalata con E (Ke è lineare in E): con 200 pezzi
+ * per 64 livelli di frazione sarebbero 12800 matrici da 4,6 kB, invece ne bastano tante quanti i ν.
+ * I nodi n vanno da 0 a nn − 1 sulla griglia intera (posNodo, usato, la u di risolvi); fisso e f sono
+ * compatti: il nodo n ha i gradi di libertà 3·mappa[n] + 0, 1, 2, e ndof = 3·nu.
  */
 export function creaModello({ nx, ny, nz, h, voxel, materiali, origine = [0, 0, 0] }) {
   const [hx, hy, hz] = typeof h === 'number' ? [h, h, h] : h;
   const NX = nx + 1, NY = ny + 1, NZ = nz + 1;
-  const nn = NX * NY * NZ, ndof = 3 * nn;
+  const nn = NX * NY * NZ;
+  if (materiali.length > 65535) throw new Error(`troppi materiali: ${materiali.length}, al massimo 65535`);
   let ne = 0;
   for (let v = 0; v < voxel.length; v++) if (voxel[v]) ne++;
-  const base = new Int32Array(ne), mat = new Uint8Array(ne), vox = new Int32Array(ne);
+  const base = new Int32Array(ne), mat = new Uint16Array(ne), vox = new Int32Array(ne);
   const usato = new Uint8Array(nn);
   const off = new Int32Array(8);
   for (let a = 0; a < 8; a++) off[a] = (XI[a] + 1) / 2 + NX * ((ETA[a] + 1) / 2 + NY * ((ZETA[a] + 1) / 2));
@@ -106,20 +135,33 @@ export function creaModello({ nx, ny, nz, h, voxel, materiali, origine = [0, 0, 
         for (let a = 0; a < 8; a++) usato[b + off[a]] = 1;
         e++;
       }
+  const { mappa, nodi } = numera(usato);
+  const nu = nodi.length, ndof = 3 * nu;
   const dofOff = new Int32Array(24);
   for (let a = 0; a < 8; a++) for (let d = 0; d < 3; d++) dofOff[3 * a + d] = 3 * off[a] + d;
   const B0 = matriceB(0, 0, 0, hx, hy, hz);
+  // Famiglia di ogni materiale (stesso ν) e il suo E rispetto a quello della famiglia; per elemento
+  // l'indice della Ke (ke) e il fattore (w). Con un solo materiale w vale 1 e i conti restano gli stessi.
+  const famiglie = [], fam = new Uint16Array(materiali.length), sc = new Float64Array(materiali.length);
+  materiali.forEach((q, i) => {
+    let f = famiglie.findIndex((F) => F.nu === q.nu);
+    if (f < 0) { f = famiglie.length; famiglie.push({ E: q.E, nu: q.nu }); }
+    fam[i] = f;
+    sc[i] = q.E / famiglie[f].E;
+  });
+  const ke = new Uint16Array(ne), w = new Float64Array(ne);
+  for (let e = 0; e < ne; e++) { ke[e] = fam[mat[e]]; w[e] = sc[mat[e]]; }
   return {
-    nx, ny, nz, hx, hy, hz, origine, NX, NY, NZ, nn, ndof, ne,
-    voxel, base, mat, vox, usato, off, dofOff, materiali,
-    Ke: materiali.map((m) => matriceKe(m.E, m.nu, hx, hy, hz)),
-    DB0: materiali.map((m) => prodottoDB(matriceD(m.E, m.nu), B0)),
+    nx, ny, nz, hx, hy, hz, origine, NX, NY, NZ, nn, nu, ndof, ne,
+    voxel, base, mat, vox, usato, mappa, nodi, off, dofOff, dofs: gradi(base, off, mappa), materiali, ke, w,
+    Ke: famiglie.map((F) => matriceKe(F.E, F.nu, hx, hy, hz)),
+    DB0: famiglie.map((F) => prodottoDB(matriceD(F.E, F.nu), B0)),
     fisso: new Uint8Array(ndof),
     f: new Float64Array(ndof),
   };
 }
 
-/** Coordinate del nodo n. */
+/** Coordinate del nodo n (della griglia intera). */
 export function posNodo(m, n) {
   const i = n % m.NX, j = ((n / m.NX) | 0) % m.NY, k = (n / (m.NX * m.NY)) | 0;
   return [m.origine[0] + i * m.hx, m.origine[1] + j * m.hy, m.origine[2] + k * m.hz];
@@ -128,11 +170,10 @@ export function posNodo(m, n) {
 /** Incastra (spostamento zero) i nodi usati per cui filtro(x, y, z) è vero; dir sceglie ux, uy, uz. */
 export function incastra(m, filtro, dir = [true, true, true]) {
   let n0 = 0;
-  for (let n = 0; n < m.nn; n++) {
-    if (!m.usato[n]) continue;
-    const [x, y, z] = posNodo(m, n);
+  for (let c = 0; c < m.nu; c++) {
+    const [x, y, z] = posNodo(m, m.nodi[c]);
     if (!filtro(x, y, z)) continue;
-    for (let d = 0; d < 3; d++) if (dir[d]) m.fisso[3 * n + d] = 1;
+    for (let d = 0; d < 3; d++) if (dir[d]) m.fisso[3 * c + d] = 1;
     n0++;
   }
   return n0;
@@ -144,7 +185,7 @@ export function incastra(m, filtro, dir = [true, true, true]) {
  * carichi nodali coerenti (un quarto dell'area della faccia a ogni suo nodo).
  */
 export function forzaSuFacce(m, filtro, F) {
-  const { nx, ny, nz, hx, hy, hz, voxel, base, vox, off, ne } = m;
+  const { nx, ny, nz, hx, hy, hz, voxel, base, vox, off, mappa, ne } = m;
   const scelte = [];
   let area = 0;
   const aree = [hy * hz, hy * hz, hx * hz, hx * hz, hx * hy, hx * hy];
@@ -172,26 +213,25 @@ export function forzaSuFacce(m, filtro, F) {
     const e = scelte[q], f = scelte[q + 1];
     const w = aree[f] / area / 4;
     for (const a of FACCE[f]) {
-      const n = base[e] + off[a];
+      const n = mappa[base[e] + off[a]];
       for (let d = 0; d < 3; d++) m.f[3 * n + d] += F[d] * w;
     }
   }
   return { facce: scelte.length / 2, area };
 }
 
-/** y = K·x, elemento per elemento. */
+/** y = K·x, elemento per elemento, sui gradi di libertà compatti. */
 export function prodotto(m, x, y) {
-  const { ne, base, mat, dofOff, Ke } = m;
+  const { ne, dofs, ke, w, Ke } = m;
   const xe = new Float64Array(24);
   y.fill(0);
-  for (let e = 0; e < ne; e++) {
-    const b3 = 3 * base[e];
-    const K = Ke[mat[e]];
-    for (let a = 0; a < 24; a++) xe[a] = x[b3 + dofOff[a]];
+  for (let e = 0, o = 0; e < ne; e++, o += 24) {
+    const K = Ke[ke[e]], we = w[e];
+    for (let a = 0; a < 24; a++) xe[a] = we * x[dofs[o + a]];
     for (let a = 0, r = 0; a < 24; a++, r += 24) {
       let s = 0;
       for (let c = 0; c < 24; c++) s += K[r + c] * xe[c];
-      y[b3 + dofOff[a]] += s;
+      y[dofs[o + a]] += s;
     }
   }
 }
@@ -200,25 +240,30 @@ export function prodotto(m, x, y) {
  * Gradiente coniugato con precondizionatore di Jacobi (quello chiesto) oppure, con
  * multigriglia: true, con un ciclo a V di multigriglia geometrica (vedi sotto).
  * Si ferma quando ‖r‖ ≤ tol·‖f‖ (sui gradi di libertà liberi) o a maxIter.
- * u0: soluzione di partenza (per esempio quella di prima, dopo una piccola modifica).
+ * u0: soluzione di partenza sulla griglia intera (per esempio quella di prima, dopo una piccola modifica).
+ * tempoMax (ms dall'inizio) ferma il risolutore, non convergito, solo quando ‖r‖ ≤ tolTempo·‖f‖: prima
+ * la soluzione è troppo lontana per mostrarla (da zero sforzi, sembrerebbe tutto sicuro). Se non ci
+ * arriva, il limite vero è quello di chi lo chiama, per esempio il timeout del worker.
+ * La u restituita è sulla griglia intera: ux del nodo n in u[3n], zero sui nodi non usati.
  */
-export function risolvi(m, { tol = 1e-8, maxIter = 20000, u0 = null, multigriglia = false } = {}) {
+export function risolvi(m, { tol = 1e-8, maxIter = 20000, u0 = null, multigriglia = false, tempoMax = Infinity, tolTempo = 1e-2 } = {}) {
   const t0 = ora();
-  const { ndof, ne, base, mat, dofOff, Ke, usato, fisso, f } = m;
+  const { ndof, ne, dofs, ke, w, Ke, fisso, f } = m;
   const diag = new Float64Array(ndof);
-  for (let e = 0; e < ne; e++) {
-    const b3 = 3 * base[e], K = Ke[mat[e]];
-    for (let a = 0; a < 24; a++) diag[b3 + dofOff[a]] += K[a * 25];
+  for (let e = 0, o = 0; e < ne; e++, o += 24) {
+    const K = Ke[ke[e]], we = w[e];
+    for (let a = 0; a < 24; a++) diag[dofs[o + a]] += we * K[a * 25];
   }
   const inv = new Float64Array(ndof);
   const blocc = [];
   for (let d = 0; d < ndof; d++) {
-    if (fisso[d] || !usato[(d / 3) | 0] || diag[d] === 0) blocc.push(d);
+    if (fisso[d] || diag[d] === 0) blocc.push(d);
     else inv[d] = 1 / diag[d];
   }
   const B = Int32Array.from(blocc);
   if (B.length === ndof) throw new Error('nessun grado di libertà libero');
-  const x = u0 ? Float64Array.from(u0) : new Float64Array(ndof);
+  const x = new Float64Array(ndof);
+  if (u0) for (let c = 0; c < m.nu; c++) for (let d = 0; d < 3; d++) x[3 * c + d] = u0[3 * m.nodi[c] + d];
   const r = new Float64Array(ndof), z = new Float64Array(ndof), p = new Float64Array(ndof), q = new Float64Array(ndof);
   for (let i = 0; i < B.length; i++) x[B[i]] = 0;
   prodotto(m, x, q);
@@ -227,7 +272,7 @@ export function risolvi(m, { tol = 1e-8, maxIter = 20000, u0 = null, multigrigli
   let nf = 0;
   for (let d = 0; d < ndof; d++) if (inv[d]) nf += f[d] * f[d];
   nf = Math.sqrt(nf);
-  if (nf === 0) return { u: x, iterazioni: 0, residuo: 0, convergito: true, ms: ora() - t0, msProdotto: 0 };
+  if (nf === 0) return { u: piena(m, x), iterazioni: 0, residuo: 0, convergito: true, ms: ora() - t0, msProdotto: 0 };
   const mg = multigriglia ? creaMultigriglia(m, inv, B) : null;
   const msPreparazione = ora() - t0;
   let rz = 0, rr = 0;
@@ -237,6 +282,7 @@ export function risolvi(m, { tol = 1e-8, maxIter = 20000, u0 = null, multigrigli
   rr = Math.sqrt(rr);
   let it = 0, msProdotto = 0;
   while (it < maxIter && rr > tol * nf) {
+    if (rr <= tolTempo * nf && ora() - t0 > tempoMax) break;
     const tp = ora();
     prodotto(m, p, q);
     msProdotto += ora() - tp;
@@ -272,9 +318,19 @@ export function risolvi(m, { tol = 1e-8, maxIter = 20000, u0 = null, multigrigli
     it++;
   }
   return {
-    u: x, iterazioni: it, residuo: rr / nf, convergito: rr <= tol * nf, ms: ora() - t0, msProdotto, msPreparazione,
+    u: piena(m, x), iterazioni: it, residuo: rr / nf, convergito: rr <= tol * nf, ms: ora() - t0, msProdotto, msPreparazione,
     livelli: mg ? mg.livelli.map((L) => [L.nx, L.ny, L.nz]) : null,
   };
+}
+
+// Dai gradi di libertà compatti alla griglia intera.
+function piena(m, x) {
+  const u = new Float64Array(3 * m.nn);
+  for (let c = 0; c < m.nu; c++) {
+    const b = 3 * m.nodi[c];
+    u[b] = x[3 * c]; u[b + 1] = x[3 * c + 1]; u[b + 2] = x[3 * c + 2];
+  }
+  return u;
 }
 
 // ---------------------------------------------------------------- multigriglia geometrica
@@ -283,6 +339,7 @@ export function risolvi(m, { tol = 1e-8, maxIter = 20000, u0 = null, multigrigli
 // di Galerkin). Lisciatore: Jacobi smorzato con ω = 4/(3·λmax), λmax stimato con 12 passi di
 // potenza; interpolazione trilineare e restrizione trasposta; Cholesky denso sull'ultimo.
 // Un grado di libertà grossolano è bloccato se tocca un grado di libertà fine bloccato.
+// Anche qui i gradi di libertà sono compatti, livello per livello.
 
 const OFF8 = (NX, NY) => {
   const off = new Int32Array(8);
@@ -291,16 +348,16 @@ const OFF8 = (NX, NY) => {
 };
 
 function prodottoPesato(L, x, y) {
-  const { ne, base, w, dofOff, Ke } = L;
+  const { ne, dofs, w, Ke } = L;
   const xe = new Float64Array(24);
   y.fill(0);
-  for (let e = 0; e < ne; e++) {
-    const b3 = 3 * base[e], we = w[e];
-    for (let a = 0; a < 24; a++) xe[a] = x[b3 + dofOff[a]];
+  for (let e = 0, o = 0; e < ne; e++, o += 24) {
+    const we = w[e];
+    for (let a = 0; a < 24; a++) xe[a] = x[dofs[o + a]];
     for (let a = 0, r = 0; a < 24; a++, r += 24) {
       let s = 0;
       for (let c = 0; c < 24; c++) s += Ke[r + c] * xe[c];
-      y[b3 + dofOff[a]] += we * s;
+      y[dofs[o + a]] += we * s;
     }
   }
 }
@@ -315,34 +372,36 @@ function asse(N) {
   return { i0, i1, w0, w1 };
 }
 
-// Applica fn(nodoFine, nodoGrosso, peso) a ogni coppia con peso > 0.
-function perCoppie(F, C, ax, ay, az, fn) {
-  for (let K = 0; K < F.NZ; K++)
-    for (let J = 0; J < F.NY; J++)
-      for (let I = 0; I < F.NX; I++) {
-        const n = I + F.NX * (J + F.NY * K);
-        if (!F.usato[n]) continue;
-        for (let c = 0; c < 8; c++) {
-          const wx = c & 1 ? ax.w1[I] : ax.w0[I], wy = c & 2 ? ay.w1[J] : ay.w0[J], wz = c & 4 ? az.w1[K] : az.w0[K];
-          const wt = wx * wy * wz;
-          if (!wt) continue;
-          const ic = c & 1 ? ax.i1[I] : ax.i0[I], jc = c & 2 ? ay.i1[J] : ay.i0[J], kc = c & 4 ? az.i1[K] : az.i0[K];
-          fn(n, ic + C.NX * (jc + C.NY * kc), wt);
-        }
-      }
+// Il ponte fra un livello e il successivo: per ogni nodo fine usato, gli 8 nodi grossolani (compatti) da
+// cui interpola e i pesi; −1 dove il peso è zero. I genitori sono angoli della cella grossolana che
+// contiene un elemento fine del nodo, quindi sono sempre usati.
+function ponte(F, C) {
+  const ax = asse(F.NX), ay = asse(F.NY), az = asse(F.NZ);
+  const idx = new Int32Array(8 * F.nu), pw = new Float64Array(8 * F.nu);
+  for (let q = 0; q < F.nu; q++) {
+    const n = F.nodi[q], I = n % F.NX, J = ((n / F.NX) | 0) % F.NY, K = (n / (F.NX * F.NY)) | 0;
+    for (let c = 0; c < 8; c++) {
+      const wx = c & 1 ? ax.w1[I] : ax.w0[I], wy = c & 2 ? ay.w1[J] : ay.w0[J], wz = c & 4 ? az.w1[K] : az.w0[K];
+      const wt = wx * wy * wz;
+      if (!wt) { idx[8 * q + c] = -1; continue; }
+      const ic = c & 1 ? ax.i1[I] : ax.i0[I], jc = c & 2 ? ay.i1[J] : ay.i0[J], kc = c & 4 ? az.i1[K] : az.i0[K];
+      idx[8 * q + c] = C.mappa[ic + C.NX * (jc + C.NY * kc)];
+      pw[8 * q + c] = wt;
+    }
+  }
+  return { idx, pw };
 }
 
 // Diagonale, inverso (0 sui bloccati) ed elenco dei bloccati di un livello.
 function chiudiLivello(L) {
   const diag = new Float64Array(L.ndof);
-  for (let e = 0; e < L.ne; e++) {
-    const b3 = 3 * L.base[e];
-    for (let a = 0; a < 24; a++) diag[b3 + L.dofOff[a]] += L.w[e] * L.Ke[a * 25];
+  for (let e = 0, o = 0; e < L.ne; e++, o += 24) {
+    for (let a = 0; a < 24; a++) diag[L.dofs[o + a]] += L.w[e] * L.Ke[a * 25];
   }
   L.inv = new Float64Array(L.ndof);
   const blocc = [];
   for (let d = 0; d < L.ndof; d++) {
-    if (L.fisso[d] || !L.usato[(d / 3) | 0] || diag[d] === 0) blocc.push(d);
+    if (L.fisso[d] || diag[d] === 0) blocc.push(d);
     else L.inv[d] = 1 / diag[d];
   }
   L.blocc = Int32Array.from(blocc);
@@ -350,7 +409,7 @@ function chiudiLivello(L) {
 
 function livelloGrosso(F, Eref, nu) {
   const nx = Math.ceil(F.nx / 2), ny = Math.ceil(F.ny / 2), nz = Math.ceil(F.nz / 2);
-  const NX = nx + 1, NY = ny + 1, NZ = nz + 1, nn = NX * NY * NZ, ndof = 3 * nn;
+  const NX = nx + 1, NY = ny + 1, NZ = nz + 1, nn = NX * NY * NZ;
   const celle = new Float64Array(nx * ny * nz);
   for (let k = 0; k < F.nz; k++)
     for (let j = 0; j < F.ny; j++)
@@ -372,20 +431,23 @@ function livelloGrosso(F, Eref, nu) {
         base[e] = b; w[e] = c; e++;
         for (let a = 0; a < 8; a++) usato[b + off[a]] = 1;
       }
-  const dofOff = new Int32Array(24);
-  for (let a = 0; a < 8; a++) for (let d = 0; d < 3; d++) dofOff[3 * a + d] = 3 * off[a] + d;
+  const { mappa, nodi } = numera(usato);
   const C = {
-    nx, ny, nz, NX, NY, NZ, nn, ndof, ne, base, w, usato, dofOff, celle,
-    hx: 2 * F.hx, hy: 2 * F.hy, hz: 2 * F.hz, fisso: new Uint8Array(ndof),
+    nx, ny, nz, NX, NY, NZ, nu: nodi.length, ndof: 3 * nodi.length, ne, w, dofs: gradi(base, off, mappa), mappa, nodi, celle,
+    hx: 2 * F.hx, hy: 2 * F.hy, hz: 2 * F.hz, fisso: new Uint8Array(3 * nodi.length),
   };
   C.Ke = matriceKe(Eref, nu, C.hx, C.hy, C.hz);
-  const ax = asse(F.NX), ay = asse(F.NY), az = asse(F.NZ);
-  perCoppie(F, C, ax, ay, az, (n, c) => {
-    for (let d = 0; d < 3; d++) if (F.fisso[3 * n + d]) C.fisso[3 * c + d] = 1;
-  });
+  const P = ponte(F, C);
+  for (let q = 0; q < F.nu; q++) {
+    for (let c = 0; c < 8; c++) {
+      const g = P.idx[8 * q + c];
+      if (g < 0) continue;
+      for (let d = 0; d < 3; d++) if (F.fisso[3 * q + d]) C.fisso[3 * g + d] = 1;
+    }
+  }
   chiudiLivello(C);
   C.prodotto = (x, y) => prodottoPesato(C, x, y);
-  return { C, ax, ay, az };
+  return { C, P };
 }
 
 function cholesky(L) {
@@ -394,13 +456,13 @@ function cholesky(L) {
   const n = liberi.length, idx = new Int32Array(L.ndof).fill(-1);
   liberi.forEach((d, i) => (idx[d] = i));
   const A = new Float64Array(n * n);
-  for (let e = 0; e < L.ne; e++) {
-    const b3 = 3 * L.base[e], we = L.w[e];
+  for (let e = 0, o = 0; e < L.ne; e++, o += 24) {
+    const we = L.w[e];
     for (let a = 0; a < 24; a++) {
-      const ia = idx[b3 + L.dofOff[a]];
+      const ia = idx[L.dofs[o + a]];
       if (ia < 0) continue;
       for (let c = 0; c < 24; c++) {
-        const ic = idx[b3 + L.dofOff[c]];
+        const ic = idx[L.dofs[o + c]];
         if (ic >= 0) A[ia * n + ic] += we * L.Ke[a * 24 + c];
       }
     }
@@ -434,9 +496,10 @@ function cholesky(L) {
   };
 }
 
+// Il vettore di partenza dipende dall'indice sulla griglia intera, come prima della numerazione compatta.
 function lambdaMax(L) {
   let v = new Float64Array(L.ndof), t = new Float64Array(L.ndof), lam = 1;
-  for (let d = 0; d < L.ndof; d++) v[d] = L.inv[d] ? 1 + 0.37 * Math.sin(d) : 0;
+  for (let d = 0; d < L.ndof; d++) v[d] = L.inv[d] ? 1 + 0.37 * Math.sin(3 * L.nodi[(d / 3) | 0] + (d % 3)) : 0;
   for (let it = 0; it < 12; it++) {
     L.prodotto(v, t);
     let num = 0, den = 0;
@@ -452,8 +515,8 @@ function creaMultigriglia(m, inv, blocc, { maxGrossi = 600, passi = 2 } = {}) {
   const celle = new Float64Array(m.nx * m.ny * m.nz);
   for (let e = 0; e < m.ne; e++) celle[m.vox[e]] = m.materiali[m.mat[e]].E / Eref;
   const fine = {
-    nx: m.nx, ny: m.ny, nz: m.nz, NX: m.NX, NY: m.NY, NZ: m.NZ, ndof: m.ndof, hx: m.hx, hy: m.hy, hz: m.hz,
-    celle, fisso: m.fisso, usato: m.usato, inv, blocc, prodotto: (x, y) => prodotto(m, x, y),
+    nx: m.nx, ny: m.ny, nz: m.nz, NX: m.NX, NY: m.NY, NZ: m.NZ, nu: m.nu, ndof: m.ndof, nodi: m.nodi, hx: m.hx, hy: m.hy, hz: m.hz,
+    celle, fisso: m.fisso, inv, blocc, prodotto: (x, y) => prodotto(m, x, y),
   };
   const livelli = [fine], ponti = [];
   for (;;) {
@@ -461,9 +524,9 @@ function creaMultigriglia(m, inv, blocc, { maxGrossi = 600, passi = 2 } = {}) {
     let liberi = 0;
     for (let d = 0; d < L.ndof; d++) if (L.inv[d]) liberi++;
     if (liberi <= maxGrossi || livelli.length >= 12) break;
-    const { C, ax, ay, az } = livelloGrosso(L, Eref, nu);
+    const { C, P } = livelloGrosso(L, Eref, nu);
     livelli.push(C);
-    ponti.push({ ax, ay, az });
+    ponti.push(P);
   }
   const ultimo = livelli.length - 1;
   const risolviUltimo = ultimo > 0 ? cholesky(livelli[ultimo]) : null;
@@ -478,7 +541,7 @@ function creaMultigriglia(m, inv, blocc, { maxGrossi = 600, passi = 2 } = {}) {
   };
   const ciclo = (l, b, x) => {
     if (l === ultimo) { risolviUltimo(b, x); return; }
-    const L = livelli[l], C = livelli[l + 1], t = ts[l], om = omega[l], P = ponti[l];
+    const L = livelli[l], C = livelli[l + 1], t = ts[l], om = omega[l], { idx, pw } = ponti[l];
     for (let d = 0; d < L.ndof; d++) x[d] = om * L.inv[d] * b[d];
     for (let s = 1; s < passi; s++) liscia(L, b, x, t, om);
     L.prodotto(x, t);
@@ -486,15 +549,25 @@ function creaMultigriglia(m, inv, blocc, { maxGrossi = 600, passi = 2 } = {}) {
     for (let i = 0; i < L.blocc.length; i++) t[L.blocc[i]] = 0;
     const bc = bs[l + 1], xc = xs[l + 1];
     bc.fill(0);
-    perCoppie(L, C, P.ax, P.ay, P.az, (n, c, wt) => {
-      bc[3 * c] += wt * t[3 * n]; bc[3 * c + 1] += wt * t[3 * n + 1]; bc[3 * c + 2] += wt * t[3 * n + 2];
-    });
+    for (let q = 0, o = 0; q < L.nu; q++, o += 8) {
+      for (let c = 0; c < 8; c++) {
+        const g = idx[o + c];
+        if (g < 0) continue;
+        const wt = pw[o + c];
+        bc[3 * g] += wt * t[3 * q]; bc[3 * g + 1] += wt * t[3 * q + 1]; bc[3 * g + 2] += wt * t[3 * q + 2];
+      }
+    }
     for (let i = 0; i < C.blocc.length; i++) bc[C.blocc[i]] = 0;
     ciclo(l + 1, bc, xc);
     t.fill(0);
-    perCoppie(L, C, P.ax, P.ay, P.az, (n, c, wt) => {
-      t[3 * n] += wt * xc[3 * c]; t[3 * n + 1] += wt * xc[3 * c + 1]; t[3 * n + 2] += wt * xc[3 * c + 2];
-    });
+    for (let q = 0, o = 0; q < L.nu; q++, o += 8) {
+      for (let c = 0; c < 8; c++) {
+        const g = idx[o + c];
+        if (g < 0) continue;
+        const wt = pw[o + c];
+        t[3 * q] += wt * xc[3 * g]; t[3 * q + 1] += wt * xc[3 * g + 1]; t[3 * q + 2] += wt * xc[3 * g + 2];
+      }
+    }
     for (let i = 0; i < L.blocc.length; i++) t[L.blocc[i]] = 0;
     for (let d = 0; d < L.ndof; d++) x[d] += t[d];
     for (let s = 0; s < passi; s++) liscia(L, b, x, t, om);
@@ -513,12 +586,12 @@ function creaMultigriglia(m, inv, blocc, { maxGrossi = 600, passi = 2 } = {}) {
  * Per un voxel parziale (materiale con frazione) è lo sforzo del materiale: diviso per la frazione.
  */
 export function sforzi(m, u) {
-  const { ne, base, mat, dofOff, DB0 } = m;
+  const { ne, base, mat, ke, w, dofOff, DB0 } = m;
   const vm = new Float64Array(ne), s = new Float64Array(6 * ne);
   const ue = new Float64Array(24);
   const scala = m.materiali.map((q) => 1 / (q.frazione || 1));
   for (let e = 0; e < ne; e++) {
-    const b3 = 3 * base[e], DB = DB0[mat[e]], sc = scala[mat[e]];
+    const b3 = 3 * base[e], DB = DB0[ke[e]], sc = w[e] * scala[mat[e]];
     for (let a = 0; a < 24; a++) ue[a] = u[b3 + dofOff[a]];
     for (let i = 0; i < 6; i++) {
       let t = 0;
@@ -537,12 +610,6 @@ export function fattoreSicurezza(m, vm) {
   const fs = new Float64Array(m.ne);
   for (let e = 0; e < m.ne; e++) fs[e] = m.materiali[m.mat[e]].snervamento / Math.max(vm[e], 1e-30);
   return fs;
-}
-
-/** Rischio 0 (blu) … 1 (rosso): 1 sotto fs = 1, 0 sopra fsSicuro, in scala logaritmica in mezzo. */
-export function rischio(fs, fsSicuro = 3) {
-  const t = Math.log(fsSicuro / fs) / Math.log(fsSicuro);
-  return t < 0 ? 0 : t > 1 ? 1 : t;
 }
 
 // ---------------------------------------------------------------- voxelizzazione

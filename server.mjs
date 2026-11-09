@@ -3,25 +3,37 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { createBrain } from './brain.mjs';
 import { createVoice } from './voice.mjs';
 import { createMedia } from './media.mjs';
 import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
+import { createOlogramma } from './ologramma.mjs';
+import { calcolaInWorker } from './fisica/struttura.mjs';
+import { MODELLO_MANI } from './public/ologramma/mani.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, 'runtime');
 fs.mkdirSync(RUNTIME, { recursive: true });
 
-// .env minimale: CHIAVE=valore, una per riga
+// .env minimale: CHIAVE=valore, una per riga. Le variabili date a mano vincono: una prova con STEM_PORT=4422
+// non deve finire sulla porta dello STEM vero perché .env dice 4321.
 const env = { ...process.env };
 const envFile = path.join(ROOT, '.env');
 if (fs.existsSync(envFile)) {
   for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !line.trim().startsWith('#')) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    if (m && !line.trim().startsWith('#') && !(m[1] in process.env)) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
   }
 }
+// STEM_CERVELLO (solo per le prove): uno STEM di prova che vive tutto in quella cartella. Il cervello ci lavora, il server
+// ci scrive i suoi file (conversazione, mcp.json, ologramma, ascolto.log) e le cartelle dei documenti sono le sue
+// sottocartelle: così una prova non scrive nella memoria vera, non riprende la sua conversazione e non legge i file di Tony.
+const PROVA = env.STEM_CERVELLO ? path.resolve(env.STEM_CERVELLO) : null;
+const STATO = PROVA || RUNTIME;
+if (PROVA) fs.mkdirSync(PROVA, { recursive: true });
 
 const PORT = Number(env.STEM_PORT || 4321);
 const PW_PORT = Number(env.STEM_BROWSER_PORT || 8931);
@@ -38,10 +50,10 @@ const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
 // la Libreria (portachiavi, cookie) e la cartella di STEM (chiave, profili). Niente Terminale.
 const HOME = process.env.HOME;
 const FILE_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', 'Library/Mobile Documents/com~apple~CloudDocs']
-  .map((d) => path.join(HOME, d)).filter((d) => fs.existsSync(d));
+  .map((d) => path.join(PROVA || HOME, d)).filter((d) => fs.existsSync(d));
 // Cartella di lavoro del cervello: vuota e FUORI dalla repository, così STEM ha una memoria sua
 // e non mescola i suoi ricordi con quelli delle sessioni di sviluppo (prima condividevano ~/STEM)
-const BRAIN = path.join(HOME, 'Library', 'Application Support', 'STEM', 'cervello');
+const BRAIN = PROVA || path.join(HOME, 'Library', 'Application Support', 'STEM', 'cervello');
 fs.mkdirSync(BRAIN, { recursive: true });
 
 // --- Finestre: HUD a sinistra, Google a destra ---
@@ -134,12 +146,13 @@ async function startScreencast() {
 }
 
 // --- Browser: Playwright MCP sempre acceso, collegato alla finestra di Google ---
-const MCP_CONFIG = path.join(RUNTIME, 'mcp.json');
+const MCP_CONFIG = path.join(STATO, 'mcp.json');
 const MAC_MCP = path.join(ROOT, 'mac', 'mac-mcp.mjs');
 fs.writeFileSync(MCP_CONFIG, JSON.stringify({
   mcpServers: {
     playwright: { type: 'http', url: `http://localhost:${PW_PORT}/mcp` },
-    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath, args: [MAC_MCP] } }), // app, schermo, mouse e tastiera
+    // app, schermo, mouse, tastiera e ologrammi; la porta dagli argomenti, perché .env non arriva ai processi figli
+    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath, args: [MAC_MCP, '--porta', String(PORT)] } }),
   },
 }));
 const browser = spawn('npx', [
@@ -157,12 +170,12 @@ browser.on('exit', (code) => { browserReady = false; console.error(`[browser] us
 // --- Cervello: un processo sempre acceso (brain.mjs) ---
 const brain = createBrain({
   cwd: BRAIN,
-  sessionFile: path.join(RUNTIME, 'cervello.json'), // quale conversazione riprendere dopo un riavvio
+  sessionFile: path.join(STATO, 'cervello.json'), // quale conversazione riprendere dopo un riavvio
   onLog: (l) => { console.error(l); },
   args: [
     '--append-system-prompt', PERSONA,
     '--tools', 'Read,Write,Edit,Glob,Grep',
-    '--add-dir', ...FILE_DIRS,
+    ...(FILE_DIRS.length ? ['--add-dir', ...FILE_DIRS] : []), // vuoto, --add-dir si prenderebbe l'opzione dopo
     '--mcp-config', MCP_CONFIG, '--strict-mcp-config',
     '--allowedTools', 'mcp__playwright', 'mcp__mac',
     '--disallowedTools', 'mcp__playwright__browser_tabs', // una sola pagina: niente schede nuove
@@ -202,7 +215,7 @@ setInterval(() => { if (VOICE_ID === 'JBFqnCBsd6RMkjVDRZzb') pickVoice(); }, 10 
 const voice = createVoice({ key: ELEVEN_KEY, voiceId: () => VOICE_ID, model: VOICE_MODEL, macVoice: env.STEM_MAC_VOICE, onLog: (l) => console.error(l) });
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
-const LOG_FILE = path.join(RUNTIME, 'ascolto.log');
+const LOG_FILE = path.join(STATO, 'ascolto.log');
 function appendLog(line) {
   const old = fs.existsSync(LOG_FILE) ? fs.readFileSync(LOG_FILE, 'utf8').split('\n').filter(Boolean) : [];
   old.push(`${new Date().toLocaleString('it-IT')}  ${line}`);
@@ -265,50 +278,197 @@ if (env.STEM_APP) {
   }, 10000);
 }
 
-// --- HTTP ---
-const MIME = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.glb': 'model/gltf-binary', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8' };
+// --- Ologramma: lo stato sta solo qui (ologramma.mjs). Gli strumenti del cervello (mac-mcp.mjs) e l'HUD lo cambiano con
+// POST /api/ologramma; l'HUD lo rilegge quando la versione cresce e manda la foto di quello che mostra.
+const riassunto = (s) => ({ modello: s.modello, versione: s.versione, aperto: s.aperto, file: s.pezzi.some((x) => x.forma === 'file' && !s.tolti.includes(x.id)) });
+let holoOra = { modello: 0, versione: 0, aperto: false, file: false }; // da onCambio: /api/status non copia tutto lo stato a ogni giro
+const holo = createOlogramma({
+  cartella: STATO,
+  // 55 s, dentro i 60 che il server aspetta: il cervello riceve sempre un risultato o un errore, non «ancora in corso»
+  calcola: (lavoro) => calcolaInWorker(lavoro, { timeout_s: 55 }),
+  onCambio: (s) => { holoOra = riassunto(s); brain.notify({ t: 'holo', v: s.versione }); },
+});
+holo.carica();
+holoOra = riassunto(holo.stato());
+// Un ologramma rimasto aperto quando STEM si è spento non riappare da solo all'avvio dopo: resta, chiuso, e si riapre a voce
+if (holoOra.aperto) holo.esegui({ azione: 'chiudi' });
 
+let holoFoto = null;          // l'ultima foto dell'HUD: { modello, versione, png } in base64
+const fotoAttese = new Set(); // gli strumenti che aspettano la foto di una versione
+function aspettaFoto(modello, versione, ms) {
+  return new Promise((risolvi) => {
+    const a = { modello, versione, risolvi: (png) => { clearTimeout(timer); fotoAttese.delete(a); risolvi(png); } };
+    const timer = setTimeout(() => a.risolvi(null), ms);
+    fotoAttese.add(a);
+  });
+}
+// La foto che accompagna la risposta allo strumento, oppure la riga che dice al cervello perché non c'è.
+// Un modello nuovo aspetta 8 s come i pezzi da file: l'entrata del turbofan finisce a 3,0 s, la foto arrivava a 3,1–3,3 s
+// e una volta a 6,6 s, dopo i 4 s che il cervello aspettava. Dopo una modifica bastano 4 s.
+async function fotoPer(versione, prima, nuovo = false) {
+  const o = holoOra;
+  if (!o.aperto) return {};
+  if (holoFoto && holoFoto.modello === o.modello && holoFoto.versione >= versione) return { png: holoFoto.png };
+  if (versione === prima) return { nota: 'Foto: nessuna nuova, perché non è cambiato niente.' };
+  if (Date.now() - hudSeen > 15_000) return { nota: "Senza foto: l'HUD non è acceso, quindi non puoi vedere il risultato." };
+  const s = o.file || nuovo ? 8 : 4; // i pezzi da file vanno prima scaricati e letti
+  const png = await aspettaFoto(o.modello, versione, s * 1000);
+  return png ? { png } : { nota: `Senza foto: l'HUD non l'ha mandata entro ${s} s.` };
+}
+// Un PNG vero, nei limiti del contratto: al massimo 1,5 MB e 960 px di larghezza
+function pngValido(b) {
+  if (!b || b.length < 33 || b.length > 1.5e6) return false;
+  if (b.readUInt32BE(0) !== 0x89504e47 || b.readUInt32BE(4) !== 0x0d0a1a0a || b.toString('latin1', 12, 16) !== 'IHDR') return false;
+  const w = b.readUInt32BE(16), h = b.readUInt32BE(20);
+  return w >= 1 && w <= 960 && h >= 1 && h <= 4096;
+}
+
+// La misura delle mani nelle condizioni vere (la regola di Tony: mani solo sopra 45 fps sul suo M2), che l'HUD manda alla
+// chiusura dell'ologramma se le mani sono state accese almeno 10 s: la prossima sessione la legge nel registro, senza
+// chiedere a Tony. Dall'HUD arrivano solo numeri, controllati qui; il testo della riga è del server.
+function rigaMani(b) {
+  const n = (v, max) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
+  const f = b.fps;
+  if (!n(b.secondi, 86400) || b.secondi < 10 || !Number.isInteger(b.secondi) || f === null || typeof f !== 'object' ||
+    !['mediana', 'p10', 'minimo'].every((k) => n(f[k], 1000)) || !(b.detect_ms === null || n(b.detect_ms, 1e4)) ||
+    (b.prova !== undefined && typeof b.prova !== 'boolean')) return null;
+  const r = Math.round; // fotogrammi contati e millisecondi interi: niente virgole che si confondono con quelle della riga
+  return `[ologramma] mani accese ${b.secondi} s${b.prova ? ' (foto di prova al posto della fotocamera)' : ''}: ` +
+    `fps mediana ${r(f.mediana)}, p10 ${r(f.p10)}, minimo ${r(f.minimo)}, detect ${b.detect_ms === null ? '—' : `${r(b.detect_ms)} ms`}`;
+}
+
+// GET /api/ologramma/file/<modello>/<id>: solo il file di un pezzo dello stato attuale, mai un percorso scelto dall'HUD.
+// Il file vero (dopo realpath) deve stare in una cartella di Tony, fuori dalle cartelle nascoste, con un'estensione 3D.
+const MIME_3D = { glb: 'model/gltf-binary', stl: 'model/stl', obj: 'model/obj', '3mf': 'model/3mf', ply: 'application/octet-stream' };
+const FILE_3D_MAX = 200 * 2 ** 20;
+const FILE_VERI = FILE_DIRS.map((d) => { try { return fs.realpathSync(d); } catch { return null; } }).filter(Boolean);
+async function serviFile3D(res, p) {
+  const no = (codice) => res.writeHead(codice, { 'cache-control': 'no-store' }).end();
+  const m = p.match(/^\/api\/ologramma\/file\/(\d+)\/([a-z0-9][a-z0-9_-]{0,39})$/), s = holo.stato();
+  const pezzo = m && Number(m[1]) === s.modello && s.pezzi.find((x) => x.id === m[2] && x.forma === 'file');
+  if (!pezzo) return no(404);
+  let vero, fh;
+  try { vero = await fs.promises.realpath(pezzo.misure.file); } catch { return no(404); }
+  const dir = FILE_VERI.find((d) => vero.startsWith(d + path.sep)), tipo = MIME_3D[path.extname(vero).slice(1).toLowerCase()];
+  if (!dir || !tipo || vero.slice(dir.length + 1).split(path.sep).some((x) => x.startsWith('.'))) return no(403);
+  try {
+    const st = await fs.promises.stat(vero); // prima di aprire: open() su una FIFO resterebbe fermo
+    if (!st.isFile()) return no(403);
+    if (st.size > FILE_3D_MAX) return no(413);
+    fh = await fs.promises.open(vero, 'r');
+    const st2 = await fh.stat(); // lo stesso file di prima, anche se nel frattempo il percorso è cambiato
+    if (!st2.isFile() || st2.size > FILE_3D_MAX) { await fh.close(); return no(403); }
+    res.writeHead(200, { 'content-type': tipo, 'content-length': st2.size, 'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff', 'cross-origin-resource-policy': 'same-origin' });
+    pipeline(fh.createReadStream(), res, () => {}); // chiude il file anche se l'HUD smette di leggere
+  } catch {
+    await fh?.close().catch(() => {});
+    if (res.headersSent) res.destroy(); else no(404);
+  }
+}
+
+// --- Le mani: MediaPipe da node_modules e il modello da runtime/modelli, che non è nella repository ---
+const MODELLI = path.join(RUNTIME, 'modelli');
+const DA_MODELLI = ['hand_landmarker.task', 'prova-mani.jpg'];
+// Se il modello manca lo scarico una volta, in background: entra in runtime/ solo se byte e SHA-256 sono quelli di mani.js
+async function scaricaModelloMani() {
+  const file = path.join(MODELLI, 'hand_landmarker.task'), tmp = `${file}.${process.pid}.tmp`, attesi = MODELLO_MANI.byte;
+  if (fs.existsSync(file)) return;
+  try {
+    const r = await fetch(MODELLO_MANI.origine, { signal: AbortSignal.timeout(180_000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const parti = [];
+    let n = 0;
+    for await (const pezzo of r.body) { if ((n += pezzo.length) > attesi) break; parti.push(pezzo); }
+    const dati = Buffer.concat(parti), sha = createHash('sha256').update(dati).digest('hex');
+    if (n !== attesi || sha !== MODELLO_MANI.sha256) {
+      console.error(`[mani] il modello scaricato non è quello atteso (${n > attesi ? 'più di ' : ''}${Math.min(n, attesi)} B su ${attesi}, ` +
+        `SHA-256 ${sha.slice(0, 12)}… invece di ${MODELLO_MANI.sha256.slice(0, 12)}…): buttato`);
+      return;
+    }
+    fs.mkdirSync(MODELLI, { recursive: true });
+    fs.writeFileSync(tmp, dati);
+    fs.renameSync(tmp, file);
+    console.error(`[mani] modello delle mani scaricato e controllato (${n} B)`);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    console.error(`[mani] non riesco a scaricare il modello delle mani: ${e.message}`);
+  }
+}
+scaricaModelloMani();
+
+// --- HTTP ---
+const MIME = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
+  '.glb': 'model/gltf-binary', '.json': 'application/json', '.map': 'application/json', '.txt': 'text/plain; charset=utf-8',
+  '.wasm': 'application/wasm', '.task': 'application/octet-stream',
+};
+const PUBLIC = path.join(ROOT, 'public'), THREE = path.join(ROOT, 'node_modules', 'three'), MP = path.join(ROOT, 'node_modules', '@mediapipe', 'tasks-vision');
+
+// Le pagine di STEM non si aprono dentro una pagina di un'altra origine: l'HUD è il telecomando di STEM, e in un iframe di
+// un sito qualsiasi partirebbe lo stesso, con microfono e fotocamera già permessi (provato l'8/11). Stessa origine sì:
+// lab-mani.html mette lab-ologramma.html in un iframe.
+const NIENTE_CORNICI = { 'x-frame-options': 'SAMEORIGIN', 'content-security-policy': "frame-ancestors 'self'" };
 function serveFile(res, file) {
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404).end(); return; }
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' }).end(data);
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store', ...NIENTE_CORNICI }).end(data);
   });
 }
 
-function readBody(req) {
+// Il percorso di un file sotto base, o null se la richiesta prova a uscirne (il confine è path.sep: «three-x» non è «three»)
+const sotto = (base, rel) => { const f = path.normalize(path.join(base, rel)); return f.startsWith(base + path.sep) ? f : null; };
+
+// Il corpo JSON di una POST, al massimo max byte; un JSON rotto, o che non è un oggetto, vale {}: «null» faceva cadere il
+// server, che lo destrutturava. Oltre il limite risponde TROPPO subito: prima req.destroy() lasciava la promessa appesa per
+// sempre, perché 'end' non arrivava più.
+const TROPPO = Symbol('corpo troppo grande');
+function readBody(req, max) {
   return new Promise((resolve) => {
-    let b = '';
-    req.on('data', (d) => { b += d; if (b.length > 1e5) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } });
+    if (Number(req.headers['content-length']) > max) return resolve(TROPPO);
+    const parti = [];
+    let n = 0;
+    req.on('data', (d) => { if ((n += d.length) <= max) parti.push(d); else { parti.length = 0; resolve(TROPPO); } });
+    req.on('end', () => {
+      if (n > max) return;
+      try { const v = JSON.parse(Buffer.concat(parti).toString('utf8') || '{}'); resolve(v !== null && typeof v === 'object' ? v : {}); } catch { resolve({}); }
+    });
+    req.on('close', () => resolve(TROPPO)); // il client se n'è andato a metà: nessuno aspetta la risposta
   });
 }
+
+const json = (res, codice, dati) => res.writeHead(codice, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(dati));
+// Una pagina di un altro sito, o di un'altra porta, non deve leggere le API né scrivere nel registro con /api/status:
+// i browser mandano sempre sec-fetch-site, curl e i processi locali no
+const daFuori = (req) => req.headers['sec-fetch-site'] !== undefined && req.headers['sec-fetch-site'] !== 'same-origin';
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = url.pathname;
   if (req.headers.host !== `localhost:${PORT}` && req.headers.host !== `127.0.0.1:${PORT}`) return res.writeHead(403).end(); // niente DNS rebinding
+  if (/^\/(api|mediapipe|modelli)\//.test(p) && daFuori(req)) return res.writeHead(403).end(); // con ogni metodo: HEAD passerebbe senza preflight
 
-  if (req.method === 'GET' && p === '/') return serveFile(res, path.join(ROOT, 'public', 'index.html'));
-  if (req.method === 'GET' && p.startsWith('/three/')) {
-    const f = path.normalize(path.join(ROOT, 'node_modules', 'three', p.slice(7)));
-    if (!f.startsWith(path.join(ROOT, 'node_modules', 'three'))) return res.writeHead(403).end();
-    return serveFile(res, f);
+  if (req.method === 'GET' && p === '/') return serveFile(res, path.join(PUBLIC, 'index.html'));
+  if (req.method === 'GET' && p.startsWith('/modelli/')) { // solo i due file delle mani, mai il resto di runtime/
+    const nome = p.slice(9);
+    return DA_MODELLI.includes(nome) ? serveFile(res, path.join(MODELLI, nome)) : res.writeHead(404).end();
   }
   if (req.method === 'GET' && !p.startsWith('/api/')) {
-    const f = path.normalize(path.join(ROOT, 'public', p));
-    if (!f.startsWith(path.join(ROOT, 'public'))) return res.writeHead(403).end();
-    return serveFile(res, f);
+    const f = p.startsWith('/three/') ? sotto(THREE, p.slice(7)) : p.startsWith('/mediapipe/') ? sotto(MP, p.slice(11)) : sotto(PUBLIC, p);
+    return f ? serveFile(res, f) : res.writeHead(403).end();
   }
 
-  // Le POST accettano solo l'HUD: una pagina web qualsiasi non deve poter comandare STEM
+  // Le POST accettano solo l'HUD e i processi locali: una pagina web qualsiasi non deve poter comandare STEM
+  let body = {};
   if (req.method === 'POST') {
     const origin = req.headers.origin;
     const sameOrigin = !origin || origin === `http://localhost:${PORT}` || origin === `http://127.0.0.1:${PORT}`;
     if (!sameOrigin || !String(req.headers['content-type'] || '').startsWith('application/json')) return res.writeHead(403).end();
+    body = await readBody(req, p === '/api/ologramma/foto' ? 2 * 2 ** 20 : p === '/api/ologramma' ? 2 ** 20 : 1e5);
+    if (body === TROPPO) return res.writeHead(413).end(); // il resto del corpo lo legge e lo butta Node: niente reset a metà risposta
   }
 
   if (req.method === 'GET' && p === '/api/screen') {
-    if (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') return res.writeHead(403).end();
     res.writeHead(200, { 'content-type': 'multipart/x-mixed-replace; boundary=frame', 'cache-control': 'no-store' });
     screenClients.add(res);
     if (lastFrame) writeFrame(res, lastFrame);
@@ -317,7 +477,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && p === '/api/log') { // diagnostica di «Stem», solo locale
-    const { line } = await readBody(req);
+    const { line } = body;
     if (line) appendLog(String(line).slice(0, 200));
     return res.writeHead(204).end();
   }
@@ -325,11 +485,55 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/status') {
     if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; noteHud(url.searchParams); }
     return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ voice: voice.status, browser: browserReady, gifs: media.gifs, agenda: agenda.due().length }));
+      .end(JSON.stringify({ voice: voice.status, browser: browserReady, gifs: media.gifs, agenda: agenda.due().length, ologramma: holoOra.versione }));
   }
 
+  if (req.method === 'GET' && p === '/api/ologramma') return json(res, 200, holo.stato());
+
+  if (req.method === 'POST' && p === '/api/ologramma') {
+    // L'HUD è un browser e manda sempre origin e sec-fetch-site, che una pagina non può togliere; il processo MCP del
+    // cervello non li manda. Così dall'HUD passano solo togli, rimetti e chiudi (lo decide ologramma.mjs), più la misura.
+    const daHud = Boolean(req.headers.origin || req.headers['sec-fetch-site']);
+    if (daHud && body.azione === 'misura') { // gli fps con le mani, alla chiusura dell'ologramma: una riga nel registro
+      const riga = rigaMani(body);
+      if (!riga) return json(res, 400, { ok: false, errori: ['misura: servono solo numeri, nei loro limiti'] });
+      console.error(riga);
+      return res.writeHead(204).end();
+    }
+    const prima = holoOra.versione, r = holo.esegui(body, { daHud });
+    if (!r.ok) return json(res, r.codice, { ok: false, errori: r.errori, ...(r.codice === 409 && { stato: holo.stato() }) });
+    if (daHud) return json(res, 200, { ok: true, versione: r.versione });
+    let fine = r, timer = 0;
+    if (r.attesa) { // prima la fine del calcolo, poi la foto della versione che ne esce
+      fine = (await Promise.race([r.attesa, new Promise((ok) => { timer = setTimeout(ok, 60_000, null); })]))
+        ?? { ...r, testo: `${r.testo}\nDopo 60 s il calcolo non è ancora finito: fra poco i numeri li dà modifica_ologramma senza campi.` };
+      clearTimeout(timer);
+    }
+    const { png, nota } = await fotoPer(fine.versione, prima, body.azione === 'mostra');
+    return json(res, 200, { ok: true, versione: fine.versione, testo: nota ? `${fine.testo}\n${nota}` : fine.testo, ...(png && { foto: png }) });
+  }
+
+  if (req.method === 'POST' && p === '/api/ologramma/foto') { // dall'HUD, dopo aver mostrato una versione nuova
+    const { modello, versione, png } = body, o = holoOra;
+    if (!o.aperto || modello !== o.modello || versione !== o.versione) return json(res, 409, { ok: false, errori: ['la foto non è della versione attuale: rileggi lo stato'] });
+    const b = typeof png === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? Buffer.from(png, 'base64') : null;
+    if (!pngValido(b)) return json(res, 400, { ok: false, errori: ['serve un PNG in base64, largo al massimo 960 px e grande al massimo 1,5 MB'] });
+    holoFoto = { modello, versione, png: b.toString('base64') };
+    for (const a of fotoAttese) if (a.modello === modello && a.versione <= versione) a.risolvi(holoFoto.png);
+    return res.writeHead(204).end();
+  }
+
+  if (req.method === 'GET' && p === '/api/ologramma/campo') { // fs per voxel, Float32 in ordine i + nx·(j + ny·k)
+    const c = holo.campo();
+    if (!c) return res.writeHead(404, { 'cache-control': 'no-store' }).end();
+    if (url.searchParams.get('v') !== String(c.versione)) return res.writeHead(409, { 'cache-control': 'no-store' }).end(); // un campo vecchio su un modello nuovo mentirebbe
+    return res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': c.fs.byteLength, 'cache-control': 'no-store' })
+      .end(Buffer.from(c.fs.buffer, c.fs.byteOffset, c.fs.byteLength));
+  }
+
+  if (req.method === 'GET' && p.startsWith('/api/ologramma/file/')) return serviFile3D(res, p);
+
   if (req.method === 'POST' && p === '/api/ask') {
-    const body = await readBody(req);
     let text = String(body.text || '').trim();
     if (body.agenda) { // li tolgo dall'agenda subito: un secondo HUD, o il giro dopo, non li ripete
       const due = agenda.due();
@@ -349,7 +553,13 @@ const server = http.createServer(async (req, res) => {
     let ignored = false;
     await brain.ask(text, (ev) => {
       if (ev.t === 'ignore') ignored = true;
-      if (ev.t !== 'media') return write(ev);
+      if (ev.t !== 'media') {
+        write(ev);
+        // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
+        // Prima il server lo credeva aperto, e il cervello riceveva la foto vecchia di un ologramma che Tony non vedeva.
+        if (ev.t === 'show' || (ev.t === 'report' && Array.isArray(ev.blocchi) && ev.blocchi.length)) holo.esegui({ azione: 'chiudi' });
+        return;
+      }
       pending++; // GIF e animazioni: le cerco mentre STEM parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
     });
@@ -374,7 +584,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && p === '/api/tts') { // sempre audio vero: ElevenLabs o voce del Mac, mai mescolate in una risposta
-    const { text, answer } = await readBody(req);
+    const { text, answer } = body;
     try {
       const a = await voice.speak(String(text || '').slice(0, 2000), String(answer || 'x'));
       return res.writeHead(200, { 'content-type': a.type, 'x-stem-voce': a.provider + (a.switched ? ';cambio' : '') }).end(a.data);

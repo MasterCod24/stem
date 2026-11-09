@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STEM lab mani</title>
+<!-- Laboratorio delle mani: mani.js con la sorgente 'immagine' (prova-mani.jpg in una tela 640×480, come la fotocamera)
+     per 20 s, poi mediana, p90 e massimo di detectForVideo e i fotogrammi al secondo della pagina. Non usa la fotocamera.
+     ?mani=2|1|0: l'immagine intera, solo la mano dritta, la tela bianca (MediaPipe cerca il palmo a ogni fotogramma)
+     ?base: senza MediaPipe, per la misura di riferimento
+     ?delegato=GPU|CPU   ?hz=30 come la fotocamera (senza: a ogni fotogramma)   ?secondi=20
+     ?ologramma[=turbofan|staffa]: dietro, lab-ologramma.html in un iframe. Stessa origine, quindi stesso thread e stessa
+     GPU della pagina: è il carico dell'HUD con l'ologramma, che conta per la soglia dei 45 fps.
+     ?riavvia: avvia, ferma e riavvia prima di misurare, come farà l'HUD a ogni apertura dell'ologramma.
+     Attenzione: fps_pagina conta i tempi di requestAnimationFrame e, col thread in ritardo, sovrastima. Il 7/11, con le
+     mani a 30 Hz, diceva 60 mentre la traccia del compositore (DrawFrame contro DroppedFrame) ne contava 56,7.
+     Il segno del ritardo qui è callback_oltre_25ms.
+     Il risultato va anche in window.risultato, per chi misura via CDP. -->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #050912; color: #9cc8ee; font: 12px ui-monospace, Menlo, monospace; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+  #pannello { position: fixed; left: 12px; top: 12px; z-index: 2; background: rgba(5, 9, 18, .8); padding: 10px 12px; border: 1px solid #1d3a5c; max-width: 560px; }
+  canvas { display: block; width: 320px; height: 240px; margin-bottom: 8px; background: #fff; }
+  pre { margin: 0; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<iframe id="holo" hidden title="ologramma di prova"></iframe>
+<div id="pannello"><canvas id="vista" width="320" height="240"></canvas><pre id="info">avvio…</pre></div>
+<script type="module">
+import { createMani } from '/ologramma/mani.js';
+
+const q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
+const quante = ['0', '1', '2'].includes(q.get('mani')) ? Number(q.get('mani')) : 2, base = q.has('base');
+const delegato = q.get('delegato') === 'CPU' ? 'CPU' : 'GPU';
+const hz = Math.max(0, Math.min(120, Number(q.get('hz')) || 0));
+const secondi = Math.max(2, Math.min(120, Number(q.get('secondi')) || 20));
+const demo = ['turbofan', 'staffa'].includes(q.get('ologramma')) ? q.get('ologramma') : 'turbofan';
+const attendi = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const quantile = (v, p) => (v.length ? [...v].sort((a, b) => a - b)[Math.min(v.length - 1, Math.floor(p * v.length))] : null);
+
+// La GPU vera? Lo dice il renderer di WebGL2, lo stesso che vedrebbe three.js nell'HUD (SwiftShader vuol dire software).
+function renderer() {
+  const gl = document.createElement('canvas').getContext('webgl2');
+  if (!gl) return 'niente WebGL2';
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const r = ext ? `${gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)} | ${gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)}` : gl.getParameter(gl.RENDERER);
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return r;
+}
+
+// l'immagine di prova in una tela 640×480 come la fotocamera: intera (due mani) o solo la metà destra (la mano dritta)
+async function tela() {
+  const img = new Image();
+  img.src = '/modelli/prova-mani.jpg';
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 480;
+  const g = c.getContext('2d'), s = 640 / img.naturalWidth, h = img.naturalHeight * s, y = (480 - h) / 2;
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 480);
+  if (quante === 1) g.drawImage(img, img.naturalWidth / 2, 0, img.naturalWidth / 2, img.naturalHeight, 320, y, 320, h);
+  else if (quante === 2) g.drawImage(img, 0, y, 640, h);
+  return c;
+}
+
+// I fotogrammi della pagina, in due modi: il tempo del fotogramma che Chrome passa a requestAnimationFrame, e
+// performance.now() all'inizio del callback, che vede anche il ritardo del thread. Più i fotogrammi lunghi (LoAF > 50 ms).
+const intervalli = [], ritardi = [];
+let contando = false, ultimo = 0, ultimoAdesso = 0, lunghi = 0, fotogrammiIframe = 0;
+requestAnimationFrame(function conta(t) {
+  const adesso = performance.now();
+  if (contando && ultimo) { intervalli.push(t - ultimo); ritardi.push(adesso - ultimoAdesso); }
+  ultimo = t; ultimoAdesso = adesso;
+  requestAnimationFrame(conta);
+});
+try { new PerformanceObserver((l) => { if (contando) lunghi += l.getEntries().length; }).observe({ type: 'long-animation-frame', buffered: false }); } catch { lunghi = null; }
+
+try {
+  const r = { renderer: renderer(), finestra: `${innerWidth}×${innerHeight} @${devicePixelRatio}`, mani_nell_immagine: quante, delegato_chiesto: delegato, hz: hz || 'ogni fotogramma', secondi, ologramma: q.has('ologramma') ? demo : null };
+  $('info').textContent = `renderer: ${r.renderer}\ncarico l'immagine…`;
+  const sorgente = await tela(), vista = $('vista').getContext('2d');
+  vista.drawImage(sorgente, 0, 0, 320, 240);
+  if (r.ologramma) {
+    const f = $('holo');
+    f.hidden = false;
+    f.src = `/lab-ologramma.html?demo=${demo}`;
+    await new Promise((ok) => f.addEventListener('load', ok, { once: true }));
+    await attendi(3000); // modello costruito e animazione d'entrata finita
+    f.contentWindow.requestAnimationFrame(function c() { if (contando) fotogrammiIframe++; f.contentWindow.requestAnimationFrame(c); });
+  }
+  const trovate = [0, 0, 0], lati = {}, palmi = [], gesti = {};
+  let disegni = 0, mani = null;
+  if (!base) {
+    mani = createMani({
+      sorgente: 'immagine', immagine: sorgente, delegato, hz,
+      onGesto: (g) => { gesti[g.tipo] = (gesti[g.tipo] || 0) + 1; },
+      onMani: (m, ris) => {
+        trovate[Math.min(2, m.length)]++;
+        (ris.handedness || []).forEach((h, i) => { const k = `${h[0]?.categoryName}→${m[i]?.lato}`; lati[k] = (lati[k] || 0) + 1; });
+        // il palmo come lo stima MediaPipe in metri (punti del mondo 0→9): la scala che gesti.js usa per i mm/s
+        for (const w of ris.worldLandmarks || []) if (w.length === 21) palmi.push(1000 * Math.hypot(w[0].x - w[9].x, w[0].y - w[9].y, w[0].z - w[9].z));
+        if (disegni++ % 6) return; // l'anteprima costa poco, ma non serve a ogni fotogramma
+        vista.drawImage(sorgente, 0, 0, 320, 240);
+        vista.fillStyle = '#e0306a';
+        for (const mano of ris.landmarks || []) for (const p of mano) vista.fillRect(p.x * 320 - 2, p.y * 240 - 2, 4, 4);
+      },
+    });
+    try {
+      if (q.has('riavvia')) { await mani.avvia(); await attendi(1000); r.prima_del_riavvio = mani.misure.rilevazioni; mani.ferma(); r.dopo_ferma_attivo = mani.attivo; }
+      await mani.avvia();
+      $('info').textContent = `renderer: ${r.renderer}\nMediaPipe partito in ${mani.misure.avvio_ms} ms; a regime fra 2 s…`;
+      await attendi(2000); // a regime: gli shader della GPU sono compilati
+      mani.azzeraMisure();
+      trovate.fill(0);
+    } catch (e) {
+      r.errore_avvio = String(e?.message || e); // le mani non partono, ma la pagina deve continuare: si misura lo stesso
+      mani = null;
+    }
+  }
+  contando = true;
+  const t0 = performance.now();
+  for (let s = 0; s < secondi; s++) {
+    await attendi(1000);
+    const m = mani?.misure;
+    $('info').textContent = `renderer: ${r.renderer}\nmisura ${s + 1}/${secondi} s` + (m ? ` · detect mediana ${m.detect_ms.mediana} ms · ${m.mani} mani` : '');
+  }
+  contando = false;
+  const durata = (performance.now() - t0) / 1000;
+  if (mani) {
+    const m = mani.misure;
+    mani.ferma();
+    Object.assign(r, { delegato: m.delegato, avvio_ms: m.avvio_ms, detect_ms: m.detect_ms, rilevazioni: m.rilevazioni, rilevazioni_s: +(m.rilevazioni / durata).toFixed(1), fotogrammi_con_mani: { zero: trovate[0], una: trovate[1], due: trovate[2] }, lati_mediapipe_e_nostri: lati, palmo_mondo_mm: palmi.length ? +quantile(palmi, 0.5).toFixed(1) : null, gesti, errore: m.errore });
+  }
+  const dur = intervalli.reduce((s, v) => s + v, 0) / 1000;
+  Object.assign(r, {
+    fps_pagina: +(intervalli.length / dur).toFixed(1), intervallo_p90_ms: +quantile(intervalli, 0.9).toFixed(1), intervallo_massimo_ms: +quantile(intervalli, 1).toFixed(1),
+    fotogrammi_oltre_25ms: intervalli.filter((v) => v > 25).length, fotogrammi: intervalli.length,
+    callback_p90_ms: +quantile(ritardi, 0.9).toFixed(1), callback_massimo_ms: +quantile(ritardi, 1).toFixed(1), callback_oltre_25ms: ritardi.filter((v) => v > 25).length,
+    fotogrammi_lunghi_50ms: lunghi, fps_iframe: r.ologramma ? +(fotogrammiIframe / durata).toFixed(1) : null,
+  });
+  window.risultato = r;
+  $('info').textContent = JSON.stringify(r, null, 1);
+} catch (e) {
+  window.risultato = { errore: String(e?.message || e) };
+  $('info').textContent = `errore: ${window.risultato.errore}`;
+}
+</script>
+</body>
+</html>

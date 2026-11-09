@@ -23,6 +23,13 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 - **Browser:** lavora su Google in un Chrome suo, sempre nella stessa pagina. Il pannello compare nell'HUD **solo per i compiti complessi** (ricerche lunghe, creazioni); le cose banali le fa in silenzio e ti dice il risultato.
 - **GIF ed esempi:** quando spiega, mostra accanto alla testa animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
 - **Report a schermo intero:** alla fine di una ricerca che vuoi vedere, STEM apre un report come quello di ROSE. È una griglia di note, grafici, un dato in grande, immagini e video di YouTube muti, che arrivano dal fondo e si mettono a fuoco uno alla volta, con i loro suoni, mentre lui si sposta nell'angolo in basso a destra. Le note in più si alternano ogni 9 secondi. Si chiude con `Esc`, oppure chiedendoglielo.
+- **Ologrammi:** chiedigli di mostrarti un oggetto in 3D («mostrami un motore a reazione», «fammi una staffa a L in alluminio») e lo costruisce a schermo intero, con misure in millimetri.
+  - **Cosa ci fai:** lo giri, lo esplodi, lo tagli, guardi dentro ai raggi X e togli i pezzi, a voce («esplodilo», «taglialo a metà», «togli il coperchio»), col mouse, con la tastiera o con le mani davanti alla fotocamera.
+  - **Le mani:** un pizzico gira il modello, con due mani lo ingrandisci, aprendo i palmi lo esplodi, e un pezzo afferrato e lanciato via si toglie.
+  - **I tasti:** E esplodi, S taglia, X raggi X, F sforzi, R torna com'era, Z rimette l'ultimo pezzo tolto, M accende o spegne le mani, Esc chiude.
+  - **Gli sforzi:** se gli dici il materiale, dove è fissato e che forza riceve, STEM calcola gli sforzi e li colora dal blu al rosso; il rosso è dove il materiale cede. È una stima statica lineare: buona per capire dove lavora un pezzo, non una garanzia per costruirlo.
+  - **Prima volta:** il Mac e l'HUD chiedono il permesso della fotocamera; se dici di no, restano mouse, tastiera e voce. I fotogrammi non escono dal Mac.
+  - **I limiti:** un oggetto vero fatto da STEM è stilizzato, e per quello vero conviene scaricare un modello, per esempio da Sketchfab in GLB. Un oggetto nuovo può richiedere quasi un minuto.
 - **Il Mac:** apre e chiude app, guarda lo schermo, clicca, scrive e usa la tastiera (strumenti in `mac/`). Per le azioni normali procede da solo; prima di inviare, cancellare, comprare, pubblicare, cambiare impostazioni o installare chiede il tuo sì. Non scrive mai nei campi password. Serve il permesso in Impostazioni di Sistema → Privacy e sicurezza: **Accessibilità** e **Registrazione schermo e audio di sistema** per l'app che lo avvia (STEM o il Terminale).
 - **File:** legge, crea e modifica in Scrivania, Documenti, Download, Immagini, Filmati, Musica e iCloud Drive; il resto del Mac (file nascosti, Libreria, cartella di STEM) gli è chiuso.
 - **Memoria:** quando una conversazione finisce (3 minuti di silenzio, o chiudi l'HUD), STEM la rilegge e si segna quello che varrà ancora tra un mese: persone, gusti, abitudini, correzioni. Niente salute, soldi o password, a meno che tu non glielo chieda. Se riapri STEM entro 2 ore, riprende la conversazione da dove eravate. Puoi chiedergli «cosa ricordi di me?» o dirgli «dimentica…».
@@ -39,7 +46,8 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 - `voice.mjs`: ElevenLabs o Mac, uno per risposta.
 - `media.mjs`: GIF e animazioni.
 - `orologio.mjs`: l'ora, data al cervello a ogni domanda, e l'agenda (`runtime/agenda.json`).
-- `public/`: l'HUD (`humanoid.js` per la grafica, `sfx.js` per i suoni sintetizzati, `stem.js` per ascolto e logica, `report.js` per il report a schermo intero).
+- `ologramma.mjs`: lo stato degli ologrammi; `fisica/`: il calcolo degli sforzi.
+- `public/`: l'HUD (`humanoid.js` per la grafica, `sfx.js` per i suoni sintetizzati, `stem.js` per ascolto e logica, `report.js` per il report a schermo intero, `ologramma/` per ologrammi e mani).
 - `mac/`: controllo del Mac (server MCP + aiutante Swift).
 - `stem-persona.md`: il carattere. STEM ha una memoria sua, separata dalla repository.
 

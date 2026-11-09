@@ -7,6 +7,6 @@ if curl -s -m 1 "localhost:$PORT/api/status" > /dev/null; then # già acceso: ri
   curl -s -X POST -H 'content-type: application/json' "localhost:$PORT/api/hud" > /dev/null
   exit 0
 fi
-[ -d node_modules ] || npm install --silent
+[ -d node_modules/@mediapipe/tasks-vision ] || npm install --silent # anche dopo un pull che aggiunge un pacchetto
 mkdir -p runtime # su una copia presa dalla repository non c'è ancora
 STEM_APP=1 exec node server.mjs >> runtime/server.log 2>&1

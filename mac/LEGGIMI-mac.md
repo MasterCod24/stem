@@ -7,10 +7,12 @@
 Si aggancia a `claude -p` così:
 
 ```json
-{ "mcpServers": { "mac": { "command": "node", "args": ["/Users/tony/STEM/mac/mac-mcp.mjs"] } } }
+{ "mcpServers": { "mac": { "command": "node", "args": ["/Users/tony/STEM/mac/mac-mcp.mjs", "--porta", "4321"] } } }
 ```
 
-con `--allowedTools mcp__mac` (gli strumenti diventano `mcp__mac__<nome>`).
+con `--allowedTools mcp__mac` (gli strumenti diventano `mcp__mac__<nome>`). `--porta` è la porta di `server.mjs`, che serve
+agli strumenti degli ologrammi: `server.mjs` la scrive da solo in `mcp.json`, perché `.env` non arriva ai processi figli.
+Senza `--porta` vale 4321; una porta non valida non ripiega sulla 4321, così una prova non finisce sullo STEM vero.
 
 ## Strumenti
 
@@ -26,6 +28,14 @@ con `--allowedTools mcp__mac` (gli strumenti diventano `mcp__mac__<nome>`).
 | `mostra_report` | il report a schermo intero nell'HUD; lo strumento risponde e basta, i blocchi li legge `brain.mjs` dalla chiamata |
 | `ricorda` | segna un compito in `runtime/agenda.json` con `tra_minuti` oppure `alle` («18:00», o «2026-11-07T08:30»); a batteria aggiunge l'avviso che il Mac può andare in stop |
 | `agenda` | elenca i compiti; `togli` li cancella per numero. All'ora giusta li consegna `server.mjs` (vedi `orologio.mjs`) |
+| `mostra_ologramma` | apre nell'HUD un ologramma 3D fatto di pezzi con misure in mm (forme, materiali, carichi e vincoli come in `public/ologramma/LEGGIMI-ologramma.md`) |
+| `modifica_ologramma` | cambia pezzi, vista, carichi, vincoli, titolo e descrizione; `chiudi` lo chiude; senza campi dice com'è adesso |
+| `analizza_struttura` | calcola gli sforzi e aspetta il risultato fino a 60 s |
+
+I tre strumenti degli ologrammi sono client sottili: mandano `POST /api/ologramma` a `server.mjs`, che tiene lo stato,
+valida e scrive il testo, e restituiscono quel testo più la foto PNG che l'HUD ha scattato, se c'è. Gli errori del server
+arrivano al cervello così come sono. Hanno una coda loro, così un calcolo di un minuto non ferma mouse e tastiera, e «stop»
+annulla anche la loro attesa.
 
 ## Permessi
 

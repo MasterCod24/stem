@@ -106,6 +106,25 @@
   #report .dots i { width: 4px; height: 4px; background: rgba(150, 205, 255, .45); }
   #report .dots i.on { width: 16px; background: var(--neon); box-shadow: 0 0 6px var(--neon); }
 
+  /* Ologramma: etichette, scheda, legenda e cursore li fa scena.js qui dentro, col suo stile. #holo fa da contesto di
+     impilamento: lo z-index di scena.js resta qui, e scritte, avvisi e report, che vengono dopo, restano sopra */
+  #holo { position: fixed; inset: 0; pointer-events: none; }
+  body.olo #gl { cursor: grab; }
+  body.olo #gl:active { cursor: grabbing; }
+  #holo .holo-card::before { content: ""; position: absolute; inset: -1px; pointer-events: none; /* angoli a staffa, come il browser */
+    background: linear-gradient(var(--neon) 0 0) left top / 14px 2px, linear-gradient(var(--neon) 0 0) left top / 2px 14px,
+      linear-gradient(var(--neon) 0 0) right top / 14px 2px, linear-gradient(var(--neon) 0 0) right top / 2px 14px,
+      linear-gradient(var(--neon) 0 0) left bottom / 14px 2px, linear-gradient(var(--neon) 0 0) left bottom / 2px 14px,
+      linear-gradient(var(--neon) 0 0) right bottom / 14px 2px, linear-gradient(var(--neon) 0 0) right bottom / 2px 14px;
+    background-repeat: no-repeat; filter: drop-shadow(0 0 4px var(--neon)); }
+  /* Le dita viste dalla fotocamera: punto pieno l'indice, anello il pollice. Il cursore dei gesti lo spegne scena.js.
+     Lo z-index vale solo dentro #holo: le dita restano sopra scheda e legenda di scena.js (z-index 4), non sopra il resto */
+  #dita { position: absolute; inset: 0; z-index: 5; }
+  #dita i { position: absolute; left: 0; top: 0; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #9ff0ff;
+    box-shadow: 0 0 8px rgba(47, 168, 255, .9); opacity: 0; transition: opacity .2s; will-change: transform; }
+  #dita i.pollice { background: none; border: 1.5px solid #9ff0ff; }
+  #dita i.on { opacity: .85; }
+
   #warn { position: fixed; left: 50%; bottom: 6vh; transform: translateX(-50%); display: none; font-size: 11px; letter-spacing: .2em;
     color: var(--neon); text-shadow: 0 0 6px rgba(47, 168, 255, .7); text-transform: uppercase; }
 </style>
@@ -115,6 +134,7 @@
 </head>
 <body data-mode="idle">
   <canvas id="gl"></canvas>
+  <div id="holo"><div id="dita"><i class="pollice"></i><i></i><i class="pollice"></i><i></i></div></div>
   <div id="status"></div>
   <div id="small"></div>
 

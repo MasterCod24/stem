@@ -3,7 +3,7 @@
 //                                   tolleranza, cambio di lega
 // node test-trave.mjs 4 8        → solo le risoluzioni scelte (n voxel nello spessore)
 // node test-trave.mjs --mg        → con il precondizionatore multigriglia invece di Jacobi
-import { creaModello, incastra, forzaSuFacce, risolvi, sforzi, matriceKe, prodotto } from './voxel-fea.mjs';
+import { creaModello, incastra, forzaSuFacce, risolvi, sforzi, matriceKe, prodotto } from '../../fisica/voxel-fea.mjs';
 
 const ora = () => performance.now();
 const MG = process.argv.includes('--mg');

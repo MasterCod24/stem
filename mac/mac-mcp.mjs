@@ -8,6 +8,8 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { agenda, adesso, quandoIt, traQuanto } from '../orologio.mjs';
+import { FORME, FACCE, MODI, FLUSSI, LIMITI } from '../public/ologramma/forme.js';
+import { MATERIALI } from '../public/ologramma/materiali.js';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(DIR);
@@ -609,6 +611,149 @@ TOOLS.push({
     return `${fatto}${n < ids.length ? ' (gli altri numeri non c\'erano)' : ''}.\n${elenco()}`;
   },
 });
+
+// --- Ologrammi: client sottili di POST /api/ologramma. Stato, validazione e testi stanno nel server (ologramma.mjs) ---
+// La porta arriva dagli argomenti (mcp.json: --porta <STEM_PORT>), perché .env non arriva ai processi figli. Una porta
+// sbagliata non ripiega sulla 4321: una prova finirebbe sullo STEM vero.
+const PORTA = (() => {
+  const i = process.argv.indexOf('--porta');
+  if (i < 0) return 4321;
+  const n = Number(process.argv[i + 1]);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : null;
+})();
+const ATTESA_MS = 95_000; // il server aspetta il calcolo fino a 60 s e poi la foto fino a 8 s
+const olo = new Set();    // richieste in volo: «stop» le annulla
+async function ologramma(corpo) {
+  if (!PORTA) throw new ToolError(`la porta di STEM negli argomenti non è valida (${process.argv.slice(2).join(' ')}): niente è cambiato`);
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), ATTESA_MS);
+  olo.add(ctrl);
+  let r, testo;
+  try {
+    r = await fetch(`http://127.0.0.1:${PORTA}/api/ologramma`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo), signal: ctrl.signal });
+    testo = await r.text();
+  } catch (e) {
+    throw new ToolError(ctrl.signal.aborted
+      ? `nessuna risposta da STEM entro ${ATTESA_MS / 1000} s, o richiesta annullata: il cambio può essere arrivato lo stesso, guardalo con modifica_ologramma senza campi`
+      : `il server di STEM non risponde sulla porta ${PORTA} (${e.cause?.code || e.message}): niente è cambiato`);
+  } finally {
+    clearTimeout(timer);
+    olo.delete(ctrl);
+  }
+  let d = null;
+  try { d = JSON.parse(testo); } catch {}
+  if (!r.ok || d?.ok !== true) { // gli errori del server arrivano al cervello così come sono: dicono già cosa correggere
+    const errori = Array.isArray(d?.errori) ? d.errori.map(String) : [];
+    throw new ToolError(`Niente è cambiato (il server ha risposto ${r.status})${errori.length ? `:\n- ${errori.join('\n- ')}` : testo ? `: ${testo.slice(0, 500)}` : '.'}`);
+  }
+  // Testo e foto, senza structuredContent: secondo la misura dello studio, con quello il testo non arriverebbe al cervello
+  const out = [{ type: 'text', text: String(d.testo ?? '') }];
+  if (typeof d.foto === 'string' && d.foto) out.push({ type: 'image', data: d.foto, mimeType: 'image/png' });
+  return out;
+}
+
+// Ogni forma di dati è descritta per intero in uno strumento solo, e gli altri lo citano: le definizioni degli strumenti
+// stanno nel contesto del cervello a ogni domanda, e con le copie i tre strumenti pesavano 13,2 KB invece di 7,9.
+const TERNA = (description) => ({ type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description });
+const COME = (description) => ({ type: 'array', items: { type: 'object' }, description });
+const FACCIA = { type: 'string', enum: FACCE, description: 'lato del pezzo negli assi del MONDO, non del pezzo: +y è il lato più in alto' };
+const CARICHI = { type: 'array', maxItems: LIMITI.carichi, description: 'forze statiche: sostituiscono quelle di prima ([] le toglie)', items: { type: 'object', properties: {
+  pezzo: { type: 'string', description: 'id del pezzo' },
+  faccia: FACCIA,
+  forza_N: { type: 'number', description: 'newton, da 0 a 10 milioni (1 kg di peso vale 9,81 N); un urto si dà come forza statica equivalente' },
+  direzione: TERNA('verso della forza, per esempio [0, -1, 0] in giù'),
+}, required: ['pezzo', 'faccia', 'forza_N', 'direzione'] } };
+const VINCOLI = { type: 'array', maxItems: LIMITI.vincoli, description: 'dove il pezzo è fissato: sostituiscono quelli di prima', items: { type: 'object', properties: {
+  pezzo: { type: 'string', description: 'id del pezzo' },
+  faccia: FACCIA,
+  tipo: { type: 'string', enum: ['incastro'], description: 'incastro: quella faccia non si muove' },
+}, required: ['pezzo', 'faccia'] } };
+const VISTA = { type: 'object', description: 'parziale: solo i campi da cambiare', properties: {
+  esploso: { type: 'number', description: 'da 0 (montato) a 1 (vista esplosa)' },
+  sezione: { type: ['object', 'null'], description: 'taglio pieno, null lo toglie: resta la parte con coordinata ≤ posizione (verso 1) o ≥ (verso -1)', properties: {
+    asse: { type: 'string', enum: ['x', 'y', 'z'] },
+    posizione: { type: 'number', description: 'mm nel mondo' },
+    verso: { type: 'number', enum: [1, -1] },
+  } },
+  modo: { type: 'string', enum: MODI, description: 'raggi-x mostra i pezzi interni; densita colora per materiale; sforzi colora in proporzione allo sforzo diviso lo snervamento, dal blu (lontano) al rosso (snerva), dopo analizza_struttura' },
+  selezionato: { type: ['string', 'null'], description: 'id del pezzo evidenziato' },
+  isolato: { type: ['string', 'null'], description: 'id del pezzo mostrato da solo' },
+  rotazione_auto: { type: 'boolean', description: 'gira da solo' },
+} };
+const MISURE = 'In mm, secondo la forma. scatola {x, y, z}: i lati. cilindro {r, h}: asse Y. tubo {r, r_interno, h}. sfera {r}. ' +
+  'cono {r, r_cima, h}: r in basso, r_cima in alto (0 è una punta). toro {R, r}: anello nel piano XZ, R dell\'anello e r della sezione. ' +
+  'piastra {x, z, spessore, raggio}: lastra x × spessore × z, il raggio la curva (positivo verso +Y). ' +
+  'estrusione {profilo, profondita, fori, fori_tondi}: profilo [[x, y], …] di 3–200 punti nel piano XY, estruso lungo Z; fori sono poligoni, fori_tondi [{x, y, r}]. ' +
+  'rivoluzione {profilo}: [[r, y], …] con r ≥ 0, gira attorno a Y (alberi a gradini, vasi, ogive). ' +
+  'ingranaggio {denti, modulo, spessore, foro}: denti dritti, da 6 a 200, raggio primitivo modulo·denti/2, spessore lungo Y. ' +
+  'cavo {punti, r}: tubo curvo per 2–100 punti [[x, y, z], …]. ' +
+  'file {file, scala, centra}: un modello 3D di Tony, percorso assoluto in Scrivania, Documenti, Download…, estensioni glb, stl, obj, 3mf, ply; scala sono i mm per unità del file (1000 per un GLB in metri)';
+const PEZZO = { type: 'object', properties: {
+  id: { type: 'string', description: 'minuscole, cifre, - e _, unico: «albero», «pala-3»' },
+  nome: { type: 'string', description: 'etichetta leggibile, al massimo 60 caratteri' },
+  forma: { type: 'string', enum: FORME },
+  misure: { type: 'object', description: MISURE },
+  posizione: TERNA('centro del pezzo in mm [x, y, z], Y in alto'),
+  rotazione: TERNA('gradi [rx, ry, rz], applicati X poi Y poi Z; le forme con un asse lo hanno lungo Y'),
+  materiale: { type: 'string', enum: Object.keys(MATERIALI), description: 'generico, se manca: si disegna ma non entra nel calcolo' },
+  gruppo: { type: 'string', description: 'i pezzi dello stesso gruppo esplodono insieme' },
+  esplodi: TERNA('direzione nella vista esplosa; la lunghezza, fino a 5, moltiplica la distanza'),
+  interno: { type: 'boolean', description: 'pezzo interno: tenue di solito, evidente ai raggi X e in sezione' },
+  flusso: { type: 'string', enum: FLUSSI, description: 'solo cavo: impulsi disegnati che scorrono, dati dichiarati e non simulati' },
+  calcolo: { type: 'boolean', description: 'entra nel calcolo degli sforzi: sì di base, no per cavo e file' },
+}, required: ['id', 'forma', 'misure'] };
+
+const OLOGRAMMI = new Set(['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura']);
+TOOLS.push({
+  name: 'mostra_ologramma',
+  description: 'Mostra nell\'HUD, a schermo intero, un ologramma 3D fatto di pezzi con misure vere in mm, al posto di quello di prima. ' +
+    'Risponde con il riassunto (pezzi, ingombro, massa) e, con l\'HUD acceso, con la foto di quello che si vede: guardala e correggi prima di dire che è fatto. ' +
+    'Un oggetto vero costruito così è stilizzato; per quello vero serve un file 3D di Tony (forma file).',
+  inputSchema: { type: 'object', properties: {
+    titolo: { type: 'string', description: 'al massimo 80 caratteri' },
+    descrizione: { type: 'string', description: 'al massimo 300 caratteri' },
+    pezzi: { type: 'array', minItems: 1, maxItems: LIMITI.pezzi, items: PEZZO },
+    carichi: COME('carichi, come in analizza_struttura: servono solo per gli sforzi'),
+    vincoli: COME('vincoli, come in analizza_struttura'),
+    vista: { type: 'object', description: 'vista iniziale, come in modifica_ologramma' },
+  }, required: ['titolo', 'pezzi'] },
+  annotations: { title: 'Mostra un ologramma' },
+  run: (a) => ologramma({ azione: 'mostra', modello: a }),
+});
+TOOLS.push({
+  name: 'modifica_ologramma',
+  description: 'Cambia l\'ologramma: pezzi (cambia, aggiungi, togli, rimetti), vista (esploso, sezione, modo, selezionato, isolato, rotazione_auto), carichi, vincoli, titolo e descrizione. ' +
+    'Ogni modifica riapre un ologramma chiuso (per riaprirlo e basta: vista {}); chiudi true lo chiude. Senza campi dice com\'è adesso, anche quello che Tony ha tolto o chiuso. ' +
+    'Se c\'era un\'analisi e cambiano pezzi, materiali, carichi o vincoli, gli sforzi si ricalcolano da soli. Risponde con il riassunto e la foto.',
+  inputSchema: { type: 'object', properties: {
+    cambia: { type: 'array', description: 'pezzi da cambiare: l\'id più i soli campi nuovi, con gli stessi nomi dei pezzi; misure si fonde campo per campo', items: {
+      type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+    aggiungi: COME('pezzi nuovi, fatti come in mostra_ologramma'),
+    togli: { type: 'array', items: { type: 'string' }, description: 'id dei pezzi da togliere: si possono rimettere' },
+    rimetti: { type: 'array', items: { type: 'string' }, description: 'id dei pezzi tolti da rimettere' },
+    vista: VISTA,
+    carichi: COME('carichi, come in analizza_struttura: sostituiscono quelli di prima'),
+    vincoli: COME('vincoli, come in analizza_struttura: sostituiscono quelli di prima'),
+    titolo: { type: 'string', description: 'titolo nuovo, al massimo 80 caratteri: se cambi materiale o cosa rappresenta il modello' },
+    descrizione: { type: 'string', description: 'descrizione nuova, al massimo 300 caratteri; vuota la toglie' },
+    chiudi: { type: 'boolean', description: 'true chiude l\'ologramma; va mandato da solo' },
+  } },
+  annotations: { title: 'Modifica l\'ologramma' },
+  run: (a) => {
+    const { chiudi, ...resto } = a;
+    if (chiudi !== true) return ologramma({ ...resto, azione: 'modifica' });
+    if (Object.keys(resto).length) throw new ToolError('chiudi va mandato da solo: le modifiche in una chiamata, chiudi in un\'altra. Niente è cambiato.');
+    return ologramma({ azione: 'chiudi' });
+  },
+});
+TOOLS.push({
+  name: 'analizza_struttura',
+  description: 'Calcola gli sforzi dei pezzi con un materiale vero (elasticità lineare statica, a voxel): servono almeno un incastro e un carico, ' +
+    'dati qui o già nell\'ologramma. Aspetta il risultato fino a un minuto: sforzo massimo, fattore di sicurezza per pezzo, spostamento e avvisi. ' +
+    'È una stima: i pezzi che si toccano sono incollati, niente bulloni, fatica, urti veri o plasticità. Per i colori, vista in modo sforzi.',
+  inputSchema: { type: 'object', properties: { carichi: CARICHI, vincoli: VINCOLI } },
+  annotations: { title: 'Analizza gli sforzi' },
+  run: (a) => ologramma({ ...a, azione: 'analizza' }),
+});
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // --- JSON-RPC su stdio ---
@@ -617,6 +762,7 @@ const send = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m
 const log = (...a) => process.stderr.write(`[mac] ${a.join(' ')}\n`);
 
 let queue = Promise.resolve(); // un'azione alla volta: mouse e tastiera non si accavallano
+let codaOlo = Promise.resolve(); // gli ologrammi in fila fra loro, ma a parte: un calcolo di un minuto non ferma mouse e tastiera
 
 async function callTool(params) {
   const tool = BY_NAME.get(params?.name);
@@ -641,17 +787,25 @@ async function handle(msg) {
         capabilities: { tools: {} },
         serverInfo: { name: 'stem-mac', version: '1.0.0' },
         instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
-          'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda».',
+          'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda». ' +
+          'Gli oggetti in 3D si mostrano con mostra_ologramma.',
       } });
     case 'ping':
       return reply({ result: {} });
     case 'tools/list':
       return reply({ result: { tools: TOOLS.map(({ run: _, ...t }) => t) } });
-    case 'tools/call':
-      queue = queue.then(async () => reply(await callTool(params))).catch((e) => log(e.message));
+    case 'tools/call': {
+      const run = async () => reply(await callTool(params));
+      if (OLOGRAMMI.has(params?.name)) return (codaOlo = codaOlo.then(run).catch((e) => log(e.message)));
+      queue = queue.then(run).catch((e) => log(e.message));
       return queue;
+    }
     default:
-      if (method === 'notifications/cancelled') { for (const c of inFlight) c.kill('SIGTERM'); return; } // "stop": mouse e tastiera si fermano
+      if (method === 'notifications/cancelled') { // "stop": mouse e tastiera si fermano, le attese degli ologrammi pure
+        for (const c of inFlight) c.kill('SIGTERM');
+        for (const c of olo) c.abort();
+        return;
+      }
       if (method?.startsWith('notifications/')) return; // initialized…: nessuna risposta
       return reply({ error: { code: -32601, message: `metodo sconosciuto: ${method}` } });
   }
@@ -669,5 +823,8 @@ rl.on('line', (line) => {
     });
   }
 });
-rl.on('close', () => queue.finally(() => process.exit(0)));
+rl.on('close', () => {
+  for (const c of olo) c.abort(); // il cervello se n'è andato: nessuno aspetta più le foto
+  Promise.allSettled([queue, codaOlo]).finally(() => process.exit(0));
+});
 ensureHelper().catch((e) => log(e.message)); // compila subito, se serve, mentre il client si presenta

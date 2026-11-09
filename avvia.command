@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Doppio clic per avviare STEM. Chiudi questa finestra per spegnerlo.
 cd "$(dirname "$0")"
-[ -d node_modules ] || npm install --silent
+[ -d node_modules/@mediapipe/tasks-vision ] || npm install --silent # anche dopo un pull che aggiunge un pacchetto
 
 if ! grep -qE '^ELEVENLABS_API_KEY=sk_[0-9A-Za-z]+$' .env 2>/dev/null; then
   echo "Incolla la chiave ElevenLabs UNA volta e premi invio (non si vede mentre incolli; solo invio = voce di sistema):"

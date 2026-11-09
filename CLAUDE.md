@@ -14,17 +14,28 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per STEM (nome, conversazione, comando, saluto), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «stem». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 5/11/2026)
-- **Ologrammi 3D: studiati e decisi, non ancora costruiti** (5/11, sessione interrotta per il limite di utilizzo). Tony ha chiesto: modelli 3D a schermo intero nell'HUD da sezionare ed esplodere, comandati con le mani, e una mappa degli sforzi dal blu al rosso.
-  - **Le scelte di Tony:** si fa tutto, ma le mani si collegano solo se, misurando sul suo M2, l'HUD resta sopra 45 fps. MediaPipe `@mediapipe/tasks-vision` 0.10.35, in locale: dalla 1.0 manda statistiche a Google ogni 60 s.
-  - **Cosa si sa:**
-    - Tony non ha file CAD; i modelli di oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello scaricato da Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
-    - L'ologramma va nello stesso renderer dell'HUD: un RenderPass prima del bloom, +2,4 ms. La sezione piena con lo stencil funziona solo se il composer usa un render target con `stencilBuffer: true` (misurato).
-    - Dopo una tool_use il flusso stream-json manda una riga `user` con il `tool_result`. Lo stato dell'ologramma conviene che sia solo del server, con gli strumenti MCP come client sottili.
-    - Il calcolo degli sforzi è vero: `prove/fea/voxel-fea.mjs` (elasticità lineare a voxel, multigriglia), provato contro la trave a sbalzo con freccia −0,88% a 80×8×8 (`node prove/fea/test-trave.mjs --mg 4 8`). È veloce sui pezzi compatti, lento sui gusci sottili (14 s per 50.400 voxel), e non regge gli assiemi bullonati. Cambiare lega non richiede di risolvere di nuovo.
-  - **Cose finte da non fare:** fisica molecolare, flussi di energia, surriscaldamento senza sorgenti di calore, feedback aptico, precisione millimetrica (MediaPipe sbaglia di circa 1 cm).
-  - **Gli studi completi** (cinque agenti) stanno in `~/.claude/projects/-Users-tony-STEM--claude-worktrees-stem-cognitive-architecture-60f739/7c2c4e0b-d6ea-417a-b9d4-12b592bfe457/subagents/workflows/wf_88db52c5-2a9/journal.jsonl`.
-  - **Resta da fare:** il contratto dei dati (forme in mm, carichi e vincoli sulle facce), i moduli (forme, stato nel server, sforzi in un worker, scena dell'HUD, mani), gli strumenti `mostra_ologramma`, `modifica_ologramma` e `analizza_struttura`, che restituiscono anche una foto del render così STEM vede quello che ha fatto, la misura delle mani e la prova vera.
+## Aperto (al 9/11/2026)
+- **Ologrammi: costruiti e provati, mai usati da Tony** (9/11). Cosa è vero e cosa no, e come si parlano i pezzi, sta nel contratto `public/ologramma/LEGGIMI-ologramma.md`. Tony non ha file CAD: i suoi oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello di Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
+  - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Headless sulla GPU dell'M2, con il turbofan e due mani, la traccia del compositore ha dato 54,4 fps: mediana per secondo 55 e p10 48, quindi 3 fps di margine. Era però con l'ascolto spento e una foto al posto della fotocamera.
+    - La misura vera arriva da sola. Quando l'ologramma si chiude, dopo almeno 10 s di mani accese, `runtime/server.log` riceve una riga «[ologramma] mani accese N s: fps mediana …, p10 …, minimo …, detect … ms» (`grep 'mani accese' runtime/server.log`).
+    - Se il p10 vero sta sotto 45, le mani si spengono di base cambiando `maniVolute` in `public/stem.js`.
+    - La riga non arriva se Tony chiude la finestra dell'HUD con l'ologramma aperto.
+  - **A batteria sotto il 20%** il Risparmio energetico di Chrome limita ogni pagina a 30 fps, HUD compreso (misurato l'8/11). Una riga «mani accese» con mediana 30 viene da lì. Spegnerlo nel profilo dell'HUD costa batteria: lo decide Tony.
+  - **Mai provati:**
+    - la fotocamera vera: la prima volta macOS chiede il permesso per STEM.app e Chrome quello dell'HUD; se Tony li nega, resta il mouse;
+    - i gesti su Tony: le soglie sono da rifare con lui (filtro con beta 5, palmo 90 mm, presa 350 ms, lancio da circa 1 m/s);
+    - i suoni nuovi, che nessuno ha ascoltato;
+    - la frase breve («Te lo costruisco.») che la persona chiede prima di un modello nuovo.
+  - **Tempi col cervello vero** (7/11, tre domande):
+    - turbofan da 22 pezzi: 46 s prima della prima parola, cioè 20 s di pensiero, 17 s per scrivere il modello e 3 s di strumento;
+    - staffa con analisi: prima parola a 13 s, fine a 28 s;
+    - cambio di lega: prima parola a 3 s, fine a 15 s.
+  - **Il calcolo non è conservativo:**
+    - lo sforzo al centro dei voxel sottostima quello in superficie: −5,8% con 16 voxel nello spessore, −12,4% con 8, fino al 40% vicino agli incastri;
+    - il picco sugli spigoli vivi dipende dalla griglia: nella staffa di prova 128 MPa sulla punta della nervatura, contro 31–48 MPa della teoria della trave;
+    - i pezzi sottili sono lenti: una piastra curva da 52.000 voxel richiede 13 s, e una trave da 10 m × 10 × 10 mm non finisce nei 55 s del calcolo. Il rimedio vero sta nel risolutore (operatore grossolano di Galerkin).
+  - **File 3D:** si aprono fino a 1 milione di triangoli (`TRIANGOLI_MAX` in `geometrie.js`). Con le mani, 1 milione fa 50,7 fps e 2 milioni 33,3. Caricarne un milione ferma l'HUD per circa 2,5 s.
+  - **Comandi a voce:** con l'ologramma aperto, una frase che comincia con esplod…, rimont…, tagli…, togli…, rimett… o chiud… è per STEM anche se è di una parola e anche senza il nome. Qualche frase non sua arriva al cervello, per esempio «tagliatelle stasera?».
 
 Restano decisioni di Tony, non lavoro sul codice:
 - **A batteria il Mac va in stop, e l'agenda con lui.** L'orologio gira solo con STEM acceso e il Mac sveglio. A batteria lo schermo si spegne dopo 10 minuti senza tocchi e il Mac va in stop circa 5 secondi dopo (`pmset -g custom` e `pmset -g log` del 1/11); a corrente non va mai in stop. Parlare a STEM non conta come tocco. Non è misurato se l'HUD acceso basta a tenerlo sveglio.
@@ -49,7 +60,13 @@ Restano decisioni di Tony, non lavoro sul codice:
 
 ## Come è fatto
 - **`server.mjs`** avvia e collega tutto:
-  - HUD e API su `127.0.0.1:4321`. Accetta solo l'Host `localhost:4321` o `127.0.0.1:4321`; le POST richiedono `content-type: application/json` e un'origine locale, o nessuna.
+  - HUD e API su `127.0.0.1:4321`. Le difese:
+    - accetta solo l'Host `localhost:4321` o `127.0.0.1:4321`;
+    - le POST richiedono `content-type: application/json` e un'origine locale, o nessuna;
+    - su `/api/`, `/mediapipe/` e `/modelli/`, con ogni metodo, `sec-fetch-site` deve mancare o valere `same-origin`;
+    - ogni file servito porta `x-frame-options: SAMEORIGIN` e `frame-ancestors 'self'`. Senza, un sito qualsiasi metteva l'HUD in un iframe e, con un ologramma aperto, accendeva la fotocamera (provato l'8/11);
+    - un corpo JSON rotto, o che non è un oggetto, vale `{}`.
+  - le variabili d'ambiente date a mano vincono su `.env`. `STEM_CERVELLO=<cartella>`, solo per le prove, fa vivere uno STEM di prova tutto lì: conversazione, `mcp.json`, ologramma e `ascolto.log`, con le cartelle dei documenti come sue sottocartelle. Così non tocca la memoria vera né i file di Tony.
   - un Chrome per Google con il suo profilo (`runtime/browser-profile`, CDP 9333);
   - Playwright MCP 0.0.83 sulla porta 8931, agganciato a quel Chrome, perché un browser lanciato da Playwright verrebbe chiuso alla fine di ogni risposta. Le schede nuove il server le chiude e ne apre l'indirizzo nella pagina principale;
   - lo screencast CDP mandato all'HUD come MJPEG su `/api/screen`;
@@ -61,7 +78,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - **Interruzioni:** una domanda nuova interrompe quella in corso con un `control_request` di tipo interrupt; se il turno non si chiude entro 4 secondi, il processo viene ucciso e rilanciato. Se muore, riparte con `--resume` sulla stessa sessione, mentre `/api/reset` lo fa ripartire da zero.
   - **Dopo un riavvio del server** riprende la stessa conversazione, se l'ultima risposta è di meno di 2 ore fa: id e ora stanno in `runtime/cervello.json`, che `/api/reset` cancella. Se una conversazione ripresa muore entro 20 secondi, per esempio perché non esiste più, ne apre una nuova.
   - **Marcatori nella risposta:** `[ignora]` vale solo prima che STEM abbia detto qualcosa. `[[mostra]]` apre il pannello del browser, che comunque si apre da solo alla quarta azione su Google. Poi ci sono `[gif: …]` e `[anim: …]`.
-  - **Report:** il cervello chiama lo strumento `mostra_report` di `mac/mac-mcp.mjs`, che risponde e basta. È `brain.mjs` a leggere i blocchi dalla chiamata nel flusso e a mandarli all'HUD come evento `report`. Zero blocchi lo chiudono, come `Esc` e come un `[[mostra]]` nuovo.
+  - **Report:** il cervello chiama lo strumento `mostra_report` di `mac/mac-mcp.mjs`, che risponde e basta. È `brain.mjs` a leggere i blocchi dalla chiamata nel flusso e a mandarli all'HUD come evento `report`. Zero blocchi lo chiudono, come `Esc` e come un `[[mostra]]` nuovo. Un report con blocchi, `[[mostra]]` e la quarta azione nel browser chiudono anche l'ologramma, nell'HUD e nel server.
 - **`stem-persona.md`** è il carattere di STEM, passato con `--append-system-prompt`. Il modo di ragionare è il `~/.claude/CLAUDE.md` di Tony, che Claude Code carica da solo. **Questo file non arriva a STEM:** per cambiare come risponde si modifica `stem-persona.md` e **si riavvia il server**, che lo legge una volta sola (`/api/reset` non basta).
 - **`voice.mjs`** fa parlare STEM con ElevenLabs (`eleven_v4_turbo`, scelto con `ELEVENLABS_MODEL`) o con `say`. Il fornitore si decide alla prima frase di ogni risposta: ElevenLabs solo se i crediti sono almeno 400, o non ancora letti.
   - Se ElevenLabs fallisce alla prima frase, tutta la risposta passa al Mac (`x-stem-voce: mac;cambio`).
@@ -72,18 +89,38 @@ Restano decisioni di Tony, non lavoro sul codice:
   - **L'ora:** il server mette `[adesso: giorno, ora (fuso, UTC±n)]` davanti a ogni messaggio per il cervello, perché Claude Code gli dà solo la data.
   - **L'agenda** è `runtime/agenda.json`. La scrivono gli strumenti `ricorda` e `agenda` di `mac/mac-mcp.mjs`, durante un turno del cervello, e il server, che toglie i compiti quando li consegna. I numeri dei compiti non si riusano mai.
   - **La consegna:** l'HUD chiede `/api/status` ogni 5 s. Se `agenda` è più di zero e STEM è fermo, senza nessuno che parla, manda `/api/ask` con `{"agenda":true}`. Il server toglie i compiti scaduti e passa al cervello un messaggio `[agenda]` che contiene tutto il compito: serve perché, dopo un riavvio, il cervello non ricorda di averlo segnato. I compiti scaduti mentre STEM era spento arrivano appena si riaccende, detti come in ritardo.
+- **`ologramma.mjs`** è lo stato unico degli ologrammi, e il server è l'unico che lo scrive. Valida i modelli del cervello, tiene modello e versione, scrive i testi per il cervello e salva in `runtime/ologramma.json` e `runtime/ologramma-campo.bin`. All'avvio del server un ologramma rimasto aperto si chiude. Il contratto fra i pezzi è `public/ologramma/LEGGIMI-ologramma.md`.
+  - **Gli strumenti** `mostra_ologramma`, `modifica_ologramma` (anche titolo e descrizione) e `analizza_struttura` stanno in `mac/mac-mcp.mjs`. Sono client sottili: chiamano `POST /api/ologramma` sulla porta che `mcp.json` passa con `--porta`, perché le variabili di `.env` non arrivano ai processi figli.
+  - **La foto:** gli strumenti restituiscono il testo più la foto PNG che l'HUD manda dopo ogni versione nuova, così STEM vede quello che ha fatto. Il server la aspetta fino a 8 s dopo `mostra` (o con pezzi da file) e 4 s dopo una modifica.
+  - **Le altre vie:**
+    - `/api/ologramma/campo?v=`: il fattore di sicurezza di ogni voxel;
+    - `POST /api/ologramma/foto`;
+    - `/api/ologramma/file/<modello>/<id>`: solo il file di un pezzo dello stato attuale, dentro le cartelle di Tony;
+    - `/mediapipe/` (da `node_modules`) e `/modelli/`: il modello delle mani si scarica al primo avvio in `runtime/modelli/` e si usa solo se lo SHA-256 è giusto.
+  - **Come si riconosce l'HUD:** manda `origin` o `sec-fetch-site`, e il processo MCP no. Dall'HUD passano solo togli, rimetti, chiudi e la misura delle mani, che il server scrive nel registro.
+- **`fisica/`** calcola gli sforzi in un `worker_threads`, fermato dopo 55 s:
+  - `voxel-fea.mjs`: elasticità lineare statica a voxel, con multigriglia;
+  - `struttura.mjs`: dal modello ai voxel, poi carichi, vincoli e risultati per pezzo;
+  - `lavoratore.mjs`: l'ingresso del worker.
+
+  Se cambia solo la lega e ν resta uguale, si rifà solo fs, senza risolvere di nuovo.
 - **`public/`** è l'HUD:
   - `stem.js`: ascolto sempre acceso, decide se una frase è per STEM, coda audio, consegna dell'agenda;
   - `report.js`: il report a schermo intero, ricalcato sui secondi 34–46 del video di ROSE. È una griglia 12×6; le ultime due colonne delle ultime due righe restano alla testa, che ci scivola rimpicciolita (`S.dock` in `humanoid.js`). I blocchi entrano in quattro tempi: un lampo di copie in profondità (0–0,8 s), il primo video (0,4–0,9 s), gli altri uno alla volta (fino a circa 2 s), poi partono i video. I suoni dell'entrata stanno in `sfx.js` (`report`), agganciati ai tempi di atterraggio che `showReport` restituisce. I blocchi in più si impilano e cambiano ogni 9 s. Il testo del cervello entra solo con `textContent`, le immagini solo da `https`, i video solo come ID di YouTube;
-  - `humanoid.js` e `mountains.js`: grafica (three.js 0.160 con bloom);
-  - `sfx.js`: suoni sintetizzati.
-  - `lab-sfx.html` prova i suoni, anche quelli del report. `lab.html` prova la grafica, ma funziona solo servendo la radice della repository (per esempio `python3 -m http.server` in `~/STEM`, poi `/public/lab.html`), non da `localhost:4321`.
+  - `humanoid.js` e `mountains.js`: grafica (three.js 0.160 con bloom). Il composer usa un render target con lo stencil, che serve alla sezione piena dell'ologramma; `strato` aggancia la scena dell'ologramma prima del bloom;
+  - `ologramma/`: `forme.js` e `materiali.js` (anche nel server), `geometrie.js`, `scena.js` (la scena), `gesti.js` e `mani.js` (MediaPipe 0.10.35 in locale). Il colore degli sforzi è lo sforzo diviso lo snervamento: blu se è lontano, rosso dove il materiale snerva;
+  - in `stem.js`, con l'ologramma aperto:
+    - tasti: E esplodi; X raggi X, D densità, F sforzi (premuti di nuovo tornano all'ologramma); O ologramma, L solido; S sezione lungo x, y, z o niente, con le frecce che la spostano; R ritorna alla vista di partenza; Z rimette l'ultimo pezzo tolto; M accende o spegne le mani (la scelta resta in `localStorage` `stem-mani`); Esc chiude tutto;
+    - mouse: trascinare ruota, la rotella fa lo zoom, il clic sceglie un pezzo e il doppio clic lo isola;
+    - mani: un pizzico con una mano ruota, con due fa lo zoom, due palmi aperti esplodono, e un pezzo afferrato e lanciato si toglie;
+  - `sfx.js`: suoni sintetizzati, anche quelli dell'ologramma.
+  - `lab-sfx.html` prova i suoni, anche quelli del report. `lab.html` prova la grafica, ma funziona solo servendo la radice della repository (per esempio `python3 -m http.server` in `~/STEM`, poi `/public/lab.html`), non da `localhost:4321`. `lab-ologramma.html?demo=turbofan|staffa` e `lab-mani.html` provano ologramma e mani da soli.
 - **`mac/`** controlla il Mac: un server MCP su stdio senza pacchetti, più un aiutante Swift che si compila da solo in `runtime/stem-mac` quando `helper.swift` cambia. I dettagli stanno in `mac/LEGGIMI-mac.md`.
 - **`browser-fx.js`** è iniettato in ogni pagina di Google: disegna il mirino e l'animazione dei clic e tiene i link nella stessa scheda.
 - **Avvio:**
   - `STEM.app`, nella radice della repository, lancia `avvia-app.sh`, che imposta `STEM_APP=1`: con l'HUD chiuso per circa 150 secondi, il server si spegne (più tardi se sta facendo memoria, al massimo dopo 5 minuti). I permessi di macOS vanno a STEM.app; Accessibilità e Registrazione schermo sono stati dati il 1/11.
   - `avvia.command` è la via da Terminale. Chiede la chiave finché `.env` non ne ha una valida. Il registro va nella finestra e i permessi al Terminale; chiudendo l'HUD il server resta acceso.
-- **Per girare servono:** il comando `claude` nel PATH, la rete (`npx` scarica Playwright MCP) e `/usr/bin/swiftc`. Le impostazioni stanno in `.env` (elenco commentato in `.env.example`); `ELEVENLABS_VOICE_ID`, se è pieno, blocca la scelta automatica della voce.
+- **Per girare servono:** il comando `claude` nel PATH, la rete (`npx` scarica Playwright MCP, e al primo avvio il server scarica il modello delle mani) e `/usr/bin/swiftc`. `avvia-app.sh` e `avvia.command` lanciano `npm install` se manca `node_modules/@mediapipe/tasks-vision`. Le impostazioni stanno in `.env` (elenco commentato in `.env.example`); `ELEVENLABS_VOICE_ID`, se è pieno, blocca la scelta automatica della voce.
 
 ## Provare
 - **Riavviare.** Il kill colpisce solo il processo sulla porta di STEM, non altri `node` di Tony:
@@ -112,6 +149,19 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Latenza del cervello:** `node prove/latenza.mjs <modello> [effort]`. Fa 8 domande a un `claude -p` sempre acceso con la persona di STEM, in una cartella vuota, e stampa il tempo alla prima parola per ogni turno, con mediana e massimo dal secondo. Consuma come 8 domande a STEM.
 - **Memoria:** una prova con il cervello vero scrive nella memoria vera di STEM. Prima copia la cartella `memory/` del cervello, dopo confrontala e rimettila com'era. Per provare la chiusura dell'HUD senza HUD: `STEM_APP=1 STEM_NO_OPEN=1 node server.mjs`, un ciclo di `curl` su `/api/status?hud=1` ogni 5 secondi, la domanda con `curl` su `/api/ask`, poi si ferma il ciclo. Il registro scrive `[memoria] rileggo la conversazione` e, dopo un riavvio, `[cervello] riprendo la conversazione di prima`.
 - **Agenda:** con `?debug`, `stemAsk('ricordami tra due minuti di …')`. Il compito compare in `runtime/agenda.json`, e quando STEM lo dice il registro del server scrive `[agenda] parlo per primo`. Gli strumenti da soli si provano anche senza cervello, con `ricorda` nella prova a mano di `mac/LEGGIMI-mac.md`.
+- **Ologrammi:** le prove stanno in `prove/`, non vogliono STEM acceso e vanno lanciate una alla volta, perché hanno porte fisse.
+  - `node prove/ologramma-forme.mjs`, `ologramma-stato.mjs`, `struttura.mjs` (25 s), `ologramma-geometrie.mjs`, `gesti.mjs` e `fea/test-trave.mjs --mg 4 8`.
+  - `node prove/ologramma-server.mjs <cartella>`: il server vero sulle porte 4422, 8932, 9334 e 4498, con un cervello finto e un Chrome headless suo. Dura circa 30 s.
+  - `node prove/ologramma-hud.mjs <cartella> <cartella-foto>`: l'HUD vero headless, sulla GPU dell'M2, porte 4431 e 9562. Dura circa 2 minuti e spegne il Risparmio energetico nel suo profilo. Vuole `runtime/modelli/prova-mani.jpg`, che non è nella repository: è un'immagine di prova di MediaPipe, e si scarica con
+    ```bash
+    curl -sS --fail -o runtime/modelli/prova-mani.jpg https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/right_hands.jpg
+    ```
+  - Con `?debug` ci sono:
+    - `stemOlogrammaDemo('turbofan')` o `'staffa'`, che apre un ologramma senza server né cervello;
+    - `stemSente('frase')`, che passa una frase al filtro dell'ascolto;
+    - `__misure`, con gli fps per secondo e le misure delle mani;
+    - `?debug&mani=immagine`, che usa la foto di prova al posto della fotocamera.
+  - Uno STEM di prova completo: `STEM_CERVELLO=<cartella> STEM_PORT=… STEM_BROWSER_PORT=… STEM_CDP_PORT=… STEM_NO_OPEN=1 node server.mjs`. Gli strumenti si chiamano senza cervello con `node mac/mac-mcp.mjs --porta <porta>`. Senza un turno del cervello l'HUD vede le versioni nuove solo col giro di `/api/status`, ogni 5 s, e la foto può non arrivare in tempo.
 - **Voce:**
   ```bash
   curl -s -X POST localhost:4321/api/tts -H 'content-type: application/json' -d '{"text":"prova","answer":"prova-1"}' -o /tmp/prova.audio -D -
@@ -121,7 +171,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - Con ElevenLabs consuma crediti.
 
 ## Regole del progetto
-- **Dipendenze:** in `package.json` c'è solo three.js. Node con moduli ES, nessuna build. Commenti e testi sono in italiano.
+- **Dipendenze:** in `package.json` ci sono solo three.js e `@mediapipe/tasks-vision`, fissata alla 0.10.35 perché dalla 1.0 manda statistiche a Google ogni 60 s. Node con moduli ES, nessuna build. Commenti e testi sono in italiano.
 - **Commit:** in italiano. Nel titolo, `Area: cosa cambia per Tony`; nel corpo, il perché. Dopo ogni lavoro si fa commit e push su `main` della repository privata MasterCod24/stem: Tony vuole tutto online per non perdere niente.
 - **Fine lavoro:** prima di chiudere aggiorna la sezione **Aperto**. Togli ciò che è risolto e aggiungi ciò che resta da decidere a Tony.
 - **Segreti:** `.env` (con la chiave ElevenLabs) e `runtime/` non vanno mai online, e la chiave non si ripete mai in chat.
@@ -143,3 +193,15 @@ Restano decisioni di Tony, non lavoro sul codice:
   - Quel comando rallenta anche il tempo passato a `requestAnimationFrame`. Non mescolarlo con `performance.now()`: la scrittura a macchina delle note restava vuota proprio per questo.
 - **La latenza di un modello si misura in fila e su più turni.** Il 5/11 avevo previsto Opus 5.5 a `xhigh` tra 3 e 8 secondi, e a `low` vicino a Sonnet. Una prima misura con quattro processi in parallelo dava Opus quasi pari a Sonnet e `low` come il più lento: era rumore. Le misure una dopo l'altra, su 8 turni, hanno mostrato altro: Opus ha un fondo di circa 2 secondi a qualunque effort, e `xhigh` aggiunge pause fino a 10 secondi nei turni in cui pensa di più (più token in uscita).
 - **Un CLAUDE.md scritto a memoria sbaglia.** La prima versione di questo file, scritta da un riassunto, aveva una ventina di errori o mancanze contro il codice. Ogni affermazione nuova va controllata sul codice prima del commit.
+- **Gli fps non si misurano con la mediana degli intervalli di `requestAnimationFrame`.** Con le mani diceva 59,9, mentre i fotogrammi contati in ogni secondo erano 51–55.
+  - Si usa la traccia del compositore (DrawFrame contro DroppedFrame), oppure si contano i fotogrammi in ogni secondo intero, come fa ora `__misure`.
+  - Servono almeno due giri, perché il carico di fondo cambia: sullo stesso codice il p10 con le mani è stato 30, poi 59,5, poi 59,9.
+- **A batteria sotto il 20% Chrome dimezza gli fps:** il Risparmio energetico porta ogni pagina a 30.
+  - Il flag `--disable-features=BatterySaverModeAvailable` non basta.
+  - Serve la preferenza `performance_tuning.battery_saver_mode.state = 0` nel `Local State` del profilo.
+- **Un profilo Chrome nuovo con l'HUD scarica il modello vocale italiano**, e intanto le misure sbagliano. Nelle prove di prestazioni il riconoscimento va spento.
+- **three.js: un `Box3` vuoto vale ±Infinity.** Un NaN finito nella camera ci resta per sempre, perché un lerp da NaN dà NaN: l'ingombro si controlla prima di usarlo.
+- **Un limite scritto senza misurarlo era falso.** Il commento di `TRIANGOLI_MAX` prometteva 45 fps con 2 milioni di triangoli; misurati con le mani, erano 33.
+- **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
+- **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore.
+- **Un agente fermato dal limite di utilizzo lascia accesi i suoi STEM di prova**, con i loro Chrome e Playwright. È successo due volte, per tre ore e per tre ore e mezza. Alla ripresa si cercano con `lsof` sulle porte di prova e con `ps` sui profili della scratchpad.

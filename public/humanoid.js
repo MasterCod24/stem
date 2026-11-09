@@ -681,11 +681,12 @@ export async function createScene(canvas, S) {
   parts.renderOrder = 6; parts.frustumCulled = false;
   bust.add(parts);
 
-  // post: bagliore
-  const composer = new EffectComposer(renderer);
+  // post: bagliore. Il render target ha lo stencil per la sezione piena dell'ologramma (strato): senza, il tappo non si vede (misurato)
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, stencilBuffer: true }));
   composer.setPixelRatio(pr);
   composer.setSize(innerWidth, innerHeight);
-  composer.addPass(new RenderPass(scene, camera));
+  const hudPass = new RenderPass(scene, camera);
+  composer.addPass(hudPass);
   const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.85, 0.45, 0.18);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
@@ -776,5 +777,14 @@ export async function createScene(canvas, S) {
     return 1 - Math.pow(1 - x, 3.3);
   }
 
-  return { frame, anchor, assembling };
+  // aggancio dell'ologramma: un RenderPass subito dopo quello dell'HUD e prima del bagliore, così brilla come il resto
+  // con un solo renderer (+2,4 ms contro un secondo canvas che coprirebbe la testa). Pulisce solo la profondità.
+  function strato(sc, cam) {
+    const p = new RenderPass(sc, cam);
+    p.clear = false; p.clearDepth = true;
+    composer.insertPass(p, composer.passes.indexOf(hudPass) + 1);
+    return p;
+  }
+
+  return { frame, anchor, assembling, renderer, strato };
 }

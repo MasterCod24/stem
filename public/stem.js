@@ -1,4 +1,4 @@
-// STEM — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni. La grafica sta in humanoid.js.
+// STEM — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni, ologramma. La grafica sta in humanoid.js.
 import { showReport, hideReport, reportDock } from './report.js';
 const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, dock: 0, dockTarget: 0, hearing: false };
 const $ = (id) => document.getElementById(id);
@@ -27,7 +27,7 @@ function drawStatus(t, at) {
   const mx = S.split > 0.5 ? Math.round(at.x - at.r * 1.35 - 300) : x;
   $('media').style.transform = `translate(${Math.max(16, mx)}px, ${y + 48}px)`;
   if (booting) { el.textContent = `ASSEMBLING... ${Math.min(99, Math.round(scene.assembling(t) * 100))}%`; return; }
-  el.textContent = ear !== 'on' && S.mode === 'idle' ? `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()
+  el.textContent = ear !== 'on' && S.mode === 'idle' ? (docked ? 'STATUS: MIC OFF' : `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()) // nell'angolo il perché uscirebbe dallo schermo
     : S.mode === 'speaking' && S.audio > 0.35 && !docked ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode];
 }
 
@@ -40,6 +40,7 @@ async function pollStatus() {
     micPeak = 0;
     const st = await (await fetch('/api/status?' + q)).json();
     if (st.agenda > 0 && S.mode === 'idle' && !S.hearing && !pending) { report('agenda: STEM parla per primo'); ask('', { agenda: true }); }
+    rileggiOlogramma(Number(st.ologramma)); // senza un turno del cervello l'evento 'holo' non arriva: lo dice questo giro
   } catch {}
 }
 setTimeout(pollStatus, 0); setInterval(pollStatus, 5000);
@@ -64,7 +65,8 @@ function showAction(name, detail) {
 // File e Mac: un'etichetta discreta sotto la scritta di stato, niente pannello
 const SMALL_VERBS = { Read: 'Leggo', Write: 'Creo', Edit: 'Modifico', Glob: 'Cerco file', Grep: 'Cerco nei file',
   schermo: 'Guardo lo schermo', clic: 'Clicco', scrivi: 'Scrivo', tasti: 'Tasti', apri_app: 'Apro', chiudi_app: 'Chiudo', scorri: 'Scorro', trascina: 'Trascino',
-  ricorda: 'Segno in agenda', agenda: 'Guardo l\'agenda' };
+  ricorda: 'Segno in agenda', agenda: 'Guardo l\'agenda',
+  mostra_ologramma: 'Costruisco l\'ologramma', modifica_ologramma: 'Modifico l\'ologramma', analizza_struttura: 'Calcolo gli sforzi' };
 let smallTimer = 0;
 function showSmall(name, detail) {
   $('small').textContent = `${SMALL_VERBS[name] || name.replace(/_/g, ' ')}${detail ? ' · ' + detail : ''}`.toUpperCase();
@@ -77,12 +79,149 @@ function showSmall(name, detail) {
 function openReport(r) {
   const plan = showReport(r);
   if (!plan) return closeReport(); // zero blocchi: STEM lo sta chiudendo
+  chiudiOlo(); // anche l'ologramma: un report del cervello lo chiude anche nel server (server.mjs), così il cervello lo sa
   sfx?.report(plan);
   clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0; // il report prende il posto del browser
   Object.assign(S, reportDock()); S.dockTarget = 1;
 }
-function closeReport() { hideReport(); S.dockTarget = 0; }
-addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, reportDock()); });
+function closeReport() { hideReport(); if (!holo?.aperto) S.dockTarget = 0; } // con l'ologramma la testa resta nell'angolo
+addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, holo?.aperto ? dockOlo() : reportDock()); });
+
+// ---------- Ologramma (scena.js): lo stato è del server, qui si mostra. Dall'HUD tornano solo togli, rimetti e chiudi ----------
+// Modi, esploso, sezione e camera cambiano solo qui, con tastiera, mouse e mani: non tornano al server (contratto).
+let OLO = null, holo = null;                       // il modulo e l'ologramma, se scena.js è partito
+let holoV = 0, holoAncora = 0, holoLeggo = false;  // l'ultima versione del server letta, e una da leggere appena si può
+let holoStato = null, holoLocale = false, modelloProva = 0; // locale: un ologramma di prova (?debug), senza server
+const post = (url, dati) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(dati) });
+const sfxOlo = new Proxy({}, { get: (_, k) => (...a) => sfx?.[k]?.(...a) }); // sfx nasce più tardi, con l'audio
+const dockOlo = () => { const a = OLO.angoloTesta(); return { dockX: a.dockX, dockY: a.dockY }; };
+
+// Una versione più alta arriva dall'evento 'holo' del cervello o da /api/status: si rilegge lo stato intero, una lettura alla volta.
+// Lo stato del server vince anche su un ologramma di prova.
+async function rileggiOlogramma(v) {
+  if (!(v > holoV)) return;
+  if (!holo || holoLeggo) { holoAncora = Math.max(holoAncora, v); return; }
+  holoLeggo = true;
+  try {
+    const st = await (await fetch('/api/ologramma', { cache: 'no-store' })).json();
+    if (Number.isFinite(st?.versione) && st.versione > holoV) { holoV = st.versione; holoLocale = false; applicaOlogramma(st); }
+  } catch {}
+  holoLeggo = false;
+  const dopo = holoAncora; holoAncora = 0;
+  rileggiOlogramma(dopo);
+}
+function applicaOlogramma(st) {
+  const prima = holo.aperto;
+  holo.mostra(st); // scena.js rinormalizza tutto con forme.js e chiude se aperto non è true
+  holoStato = holo.aperto ? st : null;
+  if (holo.aperto && !prima) apriOlo(); else if (!holo.aperto && prima) chiusoOlo();
+}
+// Aperto: la testa va nell'angolo come col report, report e browser lasciano il posto, le mani si accendono
+let oloDa = 0; // il secondo in cui si è aperto: la misura delle mani conta da lì
+function apriOlo() {
+  hideReport(); clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0;
+  Object.assign(S, dockOlo()); S.dockTarget = 1;
+  document.body.classList.add('olo');
+  oloDa = Math.floor(performance.now() / 1000); mani?.azzeraMisure();
+  avviaMani();
+}
+function chiusoOlo() { misuraMani(); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); }
+// La regola di Tony: mani solo sopra 45 fps sul suo M2. Alla chiusura, se le mani sono state accese almeno 10 secondi interi,
+// i fotogrammi di quei secondi e il tempo di MediaPipe vanno al registro del server: solo numeri, la riga la scrive lui.
+function misuraMani() {
+  const s = SECONDI.filter((x) => x.s >= oloDa && x.mani);
+  if (s.length < 10 || !mani) return;
+  const f = statFps(s), d = mani.misure.detect_ms.mediana;
+  post('/api/ologramma', { azione: 'misura', secondi: s.length, fps: { mediana: f.mediana, p10: f.p10, minimo: f.minimo }, detect_ms: d, prova: maniProva }).catch(() => {});
+}
+// Chiuso dall'HUD. Solo Esc lo dice al server, che al cervello scrive «Tony ha chiuso l'ologramma»: report e browser lo nascondono e basta
+// La risposta porta la versione nuova; un 409 (il cervello ha già fatto un modello nuovo) porta lo stato: si rilegge e si mostra quello
+const versioneDi = (d) => Number(d?.versione ?? d?.stato?.versione);
+function chiudiOlo(esc = false) {
+  if (!holo?.aperto) return;
+  const corpo = { azione: 'chiudi', modello: holoStato?.modello }, locale = holoLocale;
+  holo.chiudi(); chiusoOlo();
+  if (esc && !locale) post('/api/ologramma', corpo).then((r) => r.json()).then((d) => rileggiOlogramma(versioneDi(d))).catch(() => {});
+}
+// Togli (il lancio con le mani) e rimetti (Z): al server, poi si rilegge; un ologramma di prova cambia qui
+async function azioneOlo(azione, id) {
+  const s = holoStato, tolti = Array.isArray(s?.tolti) ? s.tolti : [];
+  if (!s || typeof id !== 'string') return;
+  if (holoLocale) return applicaOlogramma({ ...s, versione: s.versione + 1, tolti: azione === 'togli' ? [...new Set([...tolti, id])] : tolti.filter((x) => x !== id) });
+  try { rileggiOlogramma(versioneDi(await (await post('/api/ologramma', { azione, id, modello: s.modello })).json())); } catch {}
+}
+
+// Dove sta il modello lungo un asse (mm del mondo, dall'ingombro del server): il taglio parte a metà e si sposta del 2% a colpo
+function asseOlo(a) {
+  const g = holoStato?.ingombro_mm, c = 'xyz'.indexOf(a), lo = g?.min?.[c], hi = g?.max?.[c];
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { lo: -1e5, hi: 1e5, centro: 0, passo: 1 }; // solo pezzi da file
+  return { lo, hi, centro: (lo + hi) / 2, passo: Math.max(0.1, (hi - lo) / 50) };
+}
+// Tasti, solo con l'ologramma aperto. X, D e F tornano all'ologramma se il modo è già quello
+const TASTI_MODO = { x: 'raggi-x', d: 'densita', f: 'sforzi', o: 'ologramma', l: 'solido' };
+function tastoOlo(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return false; // Cmd+R ricarica ancora l'HUD
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, freccia = k.startsWith('Arrow'), v = holo.info().vista;
+  if (e.repeat && !freccia) return true; // un tasto tenuto giù non fa avanti e indietro
+  if (TASTI_MODO[k]) holo.comando('modo', 'xdf'.includes(k) && v.modo === TASTI_MODO[k] ? 'ologramma' : TASTI_MODO[k]);
+  else if (k === 'e') holo.comando('esploso', v.esploso > 0.5 ? 0 : 1);
+  else if (k === 's') { // a giro: x, y, z, niente
+    const assi = [null, 'x', 'y', 'z'], a = assi[(assi.indexOf(v.sezione?.asse ?? null) + 1) % 4];
+    holo.comando('sezione', a && { asse: a, posizione: asseOlo(a).centro, verso: 1 });
+  } else if (freccia) {
+    if (!v.sezione) return true;
+    const L = asseOlo(v.sezione.asse), d = k === 'ArrowUp' || k === 'ArrowRight' ? 1 : -1;
+    holo.comando('sezione', { ...v.sezione, posizione: Math.min(L.hi, Math.max(L.lo, v.sezione.posizione + d * L.passo)) });
+  } else if (k === 'r') holo.comando('reset');
+  else if (k === 'm') { const on = !maniVolute(); vogliMani(on); warn(on ? 'Mani accese' : 'Mani spente'); if (on) avviaMani(); else fermaMani(); }
+  else if (k === 'z') { const t = holoStato?.tolti; if (t?.length) azioneOlo('rimetti', t[t.length - 1]); }
+  else return false;
+  return true;
+}
+
+// ---------- Mani: MediaPipe in locale, accese solo con l'ologramma aperto. La scelta del tasto M resta fra un avvio e l'altro ----------
+let mani = null, maniPronte = null, margine = 0.1;
+const maniProva = DEBUG && params.get('mani') === 'immagine'; // la foto di prova al posto della fotocamera
+const maniVolute = () => { try { return localStorage.getItem('stem-mani') !== '0'; } catch { return true; } };
+const vogliMani = (on) => { try { localStorage.setItem('stem-mani', on ? '1' : '0'); } catch {} };
+function creaMani() { // una volta sola, anche con due aperture di fila
+  maniPronte ||= (async () => {
+    const [{ createMani }, { PREDEFINITI }] = await Promise.all([import('./ologramma/mani.js'), import('./ologramma/gesti.js')]);
+    margine = PREDEFINITI.margine;
+    // ?debug&mani=immagine: la foto di prova al posto della fotocamera, a 30 Hz come lei, per misurare
+    const prova = maniProva ? { sorgente: 'immagine', immagine: await telaProva(), hz: 30 } : {};
+    return (mani = createMani({ ...prova, onGesto: (g) => holo.gesto(g), onMani: disegnaDita, onErrore: (e) => { warn(e.message); disegnaDita([]); } }));
+  })().catch((e) => { maniPronte = null; throw e; });
+  return maniPronte;
+}
+async function avviaMani() {
+  if (!maniVolute() || !holo?.aperto) return;
+  try {
+    const m = await creaMani();
+    if (!holo.aperto || !maniVolute()) return;
+    await m.avvia(); // se MediaPipe o la fotocamera non partono: un avviso, e l'ologramma resta col mouse
+    if (!holo.aperto || !maniVolute()) fermaMani(); // chiuso, o spente col tasto M, mentre partivano
+  } catch (e) { warn(String(e?.message || e)); console.warn(e); }
+}
+function fermaMani() { mani?.ferma(); disegnaDita([]); }
+async function telaProva() { // come la fotocamera: 640×480, la foto di prova intera su fondo bianco (come lab-mani.html)
+  const img = new Image();
+  img.src = '/modelli/prova-mani.jpg';
+  await img.decode();
+  const c = Object.assign(document.createElement('canvas'), { width: 640, height: 480 }), g = c.getContext('2d'), h = (img.naturalHeight * 640) / img.naturalWidth;
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 480); g.drawImage(img, 0, (480 - h) / 2, 640, h);
+  return c;
+}
+// Pollice e indice di ogni mano, nello stesso riquadro di gesti.js (l'immagine meno il margine copre lo schermo)
+const DITA = [...document.querySelectorAll('#dita i')];
+function disegnaDita(lista) {
+  const k = 1 / (1 - 2 * margine), su = (v, L) => (Math.min(1, Math.max(0, (v - margine) * k)) * L).toFixed(1);
+  DITA.forEach((d, i) => {
+    const p = lista[i >> 1]?.punti?.[i & 1 ? 8 : 4], ok = Number.isFinite(p?.x) && Number.isFinite(p?.y);
+    d.classList.toggle('on', ok);
+    if (ok) d.style.transform = `translate(${su(p.x, innerWidth)}px, ${su(p.y, innerHeight)}px)`;
+  });
+}
 
 // ---------- GIF e animazioni accanto alla testa ----------
 let mediaTimer = 0;
@@ -203,8 +342,9 @@ async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il 
         if (!line.trim() || gen !== generation) continue;
         const ev = JSON.parse(line);
         if (ev.t === 'say') speak(ev.s);
-        else if (ev.t === 'show') { closeReport(); showScreen(true); } // ricerca nuova: il report vecchio lascia il posto al browser
+        else if (ev.t === 'show') { chiudiOlo(); closeReport(); showScreen(true); } // ricerca nuova: report e ologramma lasciano il posto al browser
         else if (ev.t === 'report') openReport(ev);
+        else if (ev.t === 'holo') rileggiOlogramma(Number(ev.v));
         else if (ev.t === 'tool') { showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'page') $('p-host').textContent = '· ' + ev.detail;
         else if (ev.t === 'file' || ev.t === 'mac') { showSmall(ev.name, ev.detail); if (!playing) setMode('thinking'); }
@@ -251,6 +391,9 @@ const COMMANDS = /^(apri|chiudi|cerca|trova|dimmi|dammi|fammi|mostrami|fai|crea|
 const STOP = /^(stop|basta|zitto|fermati|aspetta|silenzio)\b/i;
 const GREETING = /^(buongiorno|buon\s?giorno|buonasera|buona\s?sera|buonanotte|ciao|ehi|ehy|hey|salve|eccomi|sono\s+tornato)\b/i;
 const FOLLOW_UP_MS = 25000;
+// Con l'ologramma aperto Tony parla all'ologramma: un suo verbo all'inizio basta, anche da solo e anche fuori dalla
+// conversazione («esplodilo», «togli il coperchio», «chiudilo»). Un falso positivo costa al massimo un pezzo tolto, che si rimette.
+const COMANDI_OLO = /^(esplod|rimont|tagli|togli|rimett|chiud)/i;
 
 // Per il registro: la prima parola e quella più simile a "stem" (per scoprire come il riconoscitore storpia il nome), mai la frase
 function editDistance(a, b) {
@@ -271,6 +414,7 @@ function addressed(text) {
   const words = text.trim().split(/\s+/);
   const nameAt = words.findIndex((w, i) => isName(w) || (NAME_AT_START.has(norm(w)) && (i === 0 || (i === 1 && GREETING.test(words[0])))));
   if (nameAt >= 0) return { why: 'nome', text: [...words.slice(0, nameAt), ...words.slice(nameAt + 1)].join(' ').replace(/^[\s,.:;!?]+/, '').trim() || 'Ciao!' };
+  if (holo?.aperto && COMANDI_OLO.test(text.trim())) return { why: 'comando', text };
   if (words.length < 2) return GREETING.test(text.trim()) ? { why: 'saluto', text } : null; // un "sì" isolato è quasi sempre per altri, un "ciao" no
   if (performance.now() - lastReplyAt < FOLLOW_UP_MS && S.mode !== 'thinking') return { why: 'conversazione', text };
   if (COMMANDS.test(text.trim())) return { why: 'comando', text };
@@ -409,9 +553,19 @@ function heard(text) {
   }, onlyName ? 2000 : 700);
 }
 
-// ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce, un clic sblocca l'audio se Chrome lo blocca ----------
-addEventListener('keydown', (e) => { if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); } });
+// ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce e chiude, un clic sblocca l'audio se Chrome lo blocca ----------
+addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); }
+  else if (holo?.aperto && tastoOlo(e)) e.preventDefault();
+});
 addEventListener('pointerdown', () => { ensureAudio(); if (ear !== 'on' && ear !== 'install') prepareEar(); });
+// Mouse sull'ologramma, solo quando è aperto: trascina per ruotare, rotella per lo zoom, clic per scegliere, doppio clic per
+// isolare. Niente stopPropagation: il pointerdown arriva lo stesso alla finestra, che sblocca l'audio.
+for (const tipo of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dblclick', 'wheel']) $('gl').addEventListener(tipo, (e) => {
+  if (!holo?.aperto) return;
+  if (tipo === 'pointerdown') { try { $('gl').setPointerCapture(e.pointerId); } catch {} } // il trascinamento finisce anche fuori dalla finestra
+  holo.puntatore(e);
+}, { passive: tipo !== 'wheel' }); // la rotella vuole preventDefault
 
 function warn(msg) {
   const w = $('warn'); w.textContent = msg; w.style.display = 'block';
@@ -419,24 +573,73 @@ function warn(msg) {
 }
 
 // ---------- Avvio ----------
-if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; } // prove senza microfono e senza ricerca
+if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; window.stemSente = heard; } // prove senza microfono e senza ricerca; stemSente: una frase finita, come dal riconoscimento
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
-const { createScene, TIMING } = await import('./humanoid.js');
+const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./humanoid.js'),
+  import('./ologramma/scena.js').catch((e) => { console.warn('ologramma non disponibile', e); return null; })]);
 const scene = await createScene($('gl'), S);
 // Se il Mac fa perdere il contesto grafico (sospensione, GPU riavviata) i campi precalcolati vanno rifatti: ricarico l'HUD
 $('gl').addEventListener('webglcontextlost', (e) => e.preventDefault());
 $('gl').addEventListener('webglcontextrestored', () => location.reload());
+// L'ologramma disegna nello stesso renderer, prima del bagliore (strato di humanoid.js). Se non parte, l'HUD va avanti senza
+try {
+  holo = modOlo?.createOlogramma({ renderer: scene.renderer, strato: scene.strato, contenitore: $('holo'), sfx: sfxOlo,
+    onTogli: (id) => azioneOlo('togli', id),
+    onFoto: (png, versione, modello) => { if (!holoLocale) post('/api/ologramma/foto', { modello, versione, png }).catch(() => {}); } }) || null;
+  OLO = modOlo;
+} catch (e) { console.warn('ologramma non disponibile', e); holo = null; }
+rileggiOlogramma(holoAncora); // una versione vista da /api/status prima che la scena fosse pronta
+if (DEBUG && holo) {
+  window.stemOlo = holo; // per le prove: info(), comando(), gesto()
+  window.stemOlogramma = (st) => { holoLocale = true; applicaOlogramma(st); if (!holo.aperto) holoLocale = false; return holo.info(); };
+  window.stemOlogrammaDemo = async (nome = 'turbofan') => { // lo stato come lo farebbe ologramma.mjs, senza server
+    const [{ DEMO_TURBOFAN, DEMO_STAFFA }, F] = await Promise.all([import('./ologramma/demo.js'), import('./ologramma/forme.js')]);
+    const r = F.normalizzaModello(structuredClone(nome === 'staffa' ? DEMO_STAFFA : DEMO_TURBOFAN));
+    if (!r.modello) throw new Error(r.errori.slice(0, 3).join('; '));
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    for (const g of r.modello.pezzi.map(F.ingombro)) if (g) for (let c = 0; c < 3; c++) { min[c] = Math.min(min[c], g.min[c]); max[c] = Math.max(max[c], g.max[c]); }
+    return window.stemOlogramma({ aperto: true, modello: --modelloProva, versione: 1, ...r.modello, tolti: [], massa_kg: null,
+      ingombro_mm: min[0] <= max[0] ? { min, max } : null, analisi: null });
+  };
+}
 const freeze = params.get('t'); // ?t=3 ferma la formazione a 3 secondi (per le prove)
 const t0 = performance.now();
 let last = t0, revealed = false;
 ensureAudio().then(() => { if (!freeze) sfx?.boot(); });
+// Fotogrammi disegnati, contati in ogni secondo intero (gli ultimi 3600), con le mani accese o no per tutto il secondo.
+// Servono a misuraMani() e a chi misura via CDP (window.__misure: mediana, p10 e minimo degli ultimi 20 secondi, più i
+// conti uno per uno). Sono fotogrammi di requestAnimationFrame: col thread in ritardo possono superare quelli presentati,
+// ma contati per secondo non li gonfia più la mediana degli intervalli (59,9 fps contro i 55 della traccia, 7/11).
+const SECONDI = []; // { s: il secondo, n: fotogrammi, mani: accese per tutto il secondo }
+let nQuadri = 0, secOra = null, secPieno = false, secN = 0, secMani = false, maniPrima = false;
+function contaQuadro(now) {
+  const s = Math.floor(now / 1000), m = !!mani?.attivo;
+  nQuadri++;
+  if (s !== secOra) {
+    if (secPieno) SECONDI.push({ s: secOra, n: secN, mani: secMani }); // il primo secondo, preso a metà, non conta
+    if (secOra !== null) for (let k = secOra + 1; k < s && k <= secOra + 10; k++) SECONDI.push({ s: k, n: 0, mani: secMani && m }); // fermi del thread
+    if (SECONDI.length > 3600) SECONDI.splice(0, SECONDI.length - 3600);
+    secPieno = secOra !== null; secOra = s; secN = 0; secMani = m && maniPrima;
+  }
+  secN++; secMani &&= m; maniPrima = m;
+}
+function statFps(lista) {
+  const v = lista.map((x) => x.n).sort((a, b) => a - b), q = (p) => v[Math.floor(p * (v.length - 1))];
+  return v.length ? { mediana: q(0.5), p10: q(0.1), minimo: v[0], secondi: v.length } : { mediana: null, p10: null, minimo: null, secondi: 0 };
+}
+Object.defineProperty(window, '__misure', { get() {
+  const ultimi = SECONDI.slice(-20);
+  return { fotogrammi: nQuadri, fps: { ...statFps(ultimi), conti: ultimi.map((x) => x.n) }, ologramma: !!holo?.aperto, mani: mani ? { attive: mani.attivo, ...mani.misure } : null };
+} });
 let lastActive = 0, skip = false;
 function loop(now) {
   requestAnimationFrame(loop);
-  // In attesa e senza nessuno che parla da 20 s: 20 fotogrammi al secondo bastano, la GPU (e la batteria) ringraziano
-  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on')) lastActive = now;
+  // In attesa e senza nessuno che parla da 20 s: 20 fotogrammi al secondo bastano, la GPU (e la batteria) ringraziano.
+  // L'ologramma aperto conta come attività: a metà frequenza mani, rotazione e foto andrebbero a scatti.
+  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on') || holo?.aperto) lastActive = now;
   if (now - lastActive > 20000) { skip = !skip; if (skip || now - last < 45) return; }
+  contaQuadro(now);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const t = freeze ? Number(freeze) : (now - t0) / 1000;
   if (!revealed && t >= TIMING.reveal) { revealed = true; if (!freeze) sfx?.reveal(); }
@@ -449,7 +652,9 @@ function loop(now) {
   if (S.mode === 'listening' && !S.hearing && !pending && performance.now() - heardAt > 4000) setMode('idle');
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
   S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 6); // nell'angolo in mezzo secondo: prima che atterri il protagonista
+  holo?.fotogramma(t, dt);
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
+  holo?.dopoRender(); // nello stesso fotogramma: la foto legge il canvas prima che il buffer si svuoti
   drawStatus(t, scene.anchor());
 }
 requestAnimationFrame(loop);

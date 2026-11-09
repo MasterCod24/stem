@@ -347,6 +347,67 @@ export function createSfx(ctx) {
     v.gain.setTargetAtTime(0, a + 0.025, 0.02);
   }
 
+  // ── ologramma: gli stessi attrezzi del report, per i gesti sul modello ─────
+  // soffio di rumore filtrato che sale (si apre) o scende (si richiude)
+  function whoosh(a, len, f0, f1, lv) {
+    const v = voice(1, 0.35), src = ctx.createBufferSource(); src.buffer = noise;
+    const bp = filt('bandpass', f0, 1.2);
+    chain(src, bp, v);
+    src.start(a, (a * 3.1) % 1.2); src.stop(a + len + 0.2);
+    bp.frequency.setValueAtTime(f0, a);
+    bp.frequency.exponentialRampToValueAtTime(f1, a + len);
+    v.gain.setValueAtTime(0, a);
+    v.gain.linearRampToValueAtTime(lv, a + len * 0.35);
+    v.gain.setTargetAtTime(0, a + len * 0.6, len * 0.25);
+  }
+  // vista esplosa: i pezzi si allontanano (salita a gradini e soffio) o si riuniscono (soffio che scende e tonfo)
+  function esplodi(apre = true, t0 = now()) {
+    if (apre) { steps(t0, 0.2); whoosh(t0 + 0.04, 0.5, 600, 3200, 0.05); shimmer(t0 + 0.1, t0 + 0.55); }
+    else { whoosh(t0, 0.42, 3000, 500, 0.045); thud(t0 + 0.45); }
+  }
+  // sezione: una scansione, seno che sale con il tremolo dei dati, e un blip quando il piano si ferma
+  function sezione(t0 = now()) {
+    const v = voice(1, 0.3), am = ctx.createGain(), d = ctx.createGain();
+    am.gain.value = 0.5; d.gain.value = 0.5;
+    osc('sine', 24, t0, t0 + 0.5, d);
+    d.connect(am.gain); am.connect(v);
+    const o = osc('sine', 1200, t0, t0 + 0.5, am);
+    o.frequency.exponentialRampToValueAtTime(2600, t0 + 0.36);
+    v.gain.setValueAtTime(0, t0);
+    v.gain.linearRampToValueAtTime(0.02, t0 + 0.04);
+    v.gain.setTargetAtTime(0, t0 + 0.3, 0.05);
+    blip(t0 + 0.38);
+  }
+  // afferra: presa secca, un pop più alto del tonfo del report e un blip
+  function afferra(t0 = now()) {
+    const p = voice(1, 0.15);
+    const o = osc('sine', 340, t0, t0 + 0.2, p);
+    o.frequency.exponentialRampToValueAtTime(170, t0 + 0.07);
+    p.gain.setValueAtTime(0, t0);
+    p.gain.linearRampToValueAtTime(0.09, t0 + 0.005);
+    p.gain.setTargetAtTime(0, t0 + 0.02, 0.03);
+    blip(t0 + 0.015);
+  }
+  // lancia: il pezzo vola via, soffio e tono che scendono
+  function lancia(t0 = now()) {
+    whoosh(t0, 0.38, 2600, 380, 0.06);
+    const v = voice(1, 0.3), o = osc('sine', 950, t0, t0 + 0.5, v);
+    o.frequency.exponentialRampToValueAtTime(190, t0 + 0.4);
+    v.gain.setValueAtTime(0, t0);
+    v.gain.linearRampToValueAtTime(0.025, t0 + 0.03);
+    v.gain.setTargetAtTime(0, t0 + 0.2, 0.08);
+  }
+  // calcolo finito: gradini fitti, tappeto di dati, poi il La5 della conferma
+  function calcolo(t0 = now()) {
+    steps(t0, 0.3);
+    shimmer(t0 + 0.06, t0 + 0.36);
+    const h = voice(1, 0.45), th = t0 + 0.38;
+    h.gain.setValueAtTime(0, th);
+    h.gain.linearRampToValueAtTime(0.06, th + 0.05);
+    h.gain.setTargetAtTime(0, th + 0.12, 0.15);
+    osc('sine', 880, th, th + 1.2, h);
+  }
+
   // ── elaborazione: letto quasi impercettibile ───────────────────────────────
   let thinking = null;
   function think(on, t0 = now()) {
@@ -385,5 +446,5 @@ export function createSfx(ctx) {
     return b;
   }
 
-  return { out, boot, reveal, listen, ack, think, report };
+  return { out, boot, reveal, listen, ack, think, report, esplodi, sezione, afferra, lancia, calcolo };
 }
