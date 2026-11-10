@@ -118,6 +118,9 @@ const casi = [
   P({ id: 'estrusione-oraria', forma: 'estrusione', misure: { profilo: [[0, 0], [0, 30], [25, 30], [40, 0]], profondita: 8, fori_tondi: [{ x: 15, y: 12, r: 5 }] } }),
   P({ id: 'rivoluzione-vaso', forma: 'rivoluzione', misure: { profilo: [[0, 0], [10, 0], [12, 5], [8, 15], [9, 25], [0, 25]] } }),
   P({ id: 'rivoluzione-aperta', forma: 'rivoluzione', misure: { profilo: [[6, 30], [14, 20], [14, 4], [8, 0]] } }),
+  // Parete conica spessa 50 mm: con i 10 mm dell'ugello vero dentro cade il 6% dei punti, sotto il 10% che la prova vuole
+  P({ id: 'rivoluzione-anello-conico', forma: 'rivoluzione', misure: { profilo: [[215, -125], [170, 125], [120, 125], [165, -125]] } }),
+  P({ id: 'rivoluzione-anello-chiuso', forma: 'rivoluzione', misure: { profilo: [[200, 0], [220, 0], [220, 50], [200, 50], [200, 0]] } }),
   P({ id: 'ingranaggio', forma: 'ingranaggio', misure: { denti: 20, modulo: 2, spessore: 6, foro: 4 } }),
   P({ id: 'ingranaggio-6', forma: 'ingranaggio', misure: { denti: 6, modulo: 5, spessore: 8 } }),
   P({ id: 'cavo-2punti', forma: 'cavo', misure: { punti: [[0, 0, 0], [80, 10, -5]], r: 3 } }),

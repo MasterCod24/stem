@@ -59,10 +59,11 @@ function tornio(punti) {
 }
 
 // Il profilo chiuso dall'asse, percorso in senso antiorario nel piano (r, y): così Lathe mette le facce verso fuori.
-// Il lato sull'asse resta implicito, perché i due estremi stanno sull'asse.
+// Il lato sull'asse resta implicito, perché i due estremi stanno sull'asse. Un anello non ha estremi sull'asse: si chiude
+// ripetendo il primo punto in fondo, e le due copie hanno normali diverse, quindi lo spigolo della cucitura resta vivo.
 function rivoluzione(profilo) {
-  const Q = poligonoRivoluzione(profilo);
-  return tornio(areaPoligono(Q) < 0 ? Q.reverse() : Q);
+  const Q = poligonoRivoluzione(profilo), giro = areaPoligono(Q) < 0 ? [...Q].reverse() : Q;
+  return tornio(giro[0][0] > 0 ? [...giro, giro[0]] : giro);
 }
 
 // Contorno antiorario: ExtrudeGeometry lo gira e gira i fori di conseguenza, e le pareti dei fori vengono verso fuori.

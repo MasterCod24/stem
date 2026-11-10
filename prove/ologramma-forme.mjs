@@ -95,6 +95,9 @@ const CASI = [
   ['rivoluzione a vaso', { forma: 'rivoluzione', misure: { profilo: [[20, 0], [26, 20], [14, 45], [18, 60]] } }],
   ['rivoluzione a coppa con pareti', { forma: 'rivoluzione', misure: { profilo: [[0, 0], [30, 0], [34, 40], [31, 40], [27, 3], [0, 3]] } }],
   ['rivoluzione a cilindro di 2 punti', { forma: 'rivoluzione', misure: { profilo: [[10, -5], [10, 5]] } }],
+  // Anelli: la parete di un ugello conico (il profilo vero del cervello, rifiutato il 10/11) e uno chiuso a mano
+  ['rivoluzione ad anello (ugello)', { forma: 'rivoluzione', misure: { profilo: [[215, -125], [170, 125], [160, 125], [205, -125]] } }],
+  ['rivoluzione ad anello chiuso a mano', { forma: 'rivoluzione', misure: { profilo: [[200, 0], [220, 0], [220, 50], [200, 50], [200, 0]] } }],
   ['ingranaggio 20 denti m 2 con foro 5', { forma: 'ingranaggio', misure: { denti: 20, modulo: 2, spessore: 10, foro: 5 } }],
   ['ingranaggio 6 denti m 5 con foro 2', { forma: 'ingranaggio', misure: { denti: 6, modulo: 5, spessore: 3, foro: 2 } }],
   ['ingranaggio 200 denti m 0,5 con foro 20', { forma: 'ingranaggio', misure: { denti: 200, modulo: 0.5, spessore: 2, foro: 20 } }],
@@ -166,6 +169,22 @@ esito(F.volume(pezzo({ id: 'f', forma: 'file', misure: { file: '/Users/tony/mode
 }
 
 // ------------------------------------------------------------------ 2. ingombro
+// Anelli: un volume vero che non passa dal poligono, π(R² − r²)·h, e il centro vuoto. Più il pezzo vero del cervello:
+// l'ugello del turbofan del 10/11, rifiutato perché chiuso dall'asse si incrociava, ora entra senza errori.
+{
+  const p = pezzo({ id: 'anello', forma: 'rivoluzione', misure: { profilo: [[200, 0], [220, 0], [220, 50], [200, 50], [200, 0]] } });
+  const vero = Math.PI * (220 ** 2 - 200 ** 2) * 50, v = F.volume(p);
+  esito(Math.abs(v - vero) / vero < 1e-9, 'anello chiuso a mano: volume uguale a π(R² − r²)·h', `${v.toFixed(1)} contro ${vero.toFixed(1)} mm³`);
+  const Q = F.poligonoRivoluzione(p.misure.profilo);
+  esito(F.anelloRivoluzione(Q) && Q.length === 4 && !F.dentroLocale(p, 0, 25, 0) && !F.dentroLocale(p, 150, 25, 0) && F.dentroLocale(p, 210, 25, 0),
+    "anello: 4 vertici senza il punto ripetuto, centro e foro vuoti, parete piena", JSON.stringify(Q));
+  const r = F.normalizzaModello({ titolo: 'ugello', pezzi: [{ id: 'ugello', forma: 'rivoluzione', misure: { profilo: [[215, -125], [170, 125], [160, 125], [205, -125]] } }] });
+  const U = r.modello && F.poligonoRivoluzione(r.modello.pezzi[0].misure.profilo);
+  esito(r.modello && r.errori.length === 0 && F.anelloRivoluzione(U), "l'ugello del cervello (10/11) è un anello valido", r.errori.join('; ') || JSON.stringify(U));
+  const pieno = F.poligonoRivoluzione([[0, 0], [30, 0], [34, 40], [31, 40], [27, 3], [0, 3]]);
+  esito(!F.anelloRivoluzione(pieno), 'una coppa che tocca l\'asse resta chiusa dall\'asse, non diventa un anello', JSON.stringify(pieno));
+}
+
 titolo('2. Ingombro: nessun punto dentro fuori dall\'ingombro, anche con i pezzi ruotati');
 // Si cerca dentro una scatola allargata del 25% per lato e in sei fette sottili appena fuori dalle facce.
 function cercaFuori(test, b) {
@@ -323,6 +342,8 @@ const SBAGLIATI = [
   ['rivoluzione con r negativo', con({ id: 'v', forma: 'rivoluzione', misure: { profilo: [[5, 0], [-1, 5]] } }), 'misure.profilo[1]'],
   ['rivoluzione tutta sull\'asse', con({ id: 'v', forma: 'rivoluzione', misure: { profilo: [[0, 0], [0, 5]] } }), 'misure.profilo'],
   ['rivoluzione che tocca l\'asse a metà', con({ id: 'v', forma: 'rivoluzione', misure: { profilo: [[10, 0], [0, 5], [10, 10]] } }), 'misure.profilo'],
+  ['anello chiuso a mano che tocca l\'asse', con({ id: 'v', forma: 'rivoluzione', misure: { profilo: [[10, 0], [20, 0], [0, 5], [10, 0]] } }), 'misure.profilo'],
+  ['anello che si incrocia', con({ id: 'v', forma: 'rivoluzione', misure: { profilo: [[10, 0], [20, 10], [20, 0], [10, 10], [10, 0]] } }), 'misure.profilo'],
   ['cavo con un punto solo', con({ id: 'c', forma: 'cavo', misure: { punti: [[0, 0, 0]], r: 1 } }), 'misure.punti'],
   ['cavo con troppi punti', con({ id: 'c', forma: 'cavo', misure: { punti: Array.from({ length: 101 }, (_, i) => [i, 0, 0]), r: 1 } }), 'misure.punti'],
   ['file con percorso relativo', con({ id: 'f', forma: 'file', misure: { file: 'Downloads/motore.glb' } }), 'misure.file'],

@@ -683,7 +683,7 @@ const MISURE = 'In mm, secondo la forma. scatola {x, y, z}: i lati. cilindro {r,
   'cono {r, r_cima, h}: r in basso, r_cima in alto (0 è una punta). toro {R, r}: anello nel piano XZ, R dell\'anello e r della sezione. ' +
   'piastra {x, z, spessore, raggio}: lastra x × spessore × z, il raggio la curva (positivo verso +Y). ' +
   'estrusione {profilo, profondita, fori, fori_tondi}: profilo [[x, y], …] di 3–200 punti nel piano XY, estruso lungo Z; fori sono poligoni, fori_tondi [{x, y, r}]. ' +
-  'rivoluzione {profilo}: [[r, y], …] con r ≥ 0, gira attorno a Y (alberi a gradini, vasi, ogive). ' +
+  'rivoluzione {profilo}: [[r, y], …] con r ≥ 0, gira attorno a Y (alberi a gradini, vasi, ogive); si chiude dall\'asse, ma un profilo tutto fuori dall\'asse che gira su sé stesso (ripetendo il primo punto in fondo) è un anello: la parete di un ugello, una campana cava. ' +
   'ingranaggio {denti, modulo, spessore, foro}: denti dritti, da 6 a 200, raggio primitivo modulo·denti/2, spessore lungo Y. ' +
   'cavo {punti, r}: tubo curvo per 2–100 punti [[x, y, z], …]. ' +
   'file {file, scala, centra}: un modello 3D di Tony, percorso assoluto in Scrivania, Documenti, Download…, estensioni glb, stl, obj, 3mf, ply; scala sono i mm per unità del file (1000 per un GLB in metri)';

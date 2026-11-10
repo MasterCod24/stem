@@ -251,14 +251,24 @@ function raggioPieno({ denti, modulo }) {
   return rf * Math.cos((tau - 2 * tf) / nf / 2);
 }
 
-/** Il profilo [[r, y], …] di una rivoluzione chiuso dall'asse: aggiunge [0, y] all'inizio e alla fine se mancano. */
+/**
+ * Il poligono (r, y) che gira attorno a Y. Di solito il profilo si chiude dall'asse: [0, y] in testa e in coda se mancano.
+ * Un anello (la parete di un ugello, una campana cava) è un profilo tutto fuori dall'asse che gira su sé stesso:
+ * chiuso a mano (il primo punto ripetuto in fondo), oppure non chiuso ma che dall'asse si incrocerebbe e su sé stesso no.
+ * Prima un anello era un errore: il 10/11 il cervello ha dovuto riscrivere un turbofan intero per la parete dell'ugello.
+ */
 export function poligonoRivoluzione(profilo) {
   const out = profilo.map((p) => [p[0], p[1]]);
-  const a = out[0], b = out[out.length - 1];
-  if (a[0] !== 0) out.unshift([0, a[1]]);
-  if (b[0] !== 0) out.push([0, b[1]]);
-  return out;
+  const a = out[0], b = out[out.length - 1], fuori = out.every((p) => p[0] > 0);
+  if (fuori && out.length > 3 && a[0] === b[0] && a[1] === b[1]) return out.slice(0, -1);
+  const asse = [...out];
+  if (a[0] !== 0) asse.unshift([0, a[1]]);
+  if (b[0] !== 0) asse.push([0, b[1]]);
+  if (fuori && out.length >= 3 && incrocio(asse) !== null && incrocio(out) === null) return out;
+  return asse;
 }
+/** Vero se il poligono di una rivoluzione è un anello: nessun punto sull'asse. */
+export const anelloRivoluzione = (Q) => Q.every((p) => p[0] > 0);
 
 // Estrapolati come in three.js: (primo − secondo) + primo, nello stesso ordine di conti.
 const estrapola = (a, b) => [a[0] - b[0] + a[0], a[1] - b[1] + a[1], a[2] - b[2] + a[2]];
@@ -858,16 +868,18 @@ function leggiRivoluzione(C, m) {
   profilo = senzaDoppi(C, profilo, 'misure.profilo');
   const a = profilo[0], b = profilo[profilo.length - 1];
   if (profilo.length > 1 && uguali(a, b)) {
-    if (a[0] !== 0) {
-      C.err('misure.profilo', `finisce dove comincia, fuori dall'asse: il profilo si chiude da solo lungo l'asse Y, quindi non va ripetuto il primo punto (per un anello usa toro o tubo)`);
+    // Chiuso a mano sull'asse è lo stesso profilo: l'ultimo si toglie. Fuori dall'asse è un anello e il punto resta, perché
+    // è lui che lo dice a poligonoRivoluzione; un anello però non può toccare l'asse
+    if (a[0] === 0) profilo.pop();
+    else if (profilo.some((p) => p[0] === 0)) {
+      C.err('misure.profilo', "finisce dove comincia, come un anello, ma tocca l'asse Y: un anello sta tutto fuori dall'asse (r > 0)");
       return { profilo: undefined };
     }
-    profilo.pop(); // chiuso a mano sull'asse: è lo stesso
   }
   const Q = poligonoRivoluzione(profilo);
   if (Q.length < 3) { C.err('misure.profilo', "deve avere almeno un punto fuori dall'asse Y"); return { profilo: undefined }; }
-  // Il poligono chiuso dall'asse deve essere semplice: un punto sull'asse a metà profilo farebbe due solidi uniti in un punto.
-  if (!controllaPoligono(C, Q, 'misure.profilo, chiuso dall\'asse,')) return { profilo: undefined };
+  // Il poligono deve essere semplice: un punto sull'asse a metà profilo farebbe due solidi uniti in un punto.
+  if (!controllaPoligono(C, Q, anelloRivoluzione(Q) ? 'misure.profilo, chiuso su sé stesso come anello,' : 'misure.profilo, chiuso dall\'asse,')) return { profilo: undefined };
   return { profilo };
 }
 
