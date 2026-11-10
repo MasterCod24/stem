@@ -49,6 +49,18 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
   - **Comandi a voce:** con l'ologramma aperto, una frase che comincia con esplod…, rimont…, tagli…, togli…, rimett… o chiud… è per STEM anche se è di una parola e anche senza il nome. Qualche frase non sua arriva al cervello, per esempio «tagliatelle stasera?».
 
 Restano decisioni di Tony, non lavoro sul codice:
+- **Regole di Anatomy per gli ologrammi** (10/11, scelta di Tony). In `stem-persona.md`, sotto «Costruisci come è fatto l'oggetto vero», ci sono le regole di mestiere di Anatomy (github.com/wheresryan22/anatomy):
+  - prima i numeri veri;
+  - pezzi a gruppi, come l'oggetto montato, 40–80 in tutto;
+  - niente che fluttua o si compenetra;
+  - due sguardi, da lontano e da vicino;
+  - si costruisce a passate: 15–25 pezzi con `mostra_ologramma`, poi i dettagli con `aggiungi`.
+
+  La prova col cervello vero (STEM di prova isolato, un campione per lato) ha dato:
+  - motore: da 39 a 48 pezzi, finito in 106 s invece di 104;
+  - drone: da 26 a 56 pezzi, finito in 105 s invece di 43.
+
+  Più dettaglio, ma esplosi più confusi: pezzi in tutte le direzioni ed etichette sovrapposte. Si consigliava di toglierle, Tony le ha tenute. Se l'attesa o gli esplosi pesano, si tolgono quelle sei righe. Le foto della prova non sono nella repository.
 - **A batteria il Mac va in stop, e l'agenda con lui.** L'orologio gira solo con STEM acceso e il Mac sveglio. A batteria lo schermo si spegne dopo 10 minuti senza tocchi e il Mac va in stop circa 5 secondi dopo (`pmset -g custom` e `pmset -g log` del 1/11); a corrente non va mai in stop. Parlare a STEM non conta come tocco. Non è misurato se l'HUD acceso basta a tenerlo sveglio.
   - Oggi `ricorda`, a batteria, dice al cervello di avvisare Tony.
   - Il rimedio sarebbe `caffeinate -i` finché un compito è vicino, al costo di un po' di batteria: lo decide Tony.
