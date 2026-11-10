@@ -285,7 +285,7 @@ export function hideReport() {
   }).catch(() => {});
 }
 
-// Centro del posto riservato alla testa, in pixel: lì humanoid.js porta il busto
+// Centro del posto riservato al nucleo, in pixel: lì nucleo.js lo porta, rimpicciolito
 export function reportDock() {
   const r = dock.getBoundingClientRect();
   return { dockX: r.x + r.width / 2, dockY: r.y + r.height * 0.6 };

@@ -1,12 +1,14 @@
-// STEM — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni, ologramma. La grafica sta in humanoid.js.
+// STEM — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni, ologramma, la scheda dell'ascolto,
+// i dati a raggiera e i micro-dati ai bordi. La grafica (sfera e anelli) sta in nucleo.js.
 import { showReport, hideReport, reportDock } from './report.js';
-const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, dock: 0, dockTarget: 0, hearing: false };
+// allarme: 0 normale, 1 attenzione (arancione), 2 critico (rosso). Lo calcola aggiornaAllarme() dalle cause attive.
+const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, dock: 0, dockTarget: 0, hearing: false, allarme: 0 };
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
 const dbg = (...a) => { if (DEBUG) (window.__earLog ||= []).push(`${(performance.now() / 1000).toFixed(1)}s ${a.join(' ')}`); };
 
-// ---------- Stato e scritta "STATUS" accanto alla testa ----------
+// ---------- Stato: la scritta "STATUS" sugli anelli ----------
 const LABELS = { idle: 'STATUS: LISTENING', listening: 'STATUS: LISTENING', thinking: 'STATUS: PROCESSING', speaking: 'STATUS: SPEAKING' };
 let booting = true;
 function setMode(m) {
@@ -16,34 +18,135 @@ function setMode(m) {
   if (m === 'idle') { if (document.body.classList.contains('browsing')) showScreen(false); }
   else clearTimeout(screenTimer);
 }
-function drawStatus(t, at) {
-  // con il report aperto la testa sta nell'angolo in basso a destra: la scritta va sopra, centrata e corta, per non finire sulle schede
-  const docked = S.dock > 0.5, el = $('status');
-  const x = Math.round(docked ? at.x : at.x + at.r * 1.35), y = Math.round(docked ? at.y - at.r * 1.7 : at.y - at.r * 0.35);
-  const center = docked ? ' translateX(-50%)' : '';
-  el.style.transform = `translate(${x}px, ${y}px)${center}`;
-  $('small').style.transform = `translate(${x}px, ${y + 22}px)${center}`;
-  // GIF accanto alla testa: a destra, oppure a sinistra quando a destra c'è il browser
-  const mx = S.split > 0.5 ? Math.round(at.x - at.r * 1.35 - 300) : x;
-  $('media').style.transform = `translate(${Math.max(16, mx)}px, ${y + 48}px)`;
-  if (booting) { el.textContent = `ASSEMBLING... ${Math.min(99, Math.round(scene.assembling(t) * 100))}%`; return; }
-  el.textContent = ear !== 'on' && S.mode === 'idle' ? (docked ? 'STATUS: MIC OFF' : `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()) // nell'angolo il perché uscirebbe dallo schermo
-    : S.mode === 'speaking' && S.audio > 0.35 && !docked ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode];
+const scrivi = (el, testo) => { if (el.textContent !== testo) el.textContent = testo; }; // riscrivere lo stesso testo rifà il layout
+
+// ---------- Attorno al nucleo: scritta di stato e dati a raggiera, con i fili che partono dall'anello più esterno ----------
+// anchor() di nucleo.js: centro (x, y), raggio della sfera r e dell'anello più esterno R, in pixel CSS.
+// I dati stanno su raggi fissi: angolo in gradi (0 a destra, in senso antiorario); lato 1 scritta a destra, -1 a sinistra.
+const RAGGI = [
+  { el: $('status'), ang: 38, lato: 1, stato: true },
+  { el: $('d-voce'), ang: 6, lato: 1 },
+  { el: $('d-latenza'), ang: -30, lato: 1 },
+  { el: $('d-ascolto'), ang: 150, lato: -1 },
+  { el: $('d-sistemi'), ang: 186, lato: -1 },
+  { el: $('d-grafica'), ang: 220, lato: -1 },
+];
+const SVG = 'http://www.w3.org/2000/svg';
+for (const r of RAGGI) { // un filo e un punto per dato: si spostano solo quando si sposta il nucleo
+  r.filo = document.createElementNS(SVG, 'polyline'); r.punto = document.createElementNS(SVG, 'circle');
+  r.punto.setAttribute('r', '2'); $('fili').append(r.filo, r.punto);
+}
+let chiaveAttorno = '', largAscolto = 0;
+function disegnaAttorno(t, at) {
+  const docked = S.dock > 0.5, split = S.split > 0.5, R = at.R ?? at.r * 1.5, st = $('status');
+  if (booting) scrivi(st, `ASSEMBLING... ${Math.min(99, Math.round(scene.assembling(t) * 100))}%`);
+  else scrivi(st, ear !== 'on' && S.mode === 'idle' ? (docked ? 'STATUS: MIC OFF' : `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()) // nell'angolo il perché uscirebbe dallo schermo
+    : S.mode === 'speaking' && S.audio > 0.35 && !docked ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode]);
+  const media = $('media').classList.contains('on'), sm = $('small'), an = $('anomalia');
+  // anche la lunghezza dei testi: una scritta che si allunga può arrivare sopra le colonne dei bordi
+  const lunghi = `${RAGGI.map((r) => r.el.textContent.length)} ${sm.classList.contains('on') && sm.textContent.length} ${an.classList.contains('on') && an.textContent.length}`;
+  const chiave = `${Math.round(at.x)} ${Math.round(at.y)} ${Math.round(R)} ${docked} ${split} ${media} ${innerWidth} ${innerHeight} ${lunghi}`;
+  if (chiave === chiaveAttorno) return; // fermo: niente da spostare
+  chiaveAttorno = chiave;
+  document.body.classList.toggle('media', media);
+  if (docked) { // nell'angolo del report e dell'ologramma: la scritta sopra gli anelli, centrata e corta, per non finire sulle schede
+    const y = Math.round(at.y - R - 24);
+    st.style.transform = `translate(${Math.round(at.x)}px, ${y}px) translateX(-50%)`;
+    $('small').style.transform = `translate(${Math.round(at.x)}px, ${y - 18}px) translateX(-50%)`;
+    $('anomalia').style.transform = `translate(${Math.round(at.x)}px, ${y - 36}px) translateX(-50%)`;
+    for (const r of RAGGI) { r.filo.classList.add('spento'); r.punto.classList.add('spento'); }
+  } else {
+    for (const r of RAGGI) {
+      // col browser il nucleo sta a sinistra: i dati uscirebbero dallo schermo o finirebbero sulla pagina, resta solo lo stato, in alto
+      const lato = r.lato, ang = (r.stato && split ? 72 : r.ang) * Math.PI / 180;
+      const c = Math.cos(ang), s = Math.sin(ang);
+      const x0 = at.x + R * c, y0 = at.y - R * s, x1 = at.x + (R + 22) * c, y1 = at.y - (R + 22) * s, x2 = x1 + lato * 44;
+      const nascosto = !r.stato && (split || (lato === 1 && media)); // a destra la GIF
+      r.filo.setAttribute('points', `${x0.toFixed(1)},${y0.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y1.toFixed(1)}`);
+      r.punto.setAttribute('cx', x0.toFixed(1)); r.punto.setAttribute('cy', y0.toFixed(1));
+      r.filo.classList.toggle('spento', nascosto); r.punto.classList.toggle('spento', nascosto);
+      r.el.classList.toggle('spento', nascosto && !r.stato);
+      const tx = Math.round(x2 + lato * 8), ty = Math.round(y1 - 7), via = lato === -1 ? ' translateX(-100%)' : '';
+      r.el.style.transform = `translate(${tx}px, ${ty}px)${via}`;
+      if (r.stato) {
+        $('small').style.transform = `translate(${tx}px, ${ty + 20}px)${via}`;
+        $('anomalia').style.transform = `translate(${tx}px, ${ty + 38}px)${via}`;
+      }
+    }
+  }
+  // La GIF a destra degli anelli (i dati di destra si spengono), oppure a sinistra quando a destra c'è il browser
+  const mx = split ? Math.round(at.x - R - 330) : Math.round(at.x + R + 28);
+  $('media').style.transform = `translate(${Math.max(16, Math.min(innerWidth - 316, mx))}px, ${Math.round(at.y - 150)}px)`;
+  // La scheda dell'ascolto sotto il nucleo, centrata su di lui (col report e l'ologramma è una riga in basso, centrata sullo schermo)
+  const el = $('ascolto');
+  largAscolto = el.offsetWidth;
+  const cx = docked ? innerWidth * 0.44 : at.x;
+  el.style.transform = `translateX(${Math.round(Math.max(12, cx - largAscolto / 2))}px)`;
+  liberaColonne(docked || split ? null : [...RAGGI.map((r) => r.el), ...[sm, an].filter((e) => e.classList.contains('on')), ...(media ? [$('media')] : [])]);
+}
+// Le colonne dei bordi non passano sotto le scritte: quella di sinistra si stringe fino ai dati di sinistra («BROWSER ON ·
+// AGENDA 0» ci finiva sopra), quella di destra comincia sotto stato, dati, anomalia e GIF che le stanno sopra (riempita di
+// eventi arrivava fino a «MAC · SIRI PAOLO»). Gira solo quando cambia la chiave, non a ogni fotogramma.
+function liberaColonne(scritte) {
+  const sx = $('colonna-sx'), dx = $('colonna-dx');
+  sx.style.width = ''; dx.style.top = ''; dx.style.width = '';
+  if (!scritte) return; // col browser, il report o l'ologramma le colonne sono spente
+  const cs = sx.getBoundingClientRect(), cd = dx.getBoundingClientRect(), asc = $('ascolto').getBoundingClientRect();
+  let bordo = asc.left < cs.right + 12 ? asc.left : Infinity, sotto = cd.top;
+  for (const e of scritte) {
+    if (e.classList.contains('spento')) continue;
+    const r = e.getBoundingClientRect();
+    if (!r.width || r.bottom < cs.top || r.top > cs.bottom) continue;
+    if (r.left < cs.right + 12) bordo = Math.min(bordo, r.left);
+    if (r.right > cd.left - 12) sotto = Math.max(sotto, r.bottom + 12);
+  }
+  // meno di quattro caratteri sarebbero una striscia di cifre tagliate: allora niente colonna
+  if (bordo < Infinity) { const w = Math.floor(bordo - 12 - cs.left); sx.style.width = `${w < 30 ? 0 : w}px`; }
+  if (sotto > cd.top) dx.style.top = `${Math.ceil(sotto)}px`;
+  // in basso la scheda dell'ascolto: con finestre strette la colonna di destra si stringe invece di finirle sopra
+  if (asc.right > cd.left - 12) dx.style.width = `${Math.max(0, Math.floor(cd.right - asc.right - 12))}px`;
 }
 
 // ---------- Stato dei sistemi (al server, per il registro: solo stati, niente audio né testo) ----------
 // La risposta dice anche quanti compiti dell'agenda sono arrivati all'ora: se STEM è fermo e nessuno sta parlando, parla per primo
-let micPeak = 0;
+let micPeak = 0, ultimoStato = null, statoFalliti = 0;
 async function pollStatus() {
   try {
     const q = new URLSearchParams({ hud: 1, ear: ear, lock: earLock ? 1 : 0, rec: rec ? 'ear' : '-', mic: micPeak.toFixed(3), mode: S.mode });
     micPeak = 0;
     const st = await (await fetch('/api/status?' + q)).json();
-    if (st.agenda > 0 && S.mode === 'idle' && !S.hearing && !pending) { report('agenda: STEM parla per primo'); ask('', { agenda: true }); }
+    ultimoStato = st; statoFalliti = 0; allarme('server', 0);
+    if (st.agenda > 0 && S.mode === 'idle' && !S.hearing && !pending) { report('agenda: STEM parla per primo'); evento('AGENDA · PARLO PER PRIMO'); ask('', { agenda: true }); }
     rileggiOlogramma(Number(st.ologramma)); // senza un turno del cervello l'evento 'holo' non arriva: lo dice questo giro
-  } catch {}
+  } catch { // due giri persi di fila (10 s): il server non c'è più
+    if (++statoFalliti === 2) { allarme('server', 2, 'SERVER NON RAGGIUNGIBILE'); evento('NET · SERVER PERSO'); }
+  }
 }
 setTimeout(pollStatus, 0); setInterval(pollStatus, 5000);
+
+// ---------- Anomalie: arancione (1) e rosso (2) solo qui. Ogni causa ha il suo livello; vince la più grave ----------
+const ALLARMI = new Map(); // causa → { livello, testo, fino }
+function allarme(causa, livello, testo = '', ms = 0) {
+  if (livello > 0) ALLARMI.set(causa, { livello, testo, fino: ms ? performance.now() + ms : Infinity });
+  else ALLARMI.delete(causa);
+  aggiornaAllarme();
+}
+function aggiornaAllarme() {
+  const ora = performance.now();
+  let peggiore = null;
+  for (const [causa, a] of ALLARMI) { if (a.fino < ora) { ALLARMI.delete(causa); continue; } if (!peggiore || a.livello > peggiore.livello) peggiore = a; }
+  S.allarme = peggiore?.livello || 0;
+  const el = $('anomalia');
+  scrivi(el, peggiore?.testo || '');
+  el.classList.toggle('on', !!peggiore); el.classList.toggle('critico', S.allarme === 2);
+}
+// L'ologramma: un calcolo fallito è attenzione, un pezzo che cede (fs sotto 1) è critico
+function allarmeOlogramma(st) {
+  const a = st?.aperto ? st.analisi : null, fs = Number(a?.fs_min);
+  if (a?.stato === 'errore') allarme('calcolo', 1, 'CALCOLO DEGLI SFORZI FALLITO');
+  else if (a?.stato === 'fatta' && Number.isFinite(fs) && fs < 1) allarme('calcolo', 2, `IL PEZZO CEDE · FS ${fs.toFixed(2).replace('.', ',')}`);
+  else allarme('calcolo', 0);
+}
 
 // ---------- Pannello del browser: solo per i compiti complessi (STEM lo chiede con [[mostra]]) ----------
 let screenTimer = 0;
@@ -82,9 +185,11 @@ function openReport(r) {
   chiudiOlo(); // anche l'ologramma: un report del cervello lo chiude anche nel server (server.mjs), così il cervello lo sa
   sfx?.report(plan);
   clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0; // il report prende il posto del browser
+  document.body.classList.add('report'); // micro-dati e raggiera si spengono, l'ascolto diventa una riga in basso
+  evento(`REPORT · ${Array.isArray(r?.blocchi) ? r.blocchi.length : 0} BLOCCHI`);
   Object.assign(S, reportDock()); S.dockTarget = 1;
 }
-function closeReport() { hideReport(); if (!holo?.aperto) S.dockTarget = 0; } // con l'ologramma la testa resta nell'angolo
+function closeReport() { hideReport(); document.body.classList.remove('report'); if (!holo?.aperto) S.dockTarget = 0; } // con l'ologramma il nucleo resta nell'angolo
 addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, holo?.aperto ? dockOlo() : reportDock()); });
 
 // ---------- Ologramma (scena.js): lo stato è del server, qui si mostra. Dall'HUD tornano solo togli, rimetti e chiudi ----------
@@ -115,17 +220,18 @@ function applicaOlogramma(st) {
   holo.mostra(st); // scena.js rinormalizza tutto con forme.js e chiude se aperto non è true
   holoStato = holo.aperto ? st : null;
   if (holo.aperto && !prima) apriOlo(); else if (!holo.aperto && prima) chiusoOlo();
+  allarmeOlogramma(holoStato);
 }
-// Aperto: la testa va nell'angolo come col report, report e browser lasciano il posto, le mani si accendono
+// Aperto: il nucleo va nell'angolo come col report, report e browser lasciano il posto, le mani si accendono
 let oloDa = 0; // il secondo in cui si è aperto: la misura delle mani conta da lì
 function apriOlo() {
-  hideReport(); clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0;
+  hideReport(); document.body.classList.remove('report'); clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0;
   Object.assign(S, dockOlo()); S.dockTarget = 1;
   document.body.classList.add('olo');
   oloDa = Math.floor(performance.now() / 1000); mani?.azzeraMisure();
   avviaMani();
 }
-function chiusoOlo() { misuraMani(); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); }
+function chiusoOlo() { misuraMani(); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); allarme('calcolo', 0); }
 // La regola di Tony: mani solo sopra 45 fps sul suo M2. Alla chiusura, se le mani sono state accese almeno 10 secondi interi,
 // i fotogrammi di quei secondi e il tempo di MediaPipe vanno al registro del server: solo numeri, la riga la scrive lui.
 function misuraMani() {
@@ -173,7 +279,7 @@ function tastoOlo(e) {
     const L = asseOlo(v.sezione.asse), d = k === 'ArrowUp' || k === 'ArrowRight' ? 1 : -1;
     holo.comando('sezione', { ...v.sezione, posizione: Math.min(L.hi, Math.max(L.lo, v.sezione.posizione + d * L.passo)) });
   } else if (k === 'r') holo.comando('reset');
-  else if (k === 'm') { const on = !maniVolute(); vogliMani(on); warn(on ? 'Mani accese' : 'Mani spente'); if (on) avviaMani(); else fermaMani(); }
+  else if (k === 'm') { const on = !maniVolute(); vogliMani(on); warn(on ? 'Mani accese' : 'Mani spente'); evento(on ? 'HANDS · ON' : 'HANDS · OFF'); if (on) avviaMani(); else fermaMani(); }
   else if (k === 'z') { const t = holoStato?.tolti; if (t?.length) azioneOlo('rimetti', t[t.length - 1]); }
   else return false;
   return true;
@@ -190,7 +296,7 @@ function creaMani() { // una volta sola, anche con due aperture di fila
     margine = PREDEFINITI.margine;
     // ?debug&mani=immagine: la foto di prova al posto della fotocamera, a 30 Hz come lei, per misurare
     const prova = maniProva ? { sorgente: 'immagine', immagine: await telaProva(), hz: 30 } : {};
-    return (mani = createMani({ ...prova, onGesto: (g) => holo.gesto(g), onMani: disegnaDita, onErrore: (e) => { warn(e.message); disegnaDita([]); } }));
+    return (mani = createMani({ ...prova, onGesto: (g) => holo.gesto(g), onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); } }));
   })().catch((e) => { maniPronte = null; throw e; });
   return maniPronte;
 }
@@ -201,7 +307,7 @@ async function avviaMani() {
     if (!holo.aperto || !maniVolute()) return;
     await m.avvia(); // se MediaPipe o la fotocamera non partono: un avviso, e l'ologramma resta col mouse
     if (!holo.aperto || !maniVolute()) fermaMani(); // chiuso, o spente col tasto M, mentre partivano
-  } catch (e) { warn(String(e?.message || e)); console.warn(e); }
+  } catch (e) { warn(String(e?.message || e), 'attenzione'); console.warn(e); }
 }
 function fermaMani() { mani?.ferma(); disegnaDita([]); }
 async function telaProva() { // come la fotocamera: 640×480, la foto di prova intera su fondo bianco (come lab-mani.html)
@@ -238,7 +344,7 @@ function showMedia(m) {
 function hideMedia() { $('media').classList.remove('on'); }
 
 // ---------- Audio: una coda, una sola voce (il server decide ElevenLabs o Mac per l'intera risposta) ----------
-let ctx = null, outAnalyser = null, micAnalyser = null, sfx = null;
+let ctx = null, outAnalyser = null, micAnalyser = null, sfx = null, micLivello = 0; // micLivello: rms del microfono, per i dB a raggiera
 const buf = new Uint8Array(1024);
 async function ensureAudio() {
   if (!ctx) {
@@ -317,11 +423,12 @@ function silence() {
 }
 
 // ---------- Cervello ----------
-let controller = null, lastReplyAt = -1e9;
+let controller = null, lastReplyAt = -1e9, latenza = null; // latenza: secondi dalla domanda alla prima frase dell'ultima risposta
 async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il server prende i compiti arrivati all'ora
   silence();
   spokeThisAnswer = false; earlySent = '';
-  const gen = generation;
+  const gen = generation, chiesto = performance.now();
+  let primaFrase = true;
   controller?.abort();
   controller = new AbortController();
   setMode('thinking');
@@ -341,25 +448,28 @@ async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il 
         const line = rest.slice(0, i); rest = rest.slice(i + 1);
         if (!line.trim() || gen !== generation) continue;
         const ev = JSON.parse(line);
-        if (ev.t === 'say') speak(ev.s);
-        else if (ev.t === 'show') { chiudiOlo(); closeReport(); showScreen(true); } // ricerca nuova: report e ologramma lasciano il posto al browser
+        if (ev.t === 'say') {
+          if (primaFrase) { primaFrase = false; latenza = (performance.now() - chiesto) / 1000; evento(`VOICE OUT · ${latenza.toFixed(1)} S`); allarme('cervello', 0); }
+          speak(ev.s);
+        }
+        else if (ev.t === 'show') { evento('BROWSER · SHOW'); chiudiOlo(); closeReport(); showScreen(true); } // ricerca nuova: report e ologramma lasciano il posto al browser
         else if (ev.t === 'report') openReport(ev);
-        else if (ev.t === 'holo') rileggiOlogramma(Number(ev.v));
-        else if (ev.t === 'tool') { showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
+        else if (ev.t === 'holo') { evento(`HOLO · V${Number(ev.v) || 0}`); rileggiOlogramma(Number(ev.v)); }
+        else if (ev.t === 'tool') { evento(`TOOL · ${String(ev.name).slice(0, 24)}`); showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'page') $('p-host').textContent = '· ' + ev.detail;
-        else if (ev.t === 'file' || ev.t === 'mac') { showSmall(ev.name, ev.detail); if (!playing) setMode('thinking'); }
-        else if (ev.t === 'media') showMedia(ev);
-        else if (ev.t === 'ignore') { report('frase non per STEM (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
-        else if (ev.t === 'error') speak('Ho perso il filo, scusami. Riprova tra un attimo.');
+        else if (ev.t === 'file' || ev.t === 'mac') { evento(`${ev.t === 'mac' ? 'MAC' : 'FILE'} · ${String(ev.name).slice(0, 24)}`); showSmall(ev.name, ev.detail); if (!playing) setMode('thinking'); }
+        else if (ev.t === 'media') { evento(`MEDIA · ${ev.kind === 'anim' ? 'ANIM' : 'GIF'}`); showMedia(ev); }
+        else if (ev.t === 'ignore') { evento('IGNORE'); report('frase non per STEM (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
+        else if (ev.t === 'error') { evento('ERROR · CERVELLO'); allarme('cervello', 2, 'IL CERVELLO HA PERSO IL FILO', 12000); speak('Ho perso il filo, scusami. Riprova tra un attimo.'); }
       }
     }
   } catch (e) {
-    if (e.name !== 'AbortError') speak('Non riesco a raggiungere il mio cervello. Il server è acceso?');
+    if (e.name !== 'AbortError') { evento('ERROR · CERVELLO IRRAGGIUNGIBILE'); allarme('cervello', 2, 'CERVELLO NON RAGGIUNGIBILE', 15000); speak('Non riesco a raggiungere il mio cervello. Il server è acceso?'); }
   } finally {
     if (gen === generation) { streamDone = true; if (!playing && queue.length === 0) { setMode('idle'); if (spokeThisAnswer) lastReplyAt = performance.now(); } }
   }
 }
-function interrupt() { silence(); controller?.abort(); fetch('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' } }); setMode('idle'); }
+function interrupt() { evento('STOP'); silence(); controller?.abort(); fetch('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' } }); setMode('idle'); }
 
 // ---------- Ascolto sempre acceso (riconoscimento locale: l'audio della stanza non esce dal Mac) ----------
 // Chrome tiene un solo riconoscimento per processo: con due HUD aperti si interromperebbero. Ascolta chi ha il lucchetto.
@@ -423,7 +533,7 @@ function addressed(text) {
 }
 
 async function prepareEar() {
-  if (!SR || typeof SR.available !== 'function') { ear = 'nolocal'; return; }
+  if (!SR || typeof SR.available !== 'function') { ear = 'nolocal'; allarmeAscolto(); return; } // senza riconoscimento locale STEM non sente: è un'anomalia
   let st = await SR.available(LOCAL).catch(() => 'unavailable');
   if (st === 'downloadable' || st === 'downloading') {
     ear = 'install';
@@ -431,8 +541,15 @@ async function prepareEar() {
     st = ok ? 'available' : await SR.available(LOCAL).catch(() => 'unavailable');
   }
   ear = st === 'available' ? 'on' : st === 'downloadable' ? 'click' : 'nolocal';
-  if (ear !== 'on') { warn(`Ascolto: ${EAR_TEXT[ear]}.`); if (ear === 'nolocal') retryEar(); }
+  if (ear !== 'on') { warn(`Ascolto: ${EAR_TEXT[ear]}.`, 'attenzione'); if (ear === 'nolocal') retryEar(); }
+  allarmeAscolto();
   scheduleEar(300);
+}
+// L'ascolto spento è un'anomalia (arancione); il modello che si installa no, è l'avvio
+function allarmeAscolto() {
+  const testi = { denied: 'MICROFONO NEGATO', nolocal: 'ASCOLTO NON DISPONIBILE', click: "CLIC PER ATTIVARE L'ASCOLTO" };
+  allarme('ascolto', testi[ear] ? 1 : 0, testi[ear] || '');
+  evento(`EAR · ${EAR_TEXT[ear].toUpperCase()}`);
 }
 let retryTimer = 0;
 function retryEar() { clearTimeout(retryTimer); retryTimer = setTimeout(prepareEar, 45000); } // permesso dato dopo, modello reinstallato…
@@ -487,8 +604,8 @@ function startEar() {
     onInterim(interim.trim());
   };
   r.onerror = (e) => {
-    if (e.error === 'not-allowed') { ear = 'denied'; warn('Serve il permesso del microfono.'); retryEar(); return; }
-    if (e.error === 'service-not-allowed' || e.error === 'language-not-supported') { ear = 'nolocal'; retryEar(); return; }
+    if (e.error === 'not-allowed') { ear = 'denied'; warn('Serve il permesso del microfono.', 'attenzione'); allarmeAscolto(); retryEar(); return; }
+    if (e.error === 'service-not-allowed' || e.error === 'language-not-supported') { ear = 'nolocal'; allarmeAscolto(); retryEar(); return; }
     if (e.error !== 'no-speech') {
       earBackoff = Math.min(10000, earBackoff * 2);
       if (++earFails === 5) report(`ascolto in errore: ${e.error}`);
@@ -498,17 +615,18 @@ function startEar() {
   try { if (debugTrack) r.start(debugTrack); else r.start(); } catch { rec = null; scheduleEar(1000); }
 }
 
-// Parole parziali: mentre parli STEM ti "guarda" (cerchi del sonar); se ti fermi 0,8 s su una richiesta, parte già
+// Parole parziali: mentre parli STEM ti "guarda" (anelli e sfera); se ti fermi 0,8 s su una richiesta, parte già
 function onInterim(text) {
   S.hearing = Boolean(text);
-  if (!text) return;
+  if (!text) { ascolto.viva(''); return; }
   dbg('parziale', text, '| modo', S.mode);
   heardAt = performance.now();
   const said = echoWords();
   if ((S.mode === 'speaking' || S.mode === 'thinking') && text.split(/\s+/).some((x) => STOP.test(x) && !said.has(norm(x)))) {
-    interrupt(); report('fermato a voce'); return; // "stop" funziona anche mentre clicca e scrive, senza aspettare la fine della frase
+    interrupt(); report('fermato a voce'); ascolto.esito('STOP', true); return; // "stop" funziona anche mentre clicca e scrive, senza aspettare la fine della frase
   }
-  if (S.mode === 'speaking' || isEcho(text)) return; // mentre parla, e subito dopo, ignora l'eco della sua voce
+  if (S.mode === 'speaking' || isEcho(text)) return; // mentre parla, e subito dopo, ignora l'eco della sua voce (e non la scrive)
+  ascolto.viva(text);
   if (pending) clearTimeout(joinTimer); // stai ancora parlando: la frase non è finita
   clearTimeout(earlyTimer);
   const a = addressed(pending ? `${pending} ${text}` : text);
@@ -516,7 +634,8 @@ function onInterim(text) {
   if (S.mode === 'idle') { setMode('listening'); sfx?.listen(); }
   earlyTimer = setTimeout(() => {
     if (a.text.split(/\s+/).length < 3 || norm(a.text) === norm(earlySent)) return;
-    earlySent = a.text; report(`parto in anticipo (${a.why})`); ask(a.text);
+    earlySent = a.text; report(`parto in anticipo (${a.why})`); evento(`ASK · ${a.why.toUpperCase()} · IN ANTICIPO`);
+    ascolto.esito(`PER STEM · ${PERCHE[a.why]}`, true); ask(a.text);
   }, 800);
 }
 
@@ -528,14 +647,16 @@ function heard(text) {
   if (S.mode === 'speaking' || S.mode === 'thinking') { // si può interrompere: "stop", "basta", oppure chiamandolo per nome
     if (wantsStop(text)) {
       interrupt(); report('interrotto a voce');
-      const a = addressed(text);
-      if (a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1) ask(a.text);
+      const a = addressed(text), riparte = a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1;
+      ascolto.fissa(text); ascolto.esito(riparte ? `PER STEM · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
+      if (riparte) ask(a.text);
       return;
     }
     if (S.mode === 'speaking') return;
   }
-  if (isEcho(text)) { report('scartata: eco della voce di STEM'); return; }
+  if (isEcho(text)) { report('scartata: eco della voce di STEM'); evento('INPUT · ECO'); ascolto.viva(''); return; }
   pending = pending ? `${pending} ${text}` : text;
+  ascolto.fissa(pending);
   clearTimeout(joinTimer);
   // Solo il nome ("Stem…"): aspetto di più, probabilmente stai per dire la domanda
   const onlyName = pending.trim().split(/\s+/).every(isName);
@@ -543,15 +664,37 @@ function heard(text) {
     const full = pending; pending = '';
     const a = addressed(full);
     dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per STEM');
-    if (!a) { report(`non per STEM; ${clue(full)}`); if (S.mode === 'listening') setMode('idle'); return; }
+    if (!a) { report(`non per STEM; ${clue(full)}`); evento('INPUT · NON PER STEM'); ascolto.esito('NON PER STEM', false); if (S.mode === 'listening') setMode('idle'); return; }
+    ascolto.esito(`PER STEM · ${PERCHE[a.why]}`, true);
     // già partito in anticipo con lo stesso identico testo: non ricomincio; se è cambiato anche di una parola, riparto
     const sameAsEarly = earlySent && norm(a.text) === norm(earlySent);
     earlySent = '';
     if (sameAsEarly) return;
-    report(`domanda (${a.why})`);
+    report(`domanda (${a.why})`); evento(`ASK · ${a.why.toUpperCase()}`);
     ask(a.text);
   }, onlyName ? 2000 : 700);
 }
+
+// ---------- La scheda dell'ascolto: le parole mentre arrivano, poi cosa ne ha fatto STEM. Solo sullo schermo: mai nei registri ----------
+const PERCHE = { nome: 'NOME', conversazione: 'CONVERSAZIONE', comando: 'COMANDO', saluto: 'SALUTO' };
+const ascolto = (() => {
+  const box = $('ascolto'), elFissa = $('frase-fissa'), elViva = $('frase-viva'), elEsito = $('esito');
+  let fissa = '', viva = '', timer = 0;
+  const MAX = 150; // una frase lunga si legge dalla fine: restano le ultime parole
+  const coda = (s) => { if (s.length <= MAX) return s; const t = s.slice(-MAX), sp = t.indexOf(' '); return '… ' + (sp >= 0 && sp < 24 ? t.slice(sp + 1) : t); };
+  function mostra() {
+    const tutto = coda(`${fissa}${fissa && viva ? ' ' : ''}${viva}`), nf = Math.max(0, tutto.length - viva.length);
+    scrivi(elFissa, tutto.slice(0, nf)); scrivi(elViva, tutto.slice(nf)); // il testo entra solo con textContent
+    box.classList.toggle('on', !!tutto); box.classList.toggle('vivo', !!viva);
+    clearTimeout(timer);
+    if (tutto && !viva) timer = setTimeout(() => { fissa = ''; viva = ''; scrivi(elEsito, ''); mostra(); }, 7000); // poi si svuota
+  }
+  return {
+    viva(t) { if (t && !viva && !pending) { fissa = ''; scrivi(elEsito, ''); } viva = t; mostra(); }, // una frase nuova comincia pulita
+    fissa(t) { fissa = t; viva = ''; mostra(); },
+    esito(t, per) { if (!fissa && !viva) return; scrivi(elEsito, t); elEsito.classList.toggle('per', !!per); }, // senza frase non dice niente
+  };
+})();
 
 // ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce e chiude, un clic sblocca l'audio se Chrome lo blocca ----------
 addEventListener('keydown', (e) => {
@@ -567,22 +710,86 @@ for (const tipo of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 
   holo.puntatore(e);
 }, { passive: tipo !== 'wheel' }); // la rotella vuole preventDefault
 
-function warn(msg) {
-  const w = $('warn'); w.textContent = msg; w.style.display = 'block';
+// livello: '' per le notizie (ciano), 'attenzione' (arancione) e 'critico' (rosso) solo per le anomalie
+function warn(msg, livello = '') {
+  const w = $('warn'); w.textContent = msg; w.className = livello; w.style.display = 'block';
   clearTimeout(warn.t); warn.t = setTimeout(() => { w.style.display = 'none'; }, 5000);
 }
 
+// ---------- Micro-dati ai bordi e valori a raggiera: tutti numeri veri ----------
+// A sinistra lo spettro del microfono in esadecimale (della voce di STEM se il microfono non c'è), a destra gli eventi
+// (solo tipi e nomi di strumenti, mai frasi), in alto ora e memoria, in basso i livelli. 8 aggiornamenti al secondo.
+const EVENTI = [], RIGHE_ESA = [];
+let eventiNuovi = false, indirizzo = 0x4f00, giro = 0;
+const due = (n) => String(n).padStart(2, '0');
+const orario = (d = new Date()) => `${due(d.getHours())}:${due(d.getMinutes())}:${due(d.getSeconds())}`;
+function evento(testo) {
+  EVENTI.push(`${testo.toUpperCase()}  ${orario()}`);
+  if (EVENTI.length > 48) EVENTI.shift();
+  eventiNuovi = true;
+}
+const spettro = new Uint8Array(512);
+function aggiornaBordi() {
+  giro++;
+  const an = micAnalyser || outAnalyser;
+  if (an) an.getByteFrequencyData(spettro); else spettro.fill(0);
+  const b = []; // 8 bande a passo logaritmico, da 60 Hz a 8 kHz circa
+  for (let k = 0; k < 8; k++) { const i0 = Math.round(1.5 * 1.9 ** k), i1 = Math.max(i0 + 1, Math.round(1.5 * 1.9 ** (k + 1))); let m = 0; for (let i = i0; i < i1 && i < 512; i++) m = Math.max(m, spettro[i]); b.push(m); }
+  indirizzo = (indirizzo + 8) & 0xffff;
+  const hx = (n) => n.toString(16).padStart(2, '0').toUpperCase();
+  RIGHE_ESA.push(`${hx(indirizzo >> 8)}${hx(indirizzo & 255)}  ${hx(b[0])}${hx(b[1])} ${hx(b[2])}${hx(b[3])} ${hx(b[4])}${hx(b[5])} ${hx(b[6])}${hx(b[7])}`);
+  if (RIGHE_ESA.length > 60) RIGHE_ESA.shift();
+  if (document.body.classList.contains('olo') || document.body.classList.contains('report')) return; // spenti: niente da scrivere
+  scrivi($('esa'), RIGHE_ESA.join('\n'));
+  if (eventiNuovi) { eventiNuovi = false; scrivi($('eventi'), EVENTI.join('\n')); }
+  if (giro % 2) return; // il resto 4 volte al secondo
+  const d = new Date(), su = Math.floor((performance.now()) / 1000);
+  scrivi($('cima-ora'), `${due(d.getDate())}.${due(d.getMonth() + 1)}.${d.getFullYear()}  ${orario(d)}`);
+  const heap = performance.memory ? ` · HEAP ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : '';
+  scrivi($('cima-dati'), `UPTIME ${due(Math.floor(su / 3600))}:${due(Math.floor(su / 60) % 60)}:${due(su % 60)}${heap}`);
+  const pct = (v) => String(Math.round(Math.min(1, Math.max(0, v)) * 100)).padStart(3, '0');
+  scrivi($('fondo-sx'), `MIC ${pct(S.mic)}%  ·  VOX ${pct(S.audio)}%`);
+  scrivi($('fondo-dx'), `FRAME ${nQuadri}  ·  T+${due(Math.floor(su / 3600))}:${due(Math.floor(su / 60) % 60)}:${due(su % 60)}`);
+  // I valori a raggiera
+  const v = ultimoStato?.voice;
+  scrivi($('d-voce').lastChild, !v ? '—' : v.provider === 'eleven' ? `ELEVENLABS${Number.isFinite(v.credits) ? ` · ${v.credits.toLocaleString('it-IT')} CR` : ''}` : `MAC · ${String(v.mac || 'SISTEMA').toUpperCase().slice(0, 22)}`);
+  scrivi($('d-latenza').lastChild, latenza === null ? '—' : `${latenza.toFixed(1).replace('.', ',')} S`);
+  const db = micLivello > 0 ? Math.max(-60, Math.round(20 * Math.log10(micLivello))) : null;
+  scrivi($('d-ascolto').lastChild, ear !== 'on' ? EAR_TEXT[ear].toUpperCase() : db === null ? 'IN ATTESA' : `${db} DB`);
+  scrivi($('d-sistemi').lastChild, ultimoStato ? `BROWSER ${ultimoStato.browser ? 'ON' : 'OFF'} · AGENDA ${Number(ultimoStato.agenda) || 0}` : '—');
+  const ultimo = SECONDI[SECONDI.length - 1];
+  scrivi($('d-grafica').lastChild, ultimo ? `${ultimo.n} FPS` : '—');
+  aggiornaAllarme(); // le cause a tempo scadono anche se nessuno le tocca
+}
+
+// La fila di trattini della scheda dell'ascolto: il microfono in 24 bande, a ogni fotogramma (solo trasformazioni)
+const TRATTI = Array.from({ length: 24 }, () => $('livello').appendChild(document.createElement('i')));
+const bande = new Uint8Array(512);
+function disegnaLivello() {
+  if (!micAnalyser || document.body.classList.contains('olo') || document.body.classList.contains('report')) return;
+  micAnalyser.getByteFrequencyData(bande);
+  for (let k = 0; k < 24; k++) {
+    const i0 = 2 + Math.round(k * k * 0.42), i1 = 3 + Math.round((k + 1) * (k + 1) * 0.42);
+    let m = 0; for (let i = i0; i < i1 && i < 512; i++) m = Math.max(m, bande[i]);
+    const h = Math.max(0.12, Math.min(1, (m - 70) / 140));
+    const t = TRATTI[k], s = h.toFixed(2);
+    if (t.dataset.s !== s) { t.dataset.s = s; t.style.transform = `scaleY(${s})`; }
+  }
+}
+
 // ---------- Avvio ----------
-if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; window.stemSente = heard; } // prove senza microfono e senza ricerca; stemSente: una frase finita, come dal riconoscimento
+// Prove senza microfono e senza ricerca: stemSente è una frase finita e stemParziale una parziale, come dal riconoscimento;
+// stemAllarme(causa, livello, testo, ms) accende un'anomalia finta
+if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; window.stemSente = heard; window.stemParziale = onInterim; window.stemAllarme = allarme; }
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
-const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./humanoid.js'),
+const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./nucleo.js'),
   import('./ologramma/scena.js').catch((e) => { console.warn('ologramma non disponibile', e); return null; })]);
 const scene = await createScene($('gl'), S);
 // Se il Mac fa perdere il contesto grafico (sospensione, GPU riavviata) i campi precalcolati vanno rifatti: ricarico l'HUD
 $('gl').addEventListener('webglcontextlost', (e) => e.preventDefault());
 $('gl').addEventListener('webglcontextrestored', () => location.reload());
-// L'ologramma disegna nello stesso renderer, prima del bagliore (strato di humanoid.js). Se non parte, l'HUD va avanti senza
+// L'ologramma disegna nello stesso renderer, prima del bagliore (strato di nucleo.js). Se non parte, l'HUD va avanti senza
 try {
   holo = modOlo?.createOlogramma({ renderer: scene.renderer, strato: scene.strato, contenitore: $('holo'), sfx: sfxOlo,
     onTogli: (id) => azioneOlo('togli', id),
@@ -646,15 +853,17 @@ function loop(now) {
   if (booting && t >= TIMING.ready) { booting = false; document.body.classList.add('ready'); }
   const out = outAnalyser && currentSource ? Math.min(1, rms(outAnalyser) * 4.5) : 0;
   S.audio += (out - S.audio) * Math.min(1, dt * 18);
-  const mic = micAnalyser && S.mode !== 'speaking' ? Math.min(1, rms(micAnalyser) * 6) : 0;
+  micLivello = micAnalyser ? rms(micAnalyser) : 0; micPeak = Math.max(micPeak, micLivello);
+  const mic = micAnalyser && S.mode !== 'speaking' ? Math.min(1, micLivello * 6) : 0;
   S.mic += (mic - S.mic) * Math.min(1, dt * 18);
-  if (micAnalyser) micPeak = Math.max(micPeak, rms(micAnalyser));
+  disegnaLivello();
   if (S.mode === 'listening' && !S.hearing && !pending && performance.now() - heardAt > 4000) setMode('idle');
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
   S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 6); // nell'angolo in mezzo secondo: prima che atterri il protagonista
   holo?.fotogramma(t, dt);
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
   holo?.dopoRender(); // nello stesso fotogramma: la foto legge il canvas prima che il buffer si svuoti
-  drawStatus(t, scene.anchor());
+  disegnaAttorno(t, scene.anchor());
 }
 requestAnimationFrame(loop);
+setInterval(aggiornaBordi, 125); // dopo la scena: usa i fotogrammi contati

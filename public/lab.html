@@ -4,10 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STEM lab</title>
-<!-- Pagina di prova della grafica: ?t=SECONDI ferma la formazione, ?mode=idle|listening|thinking|speaking,
-     ?audio=0..1, ?mic=0..1, ?split=0..1. Senza audio/mic fissati, li anima da sola. -->
+<!-- Pagina di prova del nucleo (nucleo.js), senza server: python3 -m http.server nella radice della repository,
+     poi /public/lab.html. Parametri:
+     ?t=SECONDI ferma la formazione (4,1 sfera fatta, 5,6 onda, 6,5 pronto)
+     ?mode=idle|listening|thinking|speaking   ?audio=0..1 voce di STEM   ?mic=0..1 microfono (sentito, come con hearing)
+     ?split=0..1 browser aperto a destra   ?allarme=0|1|2 normale, attenzione (arancione), critico (rosso)
+     ?anchor mostra il centro restituito da anchor()   ?clean senza la riga di stato
+     Senza audio/mic fissati, li anima da sola. -->
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #050912; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   #info { position: fixed; left: 12px; bottom: 10px; font: 11px ui-monospace, Menlo, monospace; color: #4f86b8; opacity: .7; pointer-events: none; }
   #mark { position: fixed; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 1px solid #ff4fa3; border-radius: 50%; pointer-events: none; display: none; }
@@ -21,12 +26,12 @@
 <div id="info"></div>
 <div id="mark"></div>
 <script type="module">
-import { createScene, TIMING } from '/public/humanoid.js';
+import { createScene, TIMING } from '/public/nucleo.js';
 
 const q = new URLSearchParams(location.search);
 const num = (k) => (q.has(k) ? Number(q.get(k)) : null);
 const frozenT = num('t'), fixedAudio = num('audio'), fixedMic = num('mic');
-const S = { mode: q.get('mode') || 'idle', audio: fixedAudio ?? 0, mic: fixedMic ?? 0, split: num('split') ?? 0 };
+const S = { mode: q.get('mode') || 'idle', audio: fixedAudio ?? 0, mic: fixedMic ?? 0, hearing: true, split: num('split') ?? 0, allarme: num('allarme') ?? 0 };
 
 const scene = await createScene(document.getElementById('gl'), S);
 const info = document.getElementById('info'), mark = document.getElementById('mark');
@@ -52,7 +57,7 @@ function loop(now) {
   mark.style.left = a.x + 'px'; mark.style.top = a.y + 'px';
   frames++;
   if (now - fpsT > 1000) { fps = frames * 1000 / (now - fpsT); frames = 0; fpsT = now; }
-  if (!q.has('clean')) info.textContent = `t ${t.toFixed(2)}  ${S.mode}  audio ${S.audio.toFixed(2)}  mic ${S.mic.toFixed(2)}  ` +
+  if (!q.has('clean')) info.textContent = `t ${t.toFixed(2)}  ${S.mode}  allarme ${S.allarme}  audio ${S.audio.toFixed(2)}  mic ${S.mic.toFixed(2)}  ` +
     `assembling ${(scene.assembling(t) * 100).toFixed(0)}%  ${fps.toFixed(0)} fps`;
   window.__frames = (window.__frames || 0) + 1;
   window.__fps = fps;

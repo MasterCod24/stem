@@ -15,7 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOlogramma } from '../ologramma.mjs';
 import { DEMO_TURBOFAN, DEMO_STAFFA } from '../public/ologramma/demo.js';
-import { massaTesto } from '../public/ologramma/forme.js';
+import { massaTesto, normalizzaPezzo, ingombro } from '../public/ologramma/forme.js';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4431, CDP = 9562, ORIGINE = `http://localhost:${PORTA}`, W = 1470, H = 956; // lo schermo di Tony in punti, a 2x
@@ -201,13 +201,41 @@ const scarto = (a, b) => { const k = Object.keys(a).filter((n) => b[n]); return 
 // Quanto si allargano le etichette attorno al centro della zona, solo su quelle visibili prima e dopo: chi esce dallo schermo non conta
 const allarga = (a, b, c) => { const k = Object.keys(a).filter((n) => b[n]), d = (p) => Math.hypot(p[0] - c.cx, p[1] - c.cy);
   return k.length ? k.reduce((s, n) => s + d(b[n]), 0) / k.reduce((s, n) => s + d(a[n]), 0) : NaN; };
+// Quote: i lati dell'ingombro, da forme.js come li calcola scena.js, e i testi .holo-quota letti dal DOM («1.240 MM», «12,5 MM»)
+const PEZZI_TURBOFAN = new Map(DEMO_TURBOFAN.pezzi.map((p) => { const n = normalizzaPezzo(structuredClone(p)).pezzo; return [n.id, n]; }));
+const lati = (ids) => {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (const id of ids) { const g = ingombro(PEZZI_TURBOFAN.get(id)); for (let c = 0; c < 3; c++) { min[c] = Math.min(min[c], g.min[c]); max[c] = Math.max(max[c], g.max[c]); } }
+  return [0, 1, 2].map((c) => max[c] - min[c]);
+};
+const leggiQuote = () => ev(`[...document.querySelectorAll('.holo-quota')].map((e) => { const r = e.getBoundingClientRect();
+  return { asse: e.dataset.asse, testo: e.textContent, op: +e.style.opacity, r: [r.left, r.top, r.right, r.bottom] }; })`);
+const mm = (t) => parseFloat(t.replace(/\s*MM$/, '').replace(/\./g, '').replace(',', '.'));
+const tocca = (r, q) => q && r[0] < q[2] && q[0] < r[2] && r[1] < q[3] && q[1] < r[3];
+// Tre quote accese, con i valori dei lati (arrotondati come mmTesto), fuori dall'angolo del nucleo e dalla scheda, dentro la zona
+async function controllaQuote(nome, attesi, { minimo = 0.5, massimo = 1 } = {}) {
+  const q = await attendi(async () => { const x = await leggiQuote(); return x.filter((e) => e.op > minimo).length === 3 && x; }, 4000);
+  if (!q) { const x = await leggiQuote(); return esito(false, nome, `quote accese: ${x.filter((e) => e.op > minimo).map((e) => e.testo).join(', ') || 'nessuna'}`); }
+  const [a, z, card] = await Promise.all([ev("import('/ologramma/scena.js').then((m) => m.angoloTesta())"), ev('stemOlo.info().zona'),
+    ev("(() => { const r = document.querySelector('.holo-card.on')?.getBoundingClientRect(); return r ? [r.left, r.top, r.right, r.bottom] : null; })()")]);
+  const errori = [];
+  for (const e of q) {
+    const i = 'xyz'.indexOf(e.asse), v = mm(e.testo), tolleranza = attesi[i] < 99.95 ? 0.051 : 0.51;
+    if (!(Math.abs(v - attesi[i]) <= tolleranza)) errori.push(`${e.asse} ${e.testo} invece di ${attesi[i].toFixed(2)}`);
+    if (e.op > massimo) errori.push(`${e.asse} troppo accesa (${e.op})`);
+    if (tocca(e.r, [a.x0, a.y0, W, H])) errori.push(`${e.asse} sull'angolo del nucleo`);
+    if (tocca(e.r, card)) errori.push(`${e.asse} sulla scheda`);
+    if (e.r[0] < z.x0 - 1 || e.r[2] > z.x1 + 1 || e.r[1] < z.y0 - 1 || e.r[3] > z.y1 + 1) errori.push(`${e.asse} fuori dalla zona`);
+  }
+  return esito(!errori.length, nome, errori.length ? errori.join('; ') : q.map((e) => `${e.asse} ${e.testo} (${e.op})`).join(', '));
+}
 const REPORT = "stemReport({ titolo: 'prova', blocchi: [{ tipo: 'testo', titolo: 'Blocco di prova', testo: 'Un testo qualunque.' }] })";
 
 // 21 s, poi una lettura di window.__misure: i fotogrammi contati in ognuno degli ultimi 20 secondi interi, con mediana,
 // p10 e minimo. Contati per secondo, perché la mediana degli intervalli nascondeva un HUD che alterna fotogrammi corti e
 // lunghi (59,9 fps dagli intervalli contro i 55 della traccia del compositore, 7/11).
 // Il modello è davvero disegnato? Luminosità media (verde e blu) del quadrato centrale della zona, da uno screenshot piccolo:
-// il fondo scuro con le montagne sta sotto 0,1, l'ologramma acceso sopra 0,3
+// il fondo nero sta sotto 0,1, l'ologramma acceso sopra 0,3
 async function luce(z) {
   const r = await cdp('Page.captureScreenshot', { format: 'png', clip: { x: z.cx - z.r / 2, y: z.cy - z.r / 2, width: z.r, height: z.r, scale: 0.1 } });
   return ev(`(async () => { const i = await createImageBitmap(await (await fetch('data:image/png;base64,${r.data}')).blob());
@@ -270,6 +298,8 @@ try {
     'stemOlogrammaDemo apre il turbofan; report e browser si chiudono', `${aperto.info.pezzi} pezzi, ${aperto.info.triangoli} triangoli`);
   esito(Math.abs(inAngolo[0] - angolo.dockX) < 0.03 * W && inAngolo[1] > H / 2, "la testa va nell'angolo in basso a destra",
     `scritta di stato a (${inAngolo}) contro l'angolo (${angolo.dockX.toFixed(0)}, ${angolo.dockY.toFixed(0)}); prima a (${libera})`);
+  titolo('Quote in millimetri');
+  await controllaQuote("senza pezzo scelto: tre quote tenui, con i lati dell'ingombro del modello intero", lati(PEZZI_TURBOFAN.keys()), { minimo: 0.1, massimo: 0.75 });
   await foto('1-apertura');
 
   titolo('Mouse');
@@ -278,6 +308,12 @@ try {
   const scelto = await ev("({ s: stemOlo.info().vista.selezionato, scheda: document.querySelector('.holo-card.on')?.textContent || '' })");
   esito(typeof scelto.s === 'string' && scelto.scheda.length > 0, 'clic su un pezzo: lo sceglie e mostra la scheda', `${scelto.s}: «${scelto.scheda.slice(0, 70)}»`);
   esito((await ev('window.__pd')) > pd0, "il pointerdown arriva lo stesso alla finestra, che sblocca l'audio");
+  if (typeof scelto.s === 'string') {
+    await controllaQuote(`pezzo scelto (${scelto.s}): tre quote .holo-quota con i lati del suo ingombro`, lati([scelto.s]));
+    const qi = await ev('stemOlo.info().quote');
+    esito(qi.soggetto === scelto.s && qi.segmenti === 15, 'le quote sono linee: per asse due di riferimento, una di quota e due trattini', JSON.stringify(qi));
+    await foto('1b-quote');
+  }
   await clic(z.cx, z.cy, 2);
   const isolato = (await ev('stemOlo.info().vista')).isolato;
   await clic(z.cx, z.cy, 2);
@@ -289,6 +325,14 @@ try {
   const v1 = await ev('stemOlo.info()'), et1 = await etichette();
   esito(v1.vista.esploso === 1 && Object.keys(et1).length >= 3, 'E: vista esplosa, con le etichette', `${Object.keys(et1).length} etichette visibili`);
   await foto('2-esploso');
+  const selE = (await ev('stemOlo.info().vista')).selezionato;
+  if (esito(typeof selE === 'string', 'nell\'esploso il pezzo resta scelto', String(selE))) {
+    await controllaQuote(`esploso, pezzo scelto (${selE}): le quote lo seguono con gli stessi valori`, lati([selE]));
+    await ev("stemOlo.comando('seleziona', null), true"); await pausa(900);
+    const spente = (await leggiQuote()).filter((e) => e.op > 0.05);
+    esito(!spente.length, "esploso senza pezzo scelto: la quota del modello intero si spegne", spente.map((e) => `${e.asse} ${e.op}`).join(', ') || 'tutte spente');
+    await ev(`stemOlo.comando('seleziona', ${JSON.stringify(selE)}), true`); await pausa(900); // come prima, per le etichette qui sotto
+  }
   await trascina(z.cx - 150, z.cy, z.cx + 150, z.cy + 60); await pausa(400);
   const et2 = await etichette();
   esito(scarto(et1, et2) > 15, 'trascinare col mouse gira il modello', `etichette spostate di ${scarto(et1, et2).toFixed(0)} punti in media`);
@@ -485,8 +529,8 @@ try {
   await tasto('Escape');
 
   titolo('Rete e console');
-  const altri = [...host.keys()].filter((h) => h !== `localhost:${PORTA}` && !/^fonts\.(googleapis|gstatic)\.com$/.test(h));
-  esito(altri.length === 0, "richieste solo al server di prova, più i font di Google che l'HUD carica già", JSON.stringify(Object.fromEntries(host)));
+  const altri = [...host.keys()].filter((h) => h !== `localhost:${PORTA}`);
+  esito(altri.length === 0, 'richieste solo al server di prova: niente font né altro da internet', JSON.stringify(Object.fromEntries(host)));
   esito(eccezioni.length === 0 && errori.length === 0, 'nessuna eccezione né errore in console', [...eccezioni, ...errori].slice(0, 3).join(' | '));
 } catch (e) {
   esito(false, 'la prova si è fermata', String(e?.stack || e).split('\n').slice(0, 3).join(' | '));

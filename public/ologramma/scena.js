@@ -1,6 +1,6 @@
 // scena.js — l'ologramma nell'HUD: costruisce i pezzi dallo stato del server (GET /api/ologramma), li disegna
 // con l'aspetto olografico o in uno degli altri modi, apre la vista esplosa, taglia la sezione, seleziona,
-// etichetta e fotografa. Disegna nello stesso renderer dell'HUD, con strato() di humanoid.js: un RenderPass
+// etichetta, quota in millimetri e fotografa. Disegna nello stesso renderer dell'HUD, con strato() di nucleo.js: un RenderPass
 // prima del bagliore, quindi i colori sono lineari e tarati sulla soglia del bloom (0,18 di luminanza).
 // Sicurezza: dallo stato arrivano solo dati; i testi vanno nel DOM con textContent e i numeri ripassano da
 // forme.js (normalizzaPezzo, normalizzaVista) prima di toccare la scena.
@@ -12,12 +12,15 @@ import { geometria, leggiFile, estensione, matricePezzo } from './geometrie.js';
 const GRADI = Math.PI / 180;
 const ETICHETTE_MAX = 12;
 const lin = (r, g, b) => new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColorSpace);
-// Colori dell'HUD (THREE.Color li porta da sRGB a lineare): spigoli 0x2a86ff e 0x6cc8ff, nucleo 0x9ff0ff.
+// Colori dell'HUD (THREE.Color li porta da sRGB a lineare). Ciano dominante, come il resto dell'HUD: gli spigoli sono il
+// ciano #3ee6ff scalato alla luminanza lineare dell'azzurro di prima (0x2a86ff 0,25, 0x6cc8ff 0,52), perché l'aspetto è
+// tarato sulla soglia del bloom (0,18). Gli interni ai raggi X sono verde acqua (0x3dffd0, 0,77 come il ciano chiaro di
+// prima): con gli esterni ciano, un ciano chiaro non si distingueva. Arancione e rosso stanno solo nelle anomalie.
 // Il solido ha luminanza 0,177, appena sotto la soglia del bloom: a 0,39 (la prima versione) il bagliore lo
 // bruciava in bianco e l'ombreggiatura spariva (screenshot del 7/11).
 const COL = {
-  linea: new THREE.Color(0x2a86ff), alta: new THREE.Color(0x6cc8ff), nucleo: new THREE.Color(0x9ff0ff),
-  solido: lin(0.15, 0.18, 0.23), grigio: lin(0.09, 0.1, 0.12), scuro: lin(0.004, 0.012, 0.03),
+  linea: new THREE.Color(0x2595a6), alta: new THREE.Color(0x37d0e7), interno: new THREE.Color(0x3dffd0),
+  solido: lin(0.135, 0.185, 0.2), grigio: lin(0.09, 0.1, 0.12), scuro: lin(0.002, 0.014, 0.02),
 };
 // 48 direzioni quasi uniformi (spirale di Fibonacci) per i punti d'appoggio dei pezzi, usati dall'inquadratura
 const DIREZIONI = (() => {
@@ -25,14 +28,22 @@ const DIREZIONI = (() => {
   for (let i = 0; i < n; i++) { const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(1 - y * y), a = i * Math.PI * (3 - Math.sqrt(5)); d.push(Math.cos(a) * r, y, Math.sin(a) * r); }
   return d;
 })();
-// Flussi dichiarati sui cavi: colore, impulsi al secondo, passo in raggi del cavo. È un disegno, non una simulazione.
-const FLUSSO = { elettrico: [0xffb648, 1.8, 9], fluido: [0x37c8ff, 0.6, 14], aria: [0xdff4ff, 1.0, 11], dati: [0x9ff0ff, 2.6, 5] };
+// Flussi dichiarati sui cavi: colore, impulsi al secondo, passo in raggi del cavo, coda dell'impulso in frazioni del passo.
+// È un disegno, non una simulazione. Senza l'arancione di prima si distinguono per colore, velocità e forma: elettrico
+// scintille bianco-ciano corte e veloci, fluido onde blu profondo lunghe e lente, aria soffi larghi ciano pallido, dati
+// trattini verde acqua fitti.
+const FLUSSO = { elettrico: [0xd9fbff, 3.4, 8, 0.1], fluido: [0x1f4fff, 0.45, 16, 0.6], aria: [0x9fdcec, 0.9, 11, 0.42], dati: [0x3dffd0, 2.6, 5, 0.22] };
 
 // ---------------------------------------------------------------- scale di colore
-// Una sola funzione per shader e legenda, in RGB lineare. Rischio: la luminanza cresce con il rischio e passa
-// la soglia del bloom (0,18) solo sotto fs ≈ 1,4, così brilla solo quello che rischia; il blu resta spento.
-const TAPPE_RISCHIO = [[0, [0.006, 0.04, 0.7]], [0.35, [0.1, 0.03, 0.8]], [0.6, [0.42, 0.02, 0.55]], [0.8, [0.85, 0.03, 0.12]], [1, [1, 0.22, 0.01]]];
-const TAPPE_DENSITA = [[0, [0.02, 0.2, 0.4]], [0.33, [0.03, 0.36, 0.24]], [0.55, [0.32, 0.4, 0.04]], [0.75, [0.6, 0.27, 0.02]], [1, [0.66, 0.06, 0.03]]];
+// Una sola funzione per shader e legenda, in RGB lineare. Rischio: dal blu al viola e al magenta man mano che il margine
+// cala; il rosso solo da fs 1 in giù, dove il materiale snerva, perché il rosso è un'anomalia (regola di Tony del 10/11).
+// Prima il rosso pieno partiva da fs 1,25, contro il contratto. La luminanza cresce col rischio e passa la soglia del
+// bloom (0,18) solo vicino a fs 1: brilla solo quello che cede, il blu resta spento.
+const TAPPE_RISCHIO = [[0, [0.006, 0.04, 0.7]], [0.35, [0.1, 0.03, 0.8]], [0.6, [0.42, 0.02, 0.55]], [0.9, [0.6, 0.02, 0.42]], [0.985, [0.68, 0.02, 0.32]], [1, [1, 0.1, 0.01]]];
+// Densità: dal blu petrolio scuro (leggero) al ciano (denso). La luminanza cresce da 0,045 a 0,185 e resta vicino alla soglia
+// del bloom come il solido, così l'ombreggiatura si legge. Prima la scala passava dall'arancione al rosso, che sono
+// delle anomalie, e a metà (l'alluminio) arrivava a 0,36 e bruciava nel bagliore.
+const TAPPE_DENSITA = [[0, [0.005, 0.0491, 0.1226]], [0.35, [0.006, 0.0989, 0.1798]], [0.7, [0.008, 0.1573, 0.2185]], [1, [0.012, 0.228, 0.2683]]];
 export const DENSITA_SCALA = Object.freeze([900, 8000]); // kg/m³, in scala logaritmica: dal PA12 all'acciaio
 function scala(tappe, t) {
   t = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
@@ -104,7 +115,7 @@ void main() {
 // Solido, densità e sforzi: opachi, ombreggiati con una luce fissa rispetto alla camera.
 const FRAG = `#include <clipping_planes_pars_fragment>
 uniform float uTempo, uTremolio, uAlfa, uFill, uRim, uSel, uFuoco, uOpaco, uRetro, uCampo, uAmb, uPasso, uSweep, uSweepA, uSweepK;
-uniform float uFlusso, uFlussoVel, uFlussoPasso, uLungo;
+uniform float uFlusso, uFlussoVel, uFlussoPasso, uFlussoCoda, uLungo;
 uniform vec3 uColA, uColB, uColFlusso;
 ${CAMPO_GLSL}
 varying vec3 vN; varying vec3 vV; varying vec3 vW; varying vec3 vNW; varying float vU;
@@ -135,8 +146,8 @@ void main() {
     col = (base * (uAmb + (1.0 - uAmb) * d) * (0.96 + 0.08 * sc) + uColB * (uRim * fr + sw)) * (1.0 + 0.45 * uSel);
   }
   if (uFlusso > 0.5) {
-    float s = fract(vU * uLungo / uFlussoPasso - uTempo * uFlussoVel);
-    col += uColFlusso * 0.8 * smoothstep(0.0, 0.06, s) * (1.0 - smoothstep(0.06, 0.32, s));
+    float s = fract(vU * uLungo / uFlussoPasso - uTempo * uFlussoVel), testa = 0.2 * uFlussoCoda; // fronte netto, coda che sfuma
+    col += uColFlusso * 0.8 * smoothstep(0.0, testa, s) * (1.0 - smoothstep(testa, uFlussoCoda, s));
   }
   // con un pezzo selezionato gli altri si abbassano: la selezione dentro la gondola prima non si vedeva
   col *= mix(1.0, 0.3, uFuoco * (1.0 - min(2.0 * uSel, 1.0)));
@@ -176,44 +187,72 @@ const FRAG_PIANO = `uniform vec3 uCol; uniform float uAlfa;
 void main() { gl_FragColor = vec4(uCol, uAlfa); }`;
 
 // ---------------------------------------------------------------- DOM: stile fisso, testi solo con textContent
+// Le variabili sono quelle di index.html (ciano, testi, sottile e mono); qui hanno un ripiego per il laboratorio, che non
+// le definisce. Moduli trasparenti senza bordi pieni (gli angoli a staffa della scheda li disegna index.html), titoli e
+// valori in sottile maiuscolo, etichette e numeri piccoli in mono. Arancione e rosso solo sulle anomalie: calcolo
+// fallito, campo mancante o file che non si apre (.attenzione), pezzo che cede (.cede).
 const CSS = `
-.holo { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s; z-index: 4;
-  font-family: "Share Tech Mono", ui-monospace, Menlo, monospace; color: rgba(196, 226, 255, .9); }
+.holo { --o-c: var(--ciano, #3ee6ff); --o-cv: var(--ciano-vivo, #b6f8ff); --o-ct: var(--ciano-tenue, rgba(62, 230, 255, .32));
+  --o-t1: var(--testo, rgba(222, 251, 255, .94)); --o-t2: var(--testo-2, rgba(150, 222, 238, .7)); --o-ar: var(--arancio, #ff9b33); --o-ro: var(--rosso, #ff4343);
+  --o-s: var(--sottile, "Helvetica Neue", Helvetica, Arial, sans-serif); --o-m: var(--mono, Menlo, Monaco, monospace);
+  --o-gl: var(--bagliore, 0 0 6px rgba(62, 230, 255, .7), 0 0 16px rgba(62, 230, 255, .28)); --o-buio: 0 0 2px #000, 0 0 4px #000;
+  position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s; z-index: 4; font: 300 12px/1.4 var(--o-s); color: var(--o-t1); }
 .holo.on { opacity: 1; }
-.holo-top { position: absolute; left: 2.2vw; right: 2.2vw; top: 2.2vh; display: flex; justify-content: space-between; gap: 2vw;
-  font-size: 11px; letter-spacing: .2em; color: #2fa8ff; text-shadow: 0 0 6px rgba(47, 168, 255, .7); text-transform: uppercase; white-space: nowrap; }
-.holo-top span:first-child { overflow: hidden; text-overflow: ellipsis; }
-.holo-desc { position: absolute; left: 2.2vw; top: calc(2.2vh + 18px); max-width: 46vw; font-size: 10px; letter-spacing: .08em; color: rgba(170, 210, 255, .7); }
-.holo-card { position: absolute; left: 2.2vw; top: 12vh; min-width: 200px; max-width: 300px; padding: 9px 11px; border-radius: 3px;
-  background: rgba(3, 8, 18, .82); border: 1px solid rgba(96, 190, 255, .6); box-shadow: 0 0 16px rgba(47, 168, 255, .2), inset 0 0 18px rgba(47, 168, 255, .07);
+.holo-top { position: absolute; left: 2.2vw; right: 2.2vw; top: 2.2vh; display: flex; justify-content: space-between; align-items: baseline; gap: 2vw;
+  white-space: nowrap; text-transform: uppercase; }
+.holo-top span:first-child { overflow: hidden; text-overflow: ellipsis; font: 200 15px/1.2 var(--o-s); letter-spacing: .26em; color: var(--o-cv); text-shadow: var(--o-gl); }
+.holo-top span:last-child { font: 400 9.5px/1 var(--o-m); letter-spacing: .2em; color: var(--o-c); text-shadow: var(--o-gl); }
+.holo-desc { position: absolute; left: 2.2vw; top: calc(2.2vh + 25px); max-width: 46vw; font: 300 11.5px/1.45 var(--o-s); letter-spacing: .03em; color: var(--o-t2); }
+.holo-card { position: absolute; left: 2.2vw; top: 12vh; min-width: 210px; max-width: 300px; padding: 12px 14px 11px;
+  background: linear-gradient(135deg, rgba(62, 230, 255, .075), rgba(62, 230, 255, .02) 55%, rgba(62, 230, 255, 0));
   opacity: 0; transform: translateX(-8px); transition: opacity .25s, transform .25s; }
 .holo-card.on { opacity: 1; transform: none; }
-.holo-card b { display: block; font: 800 15px/1.1 "Avenir Next Condensed", "Share Tech Mono", sans-serif; color: #fff; text-transform: uppercase; margin-bottom: 6px; }
-.holo-card div { font-size: 10.5px; letter-spacing: .06em; line-height: 1.5; }
-.holo-card .k { color: rgba(150, 205, 255, .75); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }
-.holo-leg { position: absolute; left: 2.2vw; bottom: 3.2vh; width: min(34vw, 420px); font-size: 9.5px; letter-spacing: .12em; opacity: 0; transition: opacity .3s; }
+.holo-card b { display: block; margin-bottom: 4px; font: 300 16px/1.2 var(--o-s); letter-spacing: .14em; text-transform: uppercase; color: var(--o-cv); text-shadow: var(--o-gl); }
+.holo-card div { margin-top: 8px; }
+.holo-card .k { display: block; margin-bottom: 3px; font: 400 8.5px/1 var(--o-m); letter-spacing: .22em; text-transform: uppercase; color: var(--o-t2); }
+.holo-card .v { font: 300 12.5px/1.35 var(--o-s); letter-spacing: .03em; color: var(--o-t1); }
+.holo-leg { position: absolute; left: 2.2vw; bottom: 3.2vh; width: min(34vw, 420px); font: 400 9px/1.3 var(--o-m); letter-spacing: .14em; color: var(--o-t1);
+  opacity: 0; transition: opacity .3s; }
 .holo-leg.on { opacity: 1; }
-.holo-leg .bar { height: 8px; margin: 5px 0 3px; border: 1px solid rgba(96, 190, 255, .5); }
-.holo-leg .ticks { position: relative; height: 26px; }
-.holo-leg .ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; color: rgba(196, 226, 255, .85); }
-.holo-leg .ticks span::before { content: ""; position: absolute; left: 50%; top: -4px; height: 4px; border-left: 1px solid rgba(196, 226, 255, .7); }
-.holo-leg .t { color: #2fa8ff; text-transform: uppercase; }
-.holo-tag { position: absolute; left: 0; top: 0; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
-  color: rgba(196, 226, 255, .92); text-shadow: 0 0 6px rgba(47, 168, 255, .8); opacity: 0; will-change: transform, opacity; }
-.holo-tag::before { content: ""; position: absolute; left: -11px; top: 50%; width: 5px; height: 5px; margin-top: -3px; border: 1px solid #6cc8ff; border-radius: 50%; }
-.holo-cur { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 1px solid #6cc8ff; border-radius: 50%;
-  box-shadow: 0 0 10px rgba(108, 200, 255, .6); opacity: 0; transition: opacity .2s; }
+.holo-leg .t { text-transform: uppercase; letter-spacing: .22em; color: var(--o-c); text-shadow: var(--o-gl); }
+.holo-leg .bar { height: 6px; margin: 8px 0 5px; box-shadow: 0 0 0 1px rgba(62, 230, 255, .22); }
+.holo-leg .ticks { position: relative; height: 19px; }
+.holo-leg .ticks span { position: absolute; top: 3px; transform: translateX(-50%); white-space: nowrap; }
+.holo-leg .ticks span::before { content: ""; position: absolute; left: 50%; top: -7px; height: 5px; border-left: 1px solid var(--o-ct); }
+.holo-leg .nota { font: 300 12px/1.4 var(--o-s); letter-spacing: .03em; color: var(--o-t2); }
+.holo .attenzione { color: var(--o-ar); text-shadow: 0 0 8px rgba(255, 155, 51, .55); }
+.holo .cede { color: var(--o-ro); text-shadow: 0 0 8px rgba(255, 67, 67, .6); }
+.holo-tag { position: absolute; left: 0; top: 0; font: 400 9px/14px var(--o-m); letter-spacing: .2em; text-transform: uppercase; white-space: nowrap;
+  color: var(--o-t1); text-shadow: var(--o-buio), 0 0 7px rgba(62, 230, 255, .75); opacity: 0; will-change: transform, opacity; }
+.holo-tag::before { content: ""; position: absolute; left: -11px; top: 50%; width: 5px; height: 5px; margin-top: -3px; border: 1px solid var(--o-c); border-radius: 50%;
+  box-shadow: 0 0 4px var(--o-c); }
+.holo-quota { position: absolute; left: 0; top: 0; font: 400 9.5px/12px var(--o-m); letter-spacing: .12em; white-space: nowrap;
+  color: var(--o-cv); text-shadow: var(--o-buio), 0 0 7px rgba(62, 230, 255, .7); opacity: 0; will-change: transform, opacity; }
+.holo-cur { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 1px solid var(--o-cv); border-radius: 50%;
+  box-shadow: 0 0 10px rgba(62, 230, 255, .6); opacity: 0; transition: opacity .2s; }
 .holo-cur.on { opacity: 1; }
-.holo-cur.presa { background: rgba(108, 200, 255, .25); }`;
+.holo-cur.presa { background: rgba(62, 230, 255, .22); }`;
 
 function el(tag, cls, padre) { const e = document.createElement(tag); if (cls) e.className = cls; if (padre) padre.append(e); return e; }
 const taglia = (s, n) => (typeof s === 'string' ? (s.length > n ? s.slice(0, n - 1) + '…' : s) : '');
 const finito = (v) => typeof v === 'number' && Number.isFinite(v);
 const liscio = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const numero = (v, d = 1) => v.toLocaleString('it-IT', { maximumFractionDigits: d });
+/**
+ * Millimetri come in un disegno tecnico: il punto per le migliaia e, sotto i 100 mm, sempre una cifra decimale
+ * («1.240», «12,5», «8,0»). toLocaleString('it-IT') non mette il punto nei numeri di quattro cifre, quindi si fa a mano.
+ */
+export function mmTesto(x) {
+  if (!finito(x)) return '—';
+  const d = Math.round(Math.abs(x) * 10) / 10 < 100 ? 1 : 0, [intera, dec] = x.toFixed(d).split('.');
+  return intera.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (dec ? ',' + dec : '');
+}
+// Un pezzo ha misure solo con un ingombro vero: un file non ancora aperto, o che non si apre, ha per ingombro il punto della sua posizione.
+const misurabile = (R) => (R.p.forma !== 'file' || R.corpi.length > 0) && !R.box.isEmpty() &&
+  Number.isFinite(R.box.min.x + R.box.min.y + R.box.min.z + R.box.max.x + R.box.max.y + R.box.max.z);
 
 /**
- * L'ologramma. renderer e strato vengono da createScene di humanoid.js; contenitore è l'elemento DOM per testi
+ * L'ologramma. renderer e strato vengono da createScene di nucleo.js; contenitore è l'elemento DOM per testi
  * ed etichette; onTogli(id) chiede al server di togliere un pezzo lanciato via; onFoto(png_base64, versione, modello)
  * riceve la foto di ogni versione nuova. scarica (facoltativo, predefinito fetch) serve alle prove senza server.
  */
@@ -255,6 +294,16 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
   scena.add(tappo, contorno, velo);
   const modello = new THREE.Group();
   scena.add(modello);
+  // Quote: per asse due linee di riferimento, la linea di quota e due trattini obliqui, cioè 5 segmenti. Un solo LineSegments
+  // con un buffer di 30 vertici, riscritto solo quando cambia qualcosa (ingombro, spigolo scelto, distanza).
+  const quotaBuf = new Float32Array(3 * 5 * 2 * 3), quotaNuovo = new Float32Array(quotaBuf.length), quotaGeo = new THREE.BufferGeometry();
+  quotaGeo.setAttribute('position', new THREE.BufferAttribute(quotaBuf, 3).setUsage(THREE.DynamicDrawUsage));
+  quotaGeo.setDrawRange(0, 0);
+  const uQuota = { uCol: { value: COL.alta.clone() }, uAlfa: { value: 0 } };
+  // Sempre sopra, come i testi: nel solido le linee dietro un pezzo sparivano e la quota restava a metà (foto della staffa)
+  const quotaLinee = new THREE.LineSegments(quotaGeo, new THREE.ShaderMaterial({ ...additivo, depthTest: false, uniforms: uQuota, vertexShader: VERT_W, fragmentShader: FRAG_PIANO }));
+  quotaLinee.renderOrder = 6; quotaLinee.frustumCulled = false; quotaLinee.visible = false;
+  scena.add(quotaLinee);
 
   // DOM
   if (!document.getElementById('holo-stile')) { const s = el('style'); s.id = 'holo-stile'; s.textContent = CSS; document.head.append(s); }
@@ -266,6 +315,22 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
   const etichette = Array.from({ length: ETICHETTE_MAX }, () => el('div', 'holo-tag', radice));
   const larghezze = new Array(ETICHETTE_MAX).fill(0); // px, misurate quando cambia il testo
   const cursore = el('i', 'holo-cur', radice);
+  const quoteEl = ['x', 'y', 'z'].map((a) => { const e = el('div', 'holo-quota', radice); e.dataset.asse = a; return e; });
+  // Zone che etichette e quote non coprono: 0 la scheda, 1 la legenda, 2 la descrizione. I rettangoli si rileggono dal DOM
+  // solo dopo un cambio o un ridimensionamento, non a ogni fotogramma.
+  const ostacoli = [null, null, null];
+  let rettOstacoli = null;
+  function ostacolo(i, e) { ostacoli[i] = e || null; rettOstacoli = null; }
+  function rettangoli() {
+    if (!rettOstacoli) {
+      rettOstacoli = [];
+      for (const e of ostacoli) {
+        const r = e?.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) rettOstacoli.push({ x0: r.left - 12, y0: r.top - 6, x1: r.right + 12, y1: r.bottom + 6 }); // 12: la scheda entra da −8 px
+      }
+    }
+    return rettOstacoli;
+  }
 
   // stato locale
   const pezzi = new Map(); // id → record
@@ -276,6 +341,8 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
   const misureModello = { centro: new THREE.Vector3(), raggio: 1, D1: 1 };
   let gruppi = [], etichetteGruppi = [], zona = null, trascina = null, presa = null, sopra = null, ultimoSopra = 0, ultimoCursore = 0;
   const foto = { attesa: null, pronto: 0, inCorso: false };
+  // soggetto: l'id del pezzo quotato, '*' per il modello intero o null; scelta: per asse lo spigolo e il lato della quota
+  const quota = { soggetto: null, alfa: 0, scelta: [null, null, null], testi: ['', '', ''], carattere: 0 };
   let orologio = 0;
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), box = new THREE.Box3(), boxP = new THREE.Box3();
   const raggio = new THREE.Raycaster();
@@ -285,7 +352,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     const u = {
       ...comuni, uAlfa: { value: 0 }, uFill: { value: 0.05 }, uRim: { value: 0.4 }, uSel: { value: 0 }, uOpaco: { value: 0 }, uRetro: { value: p.forma === 'file' ? 0 : 1 },
       uCampo: { value: 0 }, uAmb: { value: 0.35 }, uColA: { value: COL.linea.clone() }, uColB: { value: COL.alta.clone() },
-      uFlusso: { value: 0 }, uFlussoVel: { value: 1 }, uFlussoPasso: { value: 20 }, uLungo: { value: 1 }, uColFlusso: { value: new THREE.Color() },
+      uFlusso: { value: 0 }, uFlussoVel: { value: 1 }, uFlussoPasso: { value: 20 }, uFlussoCoda: { value: 0.3 }, uLungo: { value: 1 }, uColFlusso: { value: new THREE.Color() },
     };
     const corpo = new THREE.ShaderMaterial({ uniforms: u, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, clipping: true, clippingPlanes: [piano], ...additivo, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     const spigoli = new THREE.ShaderMaterial({
@@ -412,7 +479,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       // Gli interni si leggono dagli spigoli. Con riempimento 0,085 e bordo 0,55, e poi ancora con 0,014 e 0,3, le
       // decine di facce di taglio dei dischi, viste di sbieco, si sommavano in una macchia bianca (screenshot del
       // 7/11): il bordo fresnel di ogni faccia quasi di taglio valeva da solo più della soglia del bloom.
-      if (interno) { u.uColA.value.copy(COL.nucleo); u.uColB.value.copy(COL.nucleo); u.uFill.value = 0.008; u.uRim.value = 0.08; }
+      if (interno) { u.uColA.value.copy(COL.interno); u.uColB.value.copy(COL.interno); u.uFill.value = 0.008; u.uRim.value = 0.08; }
       else { u.uColA.value.copy(COL.linea); u.uFill.value = 0.005; u.uRim.value = 0.1; }
     } else if (m === 'solido') { u.uColA.value.copy(COL.solido); u.uAmb.value = 0.3; u.uRim.value = 0.12; }
     else if (m === 'densita') {
@@ -427,10 +494,10 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     mat.polygonOffset = op;
     const fl = R.p.forma === 'cavo' && R.p.flusso && FLUSSO[R.p.flusso];
     u.uFlusso.value = fl ? 1 : 0;
-    if (fl) { u.uColFlusso.value.set(fl[0]); u.uFlussoVel.value = fl[1]; u.uFlussoPasso.value = fl[2] * R.p.misure.r; u.uLungo.value = R.lunghezza; }
+    if (fl) { u.uColFlusso.value.set(fl[0]); u.uFlussoVel.value = fl[1]; u.uFlussoPasso.value = fl[2] * R.p.misure.r; u.uFlussoCoda.value = fl[3]; u.uLungo.value = R.lunghezza; }
     const sm = R.mat.spigoli;
     if (op) { s.uCol.value.copy(COL.scuro); s.uI.value = 1; sm.blending = THREE.NormalBlending; }
-    else { s.uCol.value.copy(m === 'raggi-x' && interno ? COL.nucleo : COL.alta); s.uI.value = m === 'raggi-x' ? (interno ? 0.35 : 0.14) : interno && !sez ? 0.14 : 0.45; sm.blending = THREE.AdditiveBlending; }
+    else { s.uCol.value.copy(m === 'raggi-x' && interno ? COL.interno : COL.alta); s.uI.value = m === 'raggi-x' ? (interno ? 0.35 : 0.14) : interno && !sez ? 0.14 : 0.45; sm.blending = THREE.AdditiveBlending; }
     trasparenza(R);
   }
   // Un pezzo opaco che sfuma diventa trasparente per quel tempo; three.js lo disegna dopo gli opachi.
@@ -587,29 +654,34 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     uTappo.uPasso.value = R / 30;
   }
 
+  // Righe [chiave, valore, classe]: la classe è solo per le anomalie, 'cede' (fs sotto 1) o 'attenzione' (file che non si apre).
   function aggiornaScheda() {
     const R = vista.selezionato && pezzi.get(vista.selezionato);
     scheda.classList.toggle('on', !!R && aperto);
-    if (!R) return;
-    const p = R.p, M = MATERIALI[p.materiale], righe = [];
-    righe.push(['materiale', p.materiale === 'generico' ? 'non detto (si disegna, non si calcola)' : `${M.nome} · ${numero(M.densita, 0)} kg/m³${M.affidabile ? '' : ' · non isotropo'}`]);
-    const vol = volume(p), kg = finito(vol) && finito(M.densita) ? vol * M.densita * 1e-9 : null;
-    const b = R.box.getSize(v1);
-    righe.push(['misure', `${kg !== null ? massaTesto(kg) + ' · ' : ''}${[b.x, b.y, b.z].map((x) => numero(x, x < 10 ? 1 : 0)).join(' × ')} mm`]);
-    const a = analisi?.pezzi.get(p.id);
-    if (a && (a.fs !== null || a.sigma !== null)) righe.push(['calcolo', `${a.fs !== null ? 'fs min ' + numero(a.fs, 2) : ''}${a.fs !== null && a.sigma !== null ? ' · ' : ''}${a.sigma !== null ? 'σ max ' + numero(a.sigma, 0) + ' MPa' : ''}`]);
-    const extra = [p.interno ? 'interno' : '', p.flusso ? `flusso ${p.flusso} (dato dichiarato, non simulato)` : '', R.errore ? 'file: ' + R.errore : ''].filter(Boolean);
-    if (extra.length) righe.push(['nota', extra.join(' · ')]);
-    const nodi = [Object.assign(el('b'), { textContent: taglia(p.nome, 60) })];
-    for (const [k, t] of righe) { const d = el('div'); d.append(Object.assign(el('span', 'k'), { textContent: k + '  ' }), document.createTextNode(t)); nodi.push(d); }
-    scheda.replaceChildren(...nodi);
+    if (R) {
+      const p = R.p, M = MATERIALI[p.materiale], righe = [];
+      righe.push(['materiale', p.materiale === 'generico' ? 'non detto (si disegna, non si calcola)' : `${M.nome} · ${numero(M.densita, 0)} kg/m³${M.affidabile ? '' : ' · non isotropo'}`]);
+      const vol = volume(p), kg = finito(vol) && finito(M.densita) ? vol * M.densita * 1e-9 : null;
+      const b = R.box.getSize(v1), misure = misurabile(R) ? [b.x, b.y, b.z].map(mmTesto).join(' × ') + ' mm' : ''; // un file non ancora aperto non ha misure
+      if (kg !== null || misure) righe.push(['misure', [kg !== null ? massaTesto(kg) : '', misure].filter(Boolean).join(' · ')]);
+      const a = analisi?.pezzi.get(p.id);
+      if (a && (a.fs !== null || a.sigma !== null)) righe.push(['calcolo', `${a.fs !== null ? 'fs min ' + numero(a.fs, 2) : ''}${a.fs !== null && a.sigma !== null ? ' · ' : ''}${a.sigma !== null ? 'σ max ' + numero(a.sigma, 0) + ' MPa' : ''}`, a.fs !== null && a.fs < 1 ? 'cede' : '']);
+      const extra = [p.interno ? 'interno' : '', p.flusso ? `flusso ${p.flusso} (dato dichiarato, non simulato)` : ''].filter(Boolean);
+      if (extra.length) righe.push(['nota', extra.join(' · ')]);
+      if (R.errore) righe.push(['file', R.errore, 'attenzione']);
+      const nodi = [Object.assign(el('b'), { textContent: taglia(p.nome, 60) })];
+      for (const [k, t, c] of righe) { const d = el('div'); d.append(Object.assign(el('span', 'k'), { textContent: k }), Object.assign(el('span', c ? 'v ' + c : 'v'), { textContent: t })); nodi.push(d); }
+      scheda.replaceChildren(...nodi);
+    }
+    ostacolo(0, scheda.classList.contains('on') && scheda);
   }
 
   function aggiornaLegenda() {
     const m = vista.modo, on = aperto && (m === 'densita' || m === 'sforzi');
     legenda.classList.toggle('on', on);
+    ostacolo(1, on && legenda);
     if (!on) return;
-    const t = el('div', 't'), bar = el('div', 'bar'), ticks = el('div', 'ticks'), nota = el('div');
+    const t = el('div', 't'), bar = el('div', 'bar'), ticks = el('div', 'ticks'), nota = el('div', 'nota');
     const segno = (pos, testo) => { const s = el('span', '', ticks); s.style.left = `${(100 * Math.min(1, Math.max(0, pos))).toFixed(1)}%`; s.textContent = testo; };
     if (m === 'densita') {
       t.textContent = 'densità dei materiali · kg/m³';
@@ -628,10 +700,13 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       for (const fs of TAPPE_FS) segno(rischio(fs), fs === 1 ? 'fs ≤ 1' : 'fs ' + numero(fs, 2));
       if (!analisi) nota.textContent = 'nessuna analisi: i colori arrivano dopo il calcolo';
       else if (analisi.stato === 'in-corso') nota.textContent = 'calcolo in corso…';
-      else if (analisi.stato === 'errore') nota.textContent = 'il calcolo non è riuscito';
-      else nota.textContent = `${analisi.fs_min !== null ? 'fs min ' + numero(analisi.fs_min, 2) : ''}${analisi.sforzo_max_MPa !== null ? ' · σ max ' + numero(analisi.sforzo_max_MPa, 0) + ' MPa' : ''}${campo ? '' : campoErrore ? ' · campo non disponibile' : ' · campo in arrivo'}`;
+      else if (analisi.stato === 'errore') { nota.textContent = 'il calcolo non è riuscito'; nota.classList.add('attenzione'); }
+      else {
+        nota.textContent = `${analisi.fs_min !== null ? 'fs min ' + numero(analisi.fs_min, 2) : ''}${analisi.sforzo_max_MPa !== null ? ' · σ max ' + numero(analisi.sforzo_max_MPa, 0) + ' MPa' : ''}${campo ? '' : campoErrore ? ' · campo non disponibile' : ' · campo in arrivo'}`;
+        if (analisi.fs_min !== null && analisi.fs_min < 1) nota.classList.add('cede'); else if (campoErrore && !campo) nota.classList.add('attenzione');
+      }
     }
-    legenda.replaceChildren(t, bar, ticks, nota);
+    legenda.replaceChildren(t, bar, ticks, nota); // il rettangolo nuovo lo rilegge rettangoli(), al prossimo fotogramma
   }
 
   function aggiornaBarra() {
@@ -642,6 +717,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     const nomi = { ologramma: 'ologramma', solido: 'solido', 'raggi-x': 'raggi x', densita: 'densità', sforzi: 'sforzi' };
     contaEl.textContent = `${vivi.length} PEZZI${conta ? ' · ' + massaTesto(kg).toUpperCase() : ''} · ${nomi[vista.modo].toUpperCase()}`;
     descEl.textContent = taglia(descrizione, 300);
+    ostacolo(2, descEl.textContent && descEl); // una descrizione lunga scende sotto la barra, dentro la zona del modello
   }
 
   // ---------------------------------------------------------------- inquadratura
@@ -657,7 +733,9 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     // il primo trovato, cioè il più a sinistra, e il modello stava al 30% della larghezza con mezzo schermo vuoto.
     const rMax = Math.max(...cand.map((z) => z.r)), dc = (z) => Math.hypot(z.cx - W / 2, z.cy - H / 2);
     const z = cand.filter((q) => q.r >= 0.97 * rMax).sort((p, q) => dc(p) - dc(q))[0];
-    zona = z;
+    // x0…y1: dove possono stare i testi di quote ed etichette, cioè lo schermo sotto la barra e dentro i margini (l'angolo
+    // del nucleo lo toglie chi li mette). Il quadrato del cerchio era stretto: le quote verticali del turbofan restavano fuori.
+    zona = { ...z, x0: m, y0: alto, x1: W - m, y1: basso };
     camera.aspect = W / H;
     camera.setViewOffset(W, H, W / 2 - z.cx, H / 2 - z.cy, W, H);
     camera.updateProjectionMatrix();
@@ -689,6 +767,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     camera.lookAt(cam.centro);
     camera.near = Math.max(d * 0.01, d - 3 * cam.raggio); camera.far = d + 4 * cam.raggio;
     camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(); // etichette e quote proiettano con questa camera prima del render: senza, restavano indietro di un fotogramma
   }
 
   function ruota(dx, dy) {
@@ -768,6 +847,8 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     pezzi.clear();
     liberaCampo(); campoChiave = null; campoErrore = false; analisi = null; gruppi = []; etichetteGruppi = []; presa = null; sopra = null;
     etichette.forEach((e) => { e.textContent = ''; e.style.opacity = '0'; });
+    quota.soggetto = null; quota.alfa = 0; quota.scelta = [null, null, null]; quotaLinee.visible = false;
+    quoteEl.forEach((e) => { e.style.opacity = '0'; });
   }
 
   function mostra(stato) {
@@ -859,6 +940,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     if (!aperto) return;
     aperto = false; anim.chiusura = 0; foto.attesa = null;
     radice.classList.remove('on'); scheda.classList.remove('on'); legenda.classList.remove('on');
+    ostacolo(0, null); ostacolo(1, null);
     spegniCursore(); // chiuso durante una presa: alla riapertura il cursore non deve sembrare ancora «preso»
   }
   // Le mani escono senza un gesto che lo dica: gesti.js smette di mandare 'cursore'. Dopo 400 ms (12 rilevazioni a 30 Hz)
@@ -912,12 +994,14 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     uTappo.uAlfa.value = anim.globale;
     uTappo.uSforzi.value = vista.modo === 'sforzi' && campo ? 1 : 0;
     contorno.material.uniforms.uAlfa.value = anim.globale;
-    aggiornaEtichette();
+    // rettangoli già occupati: scheda, legenda e descrizione, poi le quote, poi le etichette in ordine di volume del gruppo
+    const posti = [...rettangoli()];
+    aggiornaQuote(dt, posti);
+    aggiornaEtichette(posti);
   }
 
-  function aggiornaEtichette() {
+  function aggiornaEtichette(posti) {
     const op = aperto ? liscio(0.15, 0.4, anim.esploso) * anim.globale : 0, W = innerWidth, H = innerHeight, a = angoloTesta(W, H);
-    const posti = []; // rettangoli già occupati, in ordine di volume del gruppo: i gruppi grossi scelgono per primi
     etichette.forEach((nodo, i) => {
       const G = etichetteGruppi[i];
       if (!G || op < 0.01) { nodo.style.opacity = '0'; return; }
@@ -938,6 +1022,96 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       nodo.style.opacity = fuori ? '0' : op.toFixed(3);
       nodo.style.transform = `translate(${(x + 12).toFixed(1)}px, ${alto.toFixed(1)}px)`;
     });
+  }
+
+  // ---------------------------------------------------------------- quote in millimetri
+  // Come in un disegno tecnico: per ogni asse del mondo l'ingombro del pezzo scelto (clic, presa o selezione), dove sta
+  // adesso, esploso compreso. Senza pezzo scelto si quota il modello intero, più tenue, e nell'esploso la quota si spegne:
+  // l'ingombro di un modello aperto non è una misura.
+  const sA = { x: 0, y: 0 }, sB = { x: 0, y: 0 }, sC = { x: 0, y: 0 }, sO = { x: 0, y: 0 }, qC = new THREE.Vector3(), qS = new THREE.Vector3(), qM = new THREE.Vector3(), qP = new THREE.Vector3();
+  const qBox = new THREE.Box3(), qPunti = Array.from({ length: 7 }, () => new THREE.Vector3());
+  function schermo(v, s) { qP.copy(v).project(camera); s.x = (qP.x * 0.5 + 0.5) * innerWidth; s.y = (-qP.y * 0.5 + 0.5) * innerHeight; return qP.z < 1; }
+  function nascondiQuote() { quotaLinee.visible = false; for (const e of quoteEl) e.style.opacity = '0'; }
+
+  function aggiornaQuote(dt, posti) {
+    const sel = vista.selezionato && pezzi.get(vista.selezionato);
+    const vuole = !aperto || !pezzi.size ? null : sel && !sel.tolto && misurabile(sel) ? sel.id : '*';
+    let bersaglio = 0;
+    if (vuole && quota.soggetto === vuole) bersaglio = vuole === '*' ? 0.45 * (1 - liscio(0.02, 0.2, anim.esploso)) * liscio(anim.finoA, anim.finoA + 0.6, anim.apertura) : sel.alfa;
+    quota.alfa += (bersaglio * anim.globale - quota.alfa) * (1 - Math.exp(-dt * 12));
+    if (quota.soggetto !== vuole && quota.alfa < 0.02) { quota.soggetto = vuole; quota.alfa = 0; quota.scelta = [null, null, null]; } // cambio di soggetto: prima si spegne
+    if (quota.alfa < 0.004 || !quota.soggetto) return nascondiQuote();
+    qBox.makeEmpty();
+    if (quota.soggetto === '*') { for (const R of pezzi.values()) if (R.alfaT > 0 && misurabile(R)) qBox.union(boxP.copy(R.box).translate(R.off)); }
+    else { const R = pezzi.get(quota.soggetto); if (R && misurabile(R)) qBox.copy(R.box).translate(R.off); }
+    if (qBox.isEmpty()) return nascondiQuote();
+    qBox.getCenter(qC); qBox.getSize(qS);
+    const lato = Math.max(qS.x, qS.y, qS.z), dist = Math.max(0.08 * lato, 0.03 * misureModello.raggio); // quanto la quota si stacca dall'ingombro
+    const W = innerWidth, H = innerHeight, ang = angoloTesta(W, H), z = zona;
+    if (!schermo(qC, sO)) return nascondiQuote(); // sO: il centro dell'ingombro sullo schermo
+    quotaNuovo.fill(0);
+    let n = 0; // segmenti scritti
+    const segmento = (a, b) => { quotaNuovo.set([a.x, a.y, a.z, b.x, b.y, b.z], 6 * n++); };
+    const testoTrova = (x, y, w, h) => { // il rettangolo del testo è libero? Dentro la zona, fuori dall'angolo del nucleo e dai posti presi
+      const r = { x0: x - w / 2, y0: y - h / 2, x1: x + w / 2, y1: y + h / 2 };
+      if (r.x0 < z.x0 || r.x1 > z.x1 || r.y0 < z.y0 || r.y1 > z.y1) return null;
+      if (r.x1 > ang.x0 - 16 && r.y1 > ang.y0 - 16) return null;
+      return posti.some((q) => r.x0 < q.x1 && q.x0 < r.x1 && r.y0 < q.y1 && q.y0 < r.y1) ? null : r;
+    };
+    const [P0, P1, Q0, Q1, U, T, X] = qPunti, lo = qBox.min, hi = qBox.max;
+    const spigolo = (v, a, q) => v.copy(qC).setComponent((a + 1) % 3, (q & 1 ? hi : lo).getComponent((a + 1) % 3)).setComponent((a + 2) % 3, (q & 2 ? hi : lo).getComponent((a + 2) % 3));
+    for (let a = 0; a < 3; a++) {
+      const e = quoteEl[a], b = (a + 1) % 3, ha = qS.getComponent(a) / 2, ca = qC.getComponent(a);
+      const testo = mmTesto(2 * ha) + ' MM';
+      if (testo !== quota.testi[a]) {
+        e.textContent = quota.testi[a] = testo;
+        if (!quota.carattere && e.offsetWidth) quota.carattere = e.offsetWidth / testo.length; // Menlo: la larghezza va col numero di caratteri
+      }
+      const w = testo.length * (quota.carattere || 6.9), h = 12;
+      // Otto posti: i quattro spigoli paralleli all'asse, con la quota che esce lungo uno dei due assi perpendicolari.
+      // Vince un posto col testo dentro la zona e libero; fra questi il più lontano dal centro sullo schermo, cioè sul
+      // contorno, con un po' di preferenza per il basso, e quello di prima vale il 12% in più: niente salti mentre gira.
+      // Il più lontano e basta metteva la quota verticale del turbofan accanto al nucleo, col testo fuori dalla zona.
+      let meglio = null;
+      for (let q = 0; q < 4; q++) for (let t = 1; t <= 2; t++) {
+        const asse = (a + t) % 3, verso = (asse === b ? q & 1 : q & 2) ? 1 : -1;
+        spigolo(qM, a, q); U.set(0, 0, 0).setComponent(asse, verso);
+        Q0.copy(qM).addScaledVector(U, dist).setComponent(a, ca - ha); Q1.copy(Q0).setComponent(a, ca + ha);
+        if (!schermo(Q0, sA) || !schermo(Q1, sB) || !schermo(qM, sC)) continue;
+        const ux = sB.x - sA.x, uy = sB.y - sA.y, lu = Math.hypot(ux, uy);
+        if (lu < 18) continue; // l'asse punta verso la camera: non si quota
+        const mx = (sA.x + sB.x) / 2, my = (sA.y + sB.y) / 2;
+        let dx = mx - sC.x, dy = my - sC.y; // verso fuori, sullo schermo: dallo spigolo alla linea di quota
+        const ld = Math.hypot(dx, dy);
+        if (Math.abs(dx * uy - dy * ux) / lu < 6) continue; // la quota cadrebbe sullo spigolo
+        dx /= ld; dy /= ld;
+        const sporge = 5 + (Math.abs(dx) * w) / 2 + (Math.abs(dy) * h) / 2;
+        let r = null;
+        for (const f of [0.5, 0.35, 0.65, 0.2, 0.8]) if ((r = testoTrova(sA.x + ux * f + dx * sporge, sA.y + uy * f + dy * sporge, w, h))) break;
+        const prima = quota.scelta[a]?.q === q && quota.scelta[a]?.asse === asse;
+        const punti = (r ? 1e6 : 0) + (Math.hypot(mx - sO.x, my - sO.y) + 0.15 * (my - sO.y)) * (prima ? 1.12 : 1);
+        if (!meglio || punti > meglio.punti) meglio = { q, asse, verso, punti, r };
+      }
+      quota.scelta[a] = meglio;
+      if (!meglio?.r) { e.style.opacity = '0'; continue; } // senza un posto per il numero, niente quota
+      // linee: due di riferimento staccate dal pezzo, la linea di quota e i due trattini a 45° fra l'asse e il lato
+      spigolo(qM, a, meglio.q); U.set(0, 0, 0).setComponent(meglio.asse, meglio.verso);
+      P0.copy(qM).setComponent(a, ca - ha); P1.copy(qM).setComponent(a, ca + ha);
+      Q0.copy(P0).addScaledVector(U, dist); Q1.copy(P1).addScaledVector(U, dist);
+      for (const P of [P0, P1]) segmento(T.copy(P).addScaledVector(U, 0.15 * dist), X.copy(P).addScaledVector(U, 1.3 * dist));
+      segmento(Q0, Q1);
+      T.set(0, 0, 0).setComponent(a, 1).add(U).normalize().multiplyScalar(0.22 * dist);
+      for (const Q of [Q0, Q1]) segmento(X.copy(Q).sub(T), qP.copy(Q).add(T));
+      posti.push(meglio.r);
+      e.style.opacity = Math.min(1, quota.alfa * 1.6).toFixed(3);
+      e.style.transform = `translate(${meglio.r.x0.toFixed(1)}px, ${meglio.r.y0.toFixed(1)}px)`;
+    }
+    // il buffer va alla GPU solo se è cambiato
+    let cambiato = quotaGeo.drawRange.count !== 2 * n;
+    for (let i = 0; !cambiato && i < 6 * n; i++) cambiato = Math.abs(quotaNuovo[i] - quotaBuf[i]) > 1e-4 * lato;
+    if (cambiato) { quotaBuf.set(quotaNuovo); quotaGeo.attributes.position.needsUpdate = true; quotaGeo.setDrawRange(0, 2 * n); }
+    quotaLinee.visible = n > 0;
+    uQuota.uAlfa.value = 0.42 * quota.alfa;
   }
 
   // subito dopo il render dell'HUD, nello stesso fotogramma: qui il canvas si può ancora leggere
@@ -1036,7 +1210,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     }
   }
 
-  function ridimensiona() { calcolaZona(); }
+  function ridimensiona() { calcolaZona(); rettOstacoli = null; }
   calcolaZona();
   addEventListener('resize', ridimensiona);
 
@@ -1051,6 +1225,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
         aperto, modello: numModello, versione, pezzi: pezzi.size, tolti: [...pezzi.values()].filter((R) => R.tolto).map((R) => R.id), triangoli,
         caricamenti, fermo: aperto && fermo(), vista: JSON.parse(JSON.stringify(vista)), esploso: anim.esploso, colorati: [...pezzi.values()].filter((R) => R.colorato).length,
         errori: [...pezzi.values()].filter((R) => R.errore).map((R) => `${R.id}: ${R.errore}`), zona: { ...zona }, gruppi: gruppi.length,
+        quote: { soggetto: quota.soggetto, alfa: +quota.alfa.toFixed(3), segmenti: quotaGeo.drawRange.count / 2 },
       };
     },
   };

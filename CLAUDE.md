@@ -14,7 +14,18 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per STEM (nome, conversazione, comando, saluto), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «stem». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 9/11/2026)
+## Aperto (al 10/11/2026)
+- **HUD in stile JARVIS: costruito e fotografato, mai visto da Tony** (10/11). Al posto dell'umanoide c'è la sfera-cervello di `public/nucleo.js` dentro gli anelli. Le montagne sono state tolte e lo sfondo è nero.
+  - **Costo** (`prove/grafica-banco.mjs`, GPU libera): 2,76–3,00 ms a fotogramma in ogni stato, contro i 4,15 dell'umanoide. Il margine per le mani cresce invece di calare.
+  - **Mani col nucleo nuovo** (`prove/ologramma-hud.mjs`, headless sulla GPU dell'M2, turbofan con le quote e due mani, due giri il 10/11): fotogrammi contati per secondo con mediana 60 e p10 60. Nella misura mandata alla chiusura il minimo è stato 32, 42 e 43. È sempre con l'ascolto spento e la foto al posto della fotocamera, e la traccia del compositore non è stata rifatta.
+  - **Sforzi:** il rosso parte da fs 1, dove il materiale snerva, come dice il contratto. Prima il rosso pieno partiva già da fs 1,25. Sopra fs 1 la scala va dal blu al viola al magenta.
+  - **Quote in mm:** le ha il pezzo scelto, e senza pezzo scelto l'ingombro del modello. Un cilindro è quotato sulla scatola che lo contiene, quindi le linee di riferimento possono partire da angoli vuoti. Va guardato con Tony.
+  - **La scheda dell'ascolto mostra tutto quello che il microfono sente**, anche le frasi di altri nella stanza. Restano solo sullo schermo, mai nei registri. Se a Tony non va, si spegne nascondendo `#ascolto`.
+  - **Micro-dati:** quelli ai bordi e a raggiera sono numeri veri. Le coordinate e gli esadecimali che girano negli anelli sono decorazione.
+  - **Mai provati:**
+    - la scheda dell'ascolto con la voce vera di Tony, cioè con le parole parziali del riconoscitore locale;
+    - l'HUD sul suo schermo, che ha accanto un secondo monitor 1920×1080;
+    - i colori delle anomalie in un caso vero.
 - **Ologrammi: costruiti e provati, mai usati da Tony** (9/11). Cosa è vero e cosa no, e come si parlano i pezzi, sta nel contratto `public/ologramma/LEGGIMI-ologramma.md`. Tony non ha file CAD: i suoi oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello di Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
   - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Headless sulla GPU dell'M2, con il turbofan e due mani, la traccia del compositore ha dato 54,4 fps: mediana per secondo 55 e p10 48, quindi 3 fps di margine. Era però con l'ascolto spento e una foto al posto della fotocamera.
     - La misura vera arriva da sola. Quando l'ologramma si chiude, dopo almeno 10 s di mani accese, `runtime/server.log` riceve una riga «[ologramma] mani accese N s: fps mediana …, p10 …, minimo …, detect … ms» (`grep 'mani accese' runtime/server.log`).
@@ -105,9 +116,24 @@ Restano decisioni di Tony, non lavoro sul codice:
 
   Se cambia solo la lega e ν resta uguale, si rifà solo fs, senza risolvere di nuovo.
 - **`public/`** è l'HUD:
-  - `stem.js`: ascolto sempre acceso, decide se una frase è per STEM, coda audio, consegna dell'agenda;
-  - `report.js`: il report a schermo intero, ricalcato sui secondi 34–46 del video di ROSE. È una griglia 12×6; le ultime due colonne delle ultime due righe restano alla testa, che ci scivola rimpicciolita (`S.dock` in `humanoid.js`). I blocchi entrano in quattro tempi: un lampo di copie in profondità (0–0,8 s), il primo video (0,4–0,9 s), gli altri uno alla volta (fino a circa 2 s), poi partono i video. I suoni dell'entrata stanno in `sfx.js` (`report`), agganciati ai tempi di atterraggio che `showReport` restituisce. I blocchi in più si impilano e cambiano ogni 9 s. Il testo del cervello entra solo con `textContent`, le immagini solo da `https`, i video solo come ID di YouTube;
-  - `humanoid.js` e `mountains.js`: grafica (three.js 0.160 con bloom). Il composer usa un render target con lo stencil, che serve alla sezione piena dell'ologramma; `strato` aggancia la scena dell'ologramma prima del bloom;
+  - `index.html`: la palette sta in variabili CSS.
+    - Colori: `--ciano` dominante; `--arancio` e `--rosso` solo per le anomalie.
+    - Caratteri: `--sottile` è Helvetica Neue, `--mono` è Menlo, tutti e due di sistema. L'HUD non chiede niente ad altri siti per disegnarsi.
+    - I moduli hanno angoli a staffa (`.staffe`) al posto delle cornici piene.
+  - `stem.js`:
+    - ascolto sempre acceso, decide se una frase è per STEM, coda audio, consegna dell'agenda;
+    - **la scheda dell'ascolto** (`#ascolto`): le parole mentre arrivano e, a frase finita, cosa ne ha fatto STEM. Solo `textContent`, mai nei registri;
+    - **i dati a raggiera** appesi ad `anchor().R`, con i fili SVG: stato, voce, tempo di risposta, ingresso audio, sistemi, fps;
+    - **i micro-dati ai bordi**: lo spettro del microfono in esadecimale, gli eventi (tipi e nomi di strumenti, mai frasi), ora, memoria e livelli. Si aggiornano 8 volte al secondo;
+    - **gli allarmi**: `allarme(causa, livello, testo, ms)` tiene le cause attive e ne ricava `S.allarme`.
+      - 1, arancione: ascolto spento, calcolo degli sforzi fallito;
+      - 2, rosso: server perso per due giri di `/api/status`, cervello in errore, un pezzo dell'ologramma con fs sotto 1.
+  - `report.js`: il report a schermo intero, ricalcato sui secondi 34–46 del video di ROSE. È una griglia 12×6; le ultime due colonne delle ultime due righe restano al nucleo, che ci scivola rimpicciolito (`S.dock` in `nucleo.js`). I blocchi entrano in quattro tempi: un lampo di copie in profondità (0–0,8 s), il primo video (0,4–0,9 s), gli altri uno alla volta (fino a circa 2 s), poi partono i video. I suoni dell'entrata stanno in `sfx.js` (`report`), agganciati ai tempi di atterraggio che `showReport` restituisce. I blocchi in più si impilano e cambiano ogni 9 s. Il testo del cervello entra solo con `textContent`, le immagini solo da `https`, i video solo come ID di YouTube;
+  - `nucleo.js`: la sfera-cervello e gli anelli (three.js 0.160 con bloom). Il contratto è quello che usava l'umanoide: `TIMING` e `createScene(canvas, S)`, che restituisce `frame`, `anchor` (con `R`, il raggio dell'anello più esterno), `assembling`, `renderer` e `strato`.
+    - Dall'esterno: un guscio di particelle che sente il microfono, un gomitolo di filamenti dove nel pensiero corrono gli impulsi, un nucleo che pulsa con la voce.
+    - Intorno ci sono anelli a velocità e versi diversi: gradi, tacche, segmenti, archi di dati, un arco che scansiona.
+    - Arancione e rosso arrivano solo con `S.allarme`.
+    - Il composer usa un render target con lo stencil, che serve alla sezione piena dell'ologramma. `strato` aggancia la scena dell'ologramma prima del bloom.
   - `ologramma/`: `forme.js` e `materiali.js` (anche nel server), `geometrie.js`, `scena.js` (la scena), `gesti.js` e `mani.js` (MediaPipe 0.10.35 in locale). Il colore degli sforzi è lo sforzo diviso lo snervamento: blu se è lontano, rosso dove il materiale snerva;
   - in `stem.js`, con l'ologramma aperto:
     - tasti: E esplodi; X raggi X, D densità, F sforzi (premuti di nuovo tornano all'ologramma); O ologramma, L solido; S sezione lungo x, y, z o niente, con le frecce che la spostano; R ritorna alla vista di partenza; Z rimette l'ultimo pezzo tolto; M accende o spegne le mani (la scelta resta in `localStorage` `stem-mani`); Esc chiude tutto;
@@ -146,6 +172,22 @@ Restano decisioni di Tony, non lavoro sul codice:
 
   Alla fine chiudi quel Chrome tu: il server chiude solo quelli che ha aperto lui.
   - Per non far comparire la finestra di Google, prima del server avvia tu un Chrome headless con `--remote-debugging-port=9333` e un profilo temporaneo: il server lo trova sulla porta e lo usa. Sull'HUD di prova metti `--mute-audio`.
+- **Grafica, senza STEM acceso:**
+  - `node prove/grafica-banco.mjs [--modulo public/nucleo.js]` fa girare il modulo del nucleo in un Chrome headless sulla GPU, a 1470×956 punti e 2x.
+    - Per 12 stati (formazione, attesa, ascolto, pensiero, voce, i due allarmi, browser, angolo) misura:
+      - una foto;
+      - gli fps contati per secondo;
+      - il costo vero a fotogramma.
+    - Porte 4471 e 9571.
+    - Il budget è il costo dell'umanoide di prima: 4,15 ms.
+  - `node prove/hud-foto.mjs [--uscita <cartella>]` fa girare l'HUD vero con un server finto:
+    - cervello a copione, voce e riconoscimento finti;
+    - foto di avvio, casa, ascolto, pensiero, voce, allarmi, browser, report, ologramma e server perso;
+    - controlla anche console e rete.
+    - Porte 4481 e 9581, circa 2 minuti.
+  - Con `?debug` ci sono anche:
+    - `stemParziale('frase')`: le parole parziali, per la scheda dell'ascolto;
+    - `stemAllarme(causa, livello, testo, ms)`.
 - **Latenza del cervello:** `node prove/latenza.mjs <modello> [effort]`. Fa 8 domande a un `claude -p` sempre acceso con la persona di STEM, in una cartella vuota, e stampa il tempo alla prima parola per ogni turno, con mediana e massimo dal secondo. Consuma come 8 domande a STEM.
 - **Memoria:** una prova con il cervello vero scrive nella memoria vera di STEM. Prima copia la cartella `memory/` del cervello, dopo confrontala e rimettila com'era. Per provare la chiusura dell'HUD senza HUD: `STEM_APP=1 STEM_NO_OPEN=1 node server.mjs`, un ciclo di `curl` su `/api/status?hud=1` ogni 5 secondi, la domanda con `curl` su `/api/ask`, poi si ferma il ciclo. Il registro scrive `[memoria] rileggo la conversazione` e, dopo un riavvio, `[cervello] riprendo la conversazione di prima`.
 - **Agenda:** con `?debug`, `stemAsk('ricordami tra due minuti di …')`. Il compito compare in `runtime/agenda.json`, e quando STEM lo dice il registro del server scrive `[agenda] parlo per primo`. Gli strumenti da soli si provano anche senza cervello, con `ricorda` nella prova a mano di `mac/LEGGIMI-mac.md`.
@@ -175,6 +217,10 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Commit:** in italiano. Nel titolo, `Area: cosa cambia per Tony`; nel corpo, il perché. Dopo ogni lavoro si fa commit e push su `main` della repository privata MasterCod24/stem: Tony vuole tutto online per non perdere niente.
 - **Fine lavoro:** prima di chiudere aggiorna la sezione **Aperto**. Togli ciò che è risolto e aggiungi ciò che resta da decidere a Tony.
 - **Segreti:** `.env` (con la chiave ElevenLabs) e `runtime/` non vanno mai online, e la chiave non si ripete mai in chat.
+- **Colori dell'HUD** (scelta di Tony del 10/11):
+  - ciano dominante;
+  - arancione e rosso solo per le anomalie (`S.allarme`, `.attenzione`, `.cede`, la scala degli sforzi), mai per decorare.
+  - Un colore nuovo con un significato va scritto qui.
 
 ## Lezioni da non ripetere
 - **Registri e crediti prima del codice.** La voce che saltava tra ElevenLabs e il Mac dipendeva dai crediti finiti: le frasi corte passavano, quelle lunghe no.
@@ -205,3 +251,4 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
 - **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore.
 - **Un agente fermato dal limite di utilizzo lascia accesi i suoi STEM di prova**, con i loro Chrome e Playwright. È successo due volte, per tre ore e per tre ore e mezza. Alla ripresa si cercano con `lsof` sulle porte di prova e con `ps` sui profili della scratchpad.
+- **In Chrome `gl.finish()` non aspetta la GPU.** Il 10/11 dava 0,1 ms a fotogramma per l'umanoide col bagliore a 2205×1434. Il costo vero si misura con n fotogrammi di fila e un solo `readPixels` alla fine, che deve restituire pixel veri: 4,15 ms, con tre giri uguali entro l'1%.

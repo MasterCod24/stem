@@ -5,7 +5,7 @@
 Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con voce ElevenLabs, naviga su Google, usa le app e lo schermo al posto tuo.
 
 ## Avvio
-- **App STEM:** doppio clic su `STEM.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: il busto si assembla dalle particelle, poi si svelano le montagne. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
+- **App STEM:** doppio clic su `STEM.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: le particelle si raccolgono nella sfera, poi gli anelli si disegnano. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
 - **Da Terminale:** `./avvia.command`, utile anche la prima volta per inserire la chiave ElevenLabs. Ctrl-C o chiudere la finestra spegne tutto.
 
 ## Parlare con STEM
@@ -17,11 +17,27 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
   Se una frase non era per lui, il cervello risponde `[ignora]` e tace.
 - **Più rapido:** il cervello è un processo Claude Code sempre acceso, con Opus 5.5 a effort medio, quindi comincia a rispondere in circa 2 secondi (con Sonnet, `STEM_MODEL=sonnet` in `.env`, in meno di 1). Se fai una pausa a metà di una richiesta, STEM parte già e, se poi continui, riparte con la frase completa.
 - **Interromperlo:** mentre parla di' "stop", "basta" o "aspetta", oppure chiamalo per nome. `Esc` lo zittisce.
-- **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. In `runtime/ascolto.log` STEM annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.
+- **La scheda dell'ascolto:** in basso, sotto la sfera, STEM scrive quello che dici mentre lo dici. A frase finita aggiunge cosa ne ha fatto: «PER STEM · NOME», «PER STEM · CONVERSAZIONE», «NON PER STEM». Così vedi subito perché non ti ha risposto.
+- **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. Le frasi della scheda dell'ascolto restano sullo schermo e non finiscono in nessun registro. In `runtime/ascolto.log` STEM annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.
+
+## Cosa vedi
+- **La sfera è il cervello di STEM.** È fatta di particelle e filamenti, dentro anelli che girano a velocità diverse:
+  - in attesa respira piano;
+  - quando parli si accende col microfono;
+  - quando pensa nei filamenti corrono gli impulsi e un arco scansiona gli anelli;
+  - quando parla pulsa con la voce.
+- **Intorno alla sfera** ci sono i dati veri, appesi agli anelli: lo stato, la voce in uso, quanto ha messo a rispondere l'ultima volta, il microfono in dB, browser e agenda, gli fps.
+- **Ai bordi** scorrono i micro-dati: a sinistra lo spettro del microfono in esadecimale, a destra gli eventi (domande, strumenti, voce, mai le frasi), in alto ora e memoria.
+- **I colori:**
+  - ciano vuol dire che tutto va;
+  - arancione è un'anomalia da guardare: microfono negato o spento, calcolo degli sforzi fallito;
+  - rosso è un'anomalia seria: server o cervello persi, un pezzo dell'ologramma che cede.
+
+  La causa è scritta sotto lo stato.
 
 ## Cosa fa
 - **Browser:** lavora su Google in un Chrome suo, sempre nella stessa pagina. Il pannello compare nell'HUD **solo per i compiti complessi** (ricerche lunghe, creazioni); le cose banali le fa in silenzio e ti dice il risultato.
-- **GIF ed esempi:** quando spiega, mostra accanto alla testa animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
+- **GIF ed esempi:** quando spiega, mostra accanto alla sfera animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
 - **Report a schermo intero:** alla fine di una ricerca che vuoi vedere, STEM apre un report come quello di ROSE. È una griglia di note, grafici, un dato in grande, immagini e video di YouTube muti, che arrivano dal fondo e si mettono a fuoco uno alla volta, con i loro suoni, mentre lui si sposta nell'angolo in basso a destra. Le note in più si alternano ogni 9 secondi. Si chiude con `Esc`, oppure chiedendoglielo.
 - **Ologrammi:** chiedigli di mostrarti un oggetto in 3D («mostrami un motore a reazione», «fammi una staffa a L in alluminio») e lo costruisce a schermo intero, con misure in millimetri.
   - **Cosa ci fai:** lo giri, lo esplodi, lo tagli, guardi dentro ai raggi X e togli i pezzi, a voce («esplodilo», «taglialo a metà», «togli il coperchio»), col mouse, con la tastiera o con le mani davanti alla fotocamera.
@@ -47,7 +63,7 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 - `media.mjs`: GIF e animazioni.
 - `orologio.mjs`: l'ora, data al cervello a ogni domanda, e l'agenda (`runtime/agenda.json`).
 - `ologramma.mjs`: lo stato degli ologrammi; `fisica/`: il calcolo degli sforzi.
-- `public/`: l'HUD (`humanoid.js` per la grafica, `sfx.js` per i suoni sintetizzati, `stem.js` per ascolto e logica, `report.js` per il report a schermo intero, `ologramma/` per ologrammi e mani).
+- `public/`: l'HUD (`nucleo.js` per la sfera e gli anelli, `sfx.js` per i suoni sintetizzati, `stem.js` per ascolto e logica, `report.js` per il report a schermo intero, `ologramma/` per ologrammi e mani).
 - `mac/`: controllo del Mac (server MCP + aiutante Swift).
 - `stem-persona.md`: il carattere. STEM ha una memoria sua, separata dalla repository.
 

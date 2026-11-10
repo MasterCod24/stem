@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STEM lab ologramma</title>
-<!-- Laboratorio dell'ologramma con la stessa catena dell'HUD (humanoid.js: composer con stencil, bloom 0,85/0,45/0,18)
+<!-- Laboratorio dell'ologramma con la stessa catena dell'HUD (nucleo.js: composer con stencil, bloom con soglia 0,18)
      e i due modelli di demo.js, senza server: lo stato finto è fatto qui come lo farebbe ologramma.mjs.
      ?demo=turbofan|staffa  ?modo=…  ?suoni (suoni al primo clic). Tasti: 1–5 modi, E esploso, S sezione, A rotazione,
      R reset, T cambia modello, C calcolo finto della staffa, F foto, frecce e +/− camera. Da console: window.prova. -->
@@ -23,7 +23,7 @@
 <div id="info"></div>
 <script type="module">
 import * as THREE from 'three';
-import { createScene } from '/humanoid.js';
+import { createScene } from '/nucleo.js';
 import { createOlogramma, angoloTesta, rischio } from '/ologramma/scena.js';
 import { leggiFile } from '/ologramma/geometrie.js';
 import { DEMO_TURBOFAN, DEMO_STAFFA } from '/ologramma/demo.js';

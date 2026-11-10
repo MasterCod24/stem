@@ -18,7 +18,7 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
 | `fisica/struttura.mjs` | worker | dal modello ai voxel, a carichi e vincoli, fino ai risultati per pezzo |
 | `fisica/lavoratore.mjs` | worker | ingresso del `worker_threads`, perché il calcolo non blocchi il server |
 | `public/ologramma/geometrie.js` | HUD | geometrie three.js dalle stesse misure di `forme.js` |
-| `public/ologramma/scena.js` | HUD | l'ologramma: materiali, vista esplosa, sezione, modi, selezione, etichette, foto |
+| `public/ologramma/scena.js` | HUD | l'ologramma: materiali, vista esplosa, sezione, modi, selezione, etichette, quote in mm, foto |
 | `public/ologramma/gesti.js` | HUD e Node | i gesti calcolati dai punti delle mani, senza DOM: si prova in Node |
 | `public/ologramma/mani.js` | HUD | fotocamera, MediaPipe 0.10.35 in locale, punti verso `gesti.js` |
 
@@ -217,10 +217,22 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
   ridimensiona(),
   info(),               // per le prove: lo stato locale, senza riferimenti interni
 }
-// onFoto(png, versione, modello); export anche angoloTesta(W, H), rischio(fs) e TAPPE_FS
+// onFoto(png, versione, modello); export anche angoloTesta(W, H), rischio(fs), TAPPE_FS e mmTesto(mm)
 ```
-- `createScene` di `humanoid.js` restituisce anche `renderer` e `strato`. `strato(scene, camera)` è l'aggancio. Inserisce un RenderPass (clear false, clearDepth true) subito dopo quello dell'HUD e prima del bloom. Il composer dell'HUD usa un render target con `stencilBuffer: true`, perché la sezione piena funzioni (misurato).
-- La testa va nell'angolo come col report (`S.dockTarget`, `dockX`, `dockY`), e la camera dell'ologramma lascia libero quell'angolo.
+- `createScene` di `nucleo.js` (la sfera e gli anelli che hanno preso il posto di `humanoid.js`) restituisce anche `renderer` e `strato`. `strato(scene, camera)` è l'aggancio. Inserisce un RenderPass (clear false, clearDepth true) subito dopo quello dell'HUD e prima del bloom. Il composer dell'HUD usa un render target con `stencilBuffer: true`, perché la sezione piena funzioni (misurato).
+- Il nucleo va nell'angolo come col report (`S.dockTarget`, `dockX`, `dockY`), e la camera dell'ologramma lascia libero quell'angolo.
+- **Palette**, la stessa dell'HUD (variabili di `index.html`):
+  - ciano dominante. Gli spigoli sono il ciano scalato alla luminanza dell'azzurro di prima, perché l'aspetto è tarato sulla soglia del bloom (0,18). Gli interni ai raggi X sono verde acqua;
+  - densità dal blu petrolio (leggero) al ciano (denso), con la luminanza sotto la soglia del bloom come il solido;
+  - flussi tutti nei freddi, distinti per colore, velocità e forma dell'impulso: elettrico scintille bianco-ciano corte e veloci, fluido onde blu lunghe e lente, aria soffi ciano pallido, dati trattini verde acqua fitti;
+  - **arancione e rosso solo per le anomalie:** il rosso della scala degli sforzi (fs ≤ 1), `.cede` sul pezzo o sulla nota con fs sotto 1, `.attenzione` su un calcolo fallito, un campo che non arriva o un file che non si apre. Nient'altro è caldo.
+  - Testi: «Helvetica Neue» sottile per titoli e valori, Menlo per etichette e numeri piccoli (`--sottile`, `--mono`), con un ripiego per il laboratorio, che le variabili non le ha. La scheda è un modulo trasparente: gli angoli a staffa li disegna `index.html`.
+- **Quote in millimetri**, come in un disegno tecnico: linee di riferimento staccate dal pezzo, linea di quota con trattini a 45° e un testo `.holo-quota` per asse («1.240 MM», «12,5 MM»: `mmTesto`, punto per le migliaia e una cifra decimale sotto 100 mm).
+  - Il pezzo scelto (clic, presa o selezione) ha le tre quote dell'ingombro lungo gli assi del mondo, dove sta adesso, esploso compreso. Senza pezzo scelto si vede l'ingombro del modello intero, più tenue, che si spegne nell'esploso. Un file non ancora aperto non ha misure, né nelle quote né nella scheda.
+  - Per ogni asse si prova la quota su ognuno dei quattro spigoli paralleli, uscendo lungo uno dei due assi perpendicolari. Vince un posto col testo libero, e fra questi quello più lontano dal centro sullo schermo, cioè sul contorno; quello di prima vale il 12% in più, così la quota non salta mentre il modello gira. Un asse più corto di 18 px sullo schermo non si quota.
+  - I testi stanno sotto la barra e dentro i margini, mai sull'angolo del nucleo né su scheda, legenda e descrizione (le registra `ostacolo`); le etichette dei gruppi evitano anche le quote. Un testo senza posto si spegne con le sue linee.
+  - Le linee sono un solo `LineSegments` additivo senza test di profondità, con un buffer di 30 vertici che va alla GPU solo quando cambia.
+  - Le linee di livello a passo vero in mm non ci sono (scelta del 10/11, mai provate). Le righe sul modello sono scansioni che scorrono: con un passo tondo non diventerebbero misure, e la misura la danno già le quote.
 - Le etichette sono nodi DOM dentro `contenitore`, riempiti con `textContent`. La legenda di densità e sforzi usa la stessa funzione colore dello shader, con abbastanza tappe da non far vedere la differenza fra sRGB e lineare. Le tappe scritte degli sforzi sono fs 4, 2, 1,33 e ≤ 1, a un quarto, a metà, a tre quarti e in fondo.
 - Gli sforzi si colorano per pixel: una texture 3D del rischio (8 bit per voxel, 255 = vuoto), letta trilineare sui soli voxel pieni, guardando dentro il pezzo lungo la normale (0,5, 1, 1,6, 2,4 e 0,2 h). Con la sezione, il tappo mostra il campo del materiale tagliato. Se un lato del campo supera `MAX_3D_TEXTURE_SIZE`, la legenda dice «campo non disponibile».
 - Un pezzo `file` si sceglie (clic, presa, cursore) dal suo ingombro, non triangolo per triangolo: su un milione di triangoli il raycast costava 60 ms ogni 90 ms. Un file si carica fino a 1 milione di triangoli (`TRIANGOLI_MAX` di `geometrie.js`): con le mani, 1 milione dà 50,7 fps e 2 milioni 33,3.
