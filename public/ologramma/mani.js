@@ -41,7 +41,7 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
   hz = typeof hz === 'number' && Number.isFinite(hz) && hz > 0 ? hz : 0;
   createGesti(opzioniGesti); // opzioni sbagliate: l'errore arriva qui, non a metà avvio
   let attivo = false, avvio = null, gen = 0, giro = 0, rilevatore = null, flusso = null, video = null, fonte = null, gesti = null;
-  let usato = null, errore = null, avvioMs = null, primoMs = null, nMani = 0, ultimoT = 0, ultimoVideo = -1, ultimaRil = -Infinity;
+  let usato = null, errore = null, avvioMs = null, primoMs = null, nMani = 0, ultimoT = 0, ultimoVideo = -1, ultimaRil = -Infinity, altezza = 0, aspetto = 0;
   const tempi = new Float64Array(CAMPIONI), quadri = [], rilevati = [];
   let nTempi = 0;
 
@@ -79,8 +79,13 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
       const [w, h] = dimensioni(fonte);
       passo = 'la sorgente non ha dimensioni';
       if (!(w > 0 && h > 0)) throw new Error(`${w}×${h}`);
-      gesti = createGesti({ ...opzioniGesti, aspetto: w / h });
+      // gesti.js resta fra un avvio e l'altro, così le sue misure contano tutta l'apertura dell'ologramma anche se Tony
+      // spegne e riaccende le mani col tasto M; si rifà solo se cambiano le proporzioni dell'immagine
+      if (!gesti || altezza !== h || aspetto !== w / h) gesti = createGesti({ ...opzioniGesti, aspetto: w / h });
+      altezza = h; aspetto = w / h;
       attivo = true; avvioMs = performance.now() - t0;
+      // la fase di partenza ('riposo') subito, senza aspettare la prima rilevazione: l'HUD dice cosa fare appena le mani partono
+      for (const g of gesti.aggiorna([], (ultimoT = Math.max(performance.now(), ultimoT + 0.01)))) onGesto?.(g);
       giro = requestAnimationFrame(fotogramma);
     } catch (e) {
       const messaggio = `mani: ${passo} (${e?.message || e})`;
@@ -147,12 +152,12 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
     onErrore?.(new Error(errore, { cause: e }));
   }
 
-  function spegni() { // fotocamera, video e gesti; il rilevatore resta
+  function spegni() { // fotocamera e video; gesti.js dimentica le mani ma tiene le misure; il rilevatore resta
     attivo = false;
     if (flusso) for (const t of flusso.getTracks()) t.stop();
     if (video) { video.pause(); video.srcObject = null; video.remove(); }
     gesti?.azzera();
-    flusso = video = fonte = gesti = null;
+    flusso = video = fonte = null;
     nMani = 0; ultimoVideo = -1;
   }
 
@@ -174,17 +179,21 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
     spegni();
   }
 
+  // gesti: le misure d'uso vero di gesti.js da azzeraMisure() (null se le mani non sono mai partite), col tremolio anche in
+  // pixel della fotocamera
   function misure() {
     const n = Math.min(nTempi, CAMPIONI), v = Array.from(tempi.subarray(0, n)).sort((a, b) => a - b);
     const q = (p) => (n ? +v[Math.min(n - 1, Math.floor(p * n))].toFixed(2) : null);
+    const g = gesti?.misure();
     return {
       delegato: usato, mani: nMani, rilevazioni: nTempi, detect_ms: { mediana: q(0.5), p90: q(0.9), massimo: q(1), primo: primoMs === null ? null : +primoMs.toFixed(1) },
       fps: quadri.length, rilevazioni_s: rilevati.length, avvio_ms: avvioMs === null ? null : Math.round(avvioMs), errore,
+      gesti: g ? { ...g, tremolio_px: g.tremolio === null ? null : g.tremolio * altezza } : null,
     };
   }
 
   return {
     avvia, ferma, get attivo() { return attivo; }, get misure() { return misure(); },
-    azzeraMisure() { nTempi = 0; }, // per misurare a regime, dopo che gli shader sono compilati
+    azzeraMisure() { nTempi = 0; gesti?.azzeraMisure(); }, // per misurare a regime, dopo che gli shader sono compilati, e a ogni apertura
   };
 }

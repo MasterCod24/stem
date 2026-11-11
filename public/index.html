@@ -203,6 +203,7 @@
     box-shadow: 0 0 8px rgba(62, 230, 255, .9); opacity: 0; transition: opacity .2s; will-change: transform; }
   #dita i.pollice { background: none; border: 1.5px solid var(--ciano-vivo); }
   #dita i.on { opacity: .85; }
+  #dita.riposo i.on { opacity: .35; } /* a riposo le mani si vedono ma non comandano: gesti.js aspetta un palmo aperto */
 
   /* Avvisi: ciano le notizie, arancione e rosso solo le anomalie */
   #warn { position: fixed; left: 50%; top: 6.5vh; transform: translateX(-50%); display: none; padding: 7px 14px; font: 400 10px/1 var(--mono);

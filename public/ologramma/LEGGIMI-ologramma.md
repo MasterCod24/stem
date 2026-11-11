@@ -48,7 +48,10 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
   misure: {...},           // per forma, vedi sotto, in mm
   posizione?: [x, y, z],   // mm, predefinito [0,0,0], ogni valore entro ±100000
   rotazione?: [rx, ry, rz],// gradi, predefinito [0,0,0]
-  materiale?: string,      // chiave di materiali.js; se manca: 'generico' (si disegna, non si calcola)
+  materiale?: string,      // chiave di materiali.js, solo per il calcolo; se manca: 'generico' (si disegna, non si calcola)
+  materiale_vero?: string, // ≤ 60: di cosa è fatto davvero, da una ricerca («alluminio 6063 riciclato, anodizzato»)
+  fattura?: string,        // ≤ 140: come è fabbricato e montato («fresato da un blocco estruso», «stampato a iniezione», «incollato»)
+  fonte?: string,          // ≤ 60: da dove vengono i due campi sopra («iFixit 2022»); se manca, sono una stima di STEM
   gruppo?: string,         // ≤ 40: i pezzi dello stesso gruppo esplodono insieme
   esplodi?: [dx, dy, dz],  // direzione della vista esplosa; la lunghezza (≤ 5) moltiplica la distanza
   interno?: boolean,       // pezzo interno: tenue in vista normale, evidente in raggi X e in sezione
@@ -56,6 +59,8 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
   calcolo?: boolean        // entra nel calcolo degli sforzi; predefinito true, false per 'cavo' e 'file' (un 'file' con true resta false, con un avviso)
 }
 ```
+- `materiale_vero`, `fattura` e `fonte` (`CAMPI_RICERCA` di `forme.js`) sono testo libero con le regole di `nome`: devono essere testi, gli a capo e i caratteri di controllo diventano spazi, i più lunghi si tagliano con un avviso, e vuoti valgono non detti (null). Non toccano né la massa né il calcolo: un loro cambio non fa ricalcolare gli sforzi. L'HUD li mostra solo nella scheda del pezzo, con `textContent`.
+- Perché due campi per il materiale: `materiale` serve al calcolo e ha solo le 9 chiavi qui sotto, dove vetro, litio, rame o silicio non ci sono. Il 10/11 un «MacBook Air» di 37 pezzi era uscito tutto 'generico', anche la «Base in alluminio», e la scheda diceva «non detto».
 
 ### Misure per forma (tutte in mm, tutte > 0 salvo dove detto)
 | forma | misure | geometria locale |
@@ -115,7 +120,7 @@ Le chiavi sono `acciaio-s235`, `acciaio-s355`, `alluminio-6061`, `titanio-ti6al4
 - fibra di carbonio: E 70000, ν 0,1, ρ 1600, `affidabile: false`, perché non è isotropa;
 - `generico`: senza proprietà meccaniche (E, nu e snervamento valgono null), ρ null.
 
-Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso.
+Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso. Una chiave diversa da `generico` si dà solo se il materiale vero è proprio quello o molto vicino; il materiale vero va in `materiale_vero`, e la scheda li mostra insieme («… · calcolato come Alluminio 6061-T6 · 2700 kg/m³»).
 
 ## Lo stato (solo nel server)
 `GET /api/ologramma` restituisce:
@@ -153,7 +158,7 @@ Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso.
 Dal processo MCP, cioè dagli strumenti del cervello:
 - `{azione:'mostra', modello}`: sostituisce tutto con un modello nuovo e apre l'ologramma.
 - `{azione:'modifica', cambia?, aggiungi?, togli?, rimetti?, vista?, carichi?, vincoli?, titolo?, descrizione?}`:
-  - `cambia: [{id, ...campi}]` sostituisce i campi indicati, e `misure` si fonde campo per campo; con una forma nuova misure, calcolo e flusso vanno dati interi;
+  - `cambia: [{id, ...campi}]` sostituisce i campi indicati, e `misure` si fonde campo per campo; con una forma nuova misure, calcolo e flusso vanno dati interi; un testo vuoto in `materiale_vero`, `fattura` o `fonte` toglie il campo;
   - `aggiungi: Pezzo[]`;
   - `togli` e `rimetti` sono liste di id;
   - `vista` è parziale;
@@ -167,7 +172,8 @@ Dal processo MCP, cioè dagli strumenti del cervello:
 Dall'HUD arrivano solo `{azione:'togli'|'rimetti', id, modello}` e `{azione:'chiudi', modello}`, così il cervello sa che Tony l'ha chiuso con Esc. Se `modello` non è quello attuale, il server risponde 409 con lo stato. Dall'HUD non arriva mai testo libero.
 - L'HUD si riconosce dalle intestazioni `origin` o `sec-fetch-site`, che una pagina non può togliere; il processo MCP non le manda. Le altre azioni dall'HUD ricevono 403.
 - Risposte all'HUD: 200 `{ok, versione}` senza testo; 409 `{ok: false, errori, stato}` se il modello è vecchio; 400 o 403 `{ok: false, errori}`.
-- `{azione:'misura', secondi, fps: {mediana, p10, minimo}, detect_ms, prova?}`: alla chiusura dell'ologramma, se le mani sono state accese almeno 10 secondi interi. Solo numeri nei loro limiti (secondi interi da 10 a 86400, fps da 0 a 1000, detect da 0 a 10000 ms o null, prova booleano): il server risponde 204 e scrive una riga sola nel suo registro, «[ologramma] mani accese 42 s: fps mediana 55, p10 48, minimo 46, detect 21 ms», con «(foto di prova al posto della fotocamera)» se prova è true. Altrimenti 400.
+- `{azione:'misura', secondi, fps: {mediana, p10, minimo}, detect_ms, prova?, gesti?}`: alla chiusura dell'ologramma, se le mani sono state accese almeno 10 secondi interi. Solo numeri nei loro limiti (secondi interi da 10 a 86400, fps da 0 a 1000, detect da 0 a 10000 ms o null, prova booleano): il server risponde 204 e scrive una riga sola nel suo registro, «[ologramma] mani accese 42 s: fps mediana 55, p10 48, minimo 46, detect 21 ms», con «(foto di prova al posto della fotocamera)» se prova è true. Altrimenti 400.
+  - `gesti`, facoltativo (un HUD vecchio non lo manda): le misure d'uso vero di `gesti.js` dall'apertura (vedi «I gesti»), solo le chiavi `secondi, tremolio_px, tremolio_n, buchi, gesti_persi, inneschi, scaduti, pizzichi, pizzico_min, pizzichi_profilo, lanci, prese_sparite_veloci, salti, profilo`, tutte facoltative, numeri finiti ≥ 0 nei limiti di `testoMisure` (per esempio `profilo` ≤ 1, `pizzico_min` ≤ 10). Con una chiave sconosciuta o un valore storto si scartano tutte le misure dei gesti, non la riga: gli fps servono alla regola dei 45 fps, e la riga finisce con «; misure dei gesti scartate (storte)». Vanno in coda alla stessa riga: «…detect 21 ms; mani viste 61 s; tremolio 1,3 px; inneschi 5 (scaduti 2); pizzichi 31 (minimo 0,16 U, 12 di profilo); buchi 4, gesti persi 1, lanci 2, prese sparite in corsa 0, salti 3, profilo 22%». Il testo lo fa `testoMisure` di `gesti.js`, provato in `prove/gesti.mjs`.
 - Un report del cervello con almeno un blocco, `[[mostra]]` o la quarta azione nel browser coprono l'ologramma: il server lo chiude anche lui («Ologramma chiuso.», versione +1), così il cervello non riceve la foto di un ologramma che Tony non vede.
 - Un'azione che non cambia niente non alza la versione e non avvisa l'HUD.
 
@@ -176,6 +182,7 @@ Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lanci
 ### Risposte agli strumenti
 - In caso di successo: `{ ok: true, versione, testo, foto? }`. `testo` è in italiano e serve al cervello: pezzi, ingombro, massa, risultati dell'analisi e avvisi. `foto` è il PNG in base64 della vista dopo il cambio.
 - La massa nel testo e nell'HUD ha una regola sola, `massaTesto` di `forme.js`: tre cifre significative, in g sotto 1 kg e in mg sotto 1 g.
+- **La riga dei materiali** (dopo la massa) dice cosa manca alla ricerca sui pezzi, con gli id tagliati come gli altri elenchi: «Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: … Senza fattura: … Senza fonte, quindi stime: …». Un pezzo ha il materiale con `materiale_vero` o con una chiave diversa da `generico`; la fattura si chiede solo a chi ha `materiale_vero`; i pezzi tolti contano. Quando non manca niente la riga non c'è, quindi un pezzo che Tony progetta in PLA non la fa comparire. Dice cosa manca e non come trovarlo: il modo di lavorare sta in `stem-persona.md`.
 - La prima riga dice com'è andato il calcolo quando la risposta parte: «Analisi degli sforzi avviata.» o «Ricalcolo degli sforzi avviato.» solo se è ancora in corso; se la risposta porta già i numeri, «finita» o «ricalcolati». Dopo la scorciatoia della lega la riga dei voxel dice che il campo viene dal calcolo di prima, col tempo vero della scorciatoia.
 - Per la foto il server aspetta, se l'HUD è collegato (visto negli ultimi 15 s), fino a 8 s dopo mostra o se ci sono pezzi `file`, fino a 4 s dopo le altre modifiche: l'entrata di un modello nuovo dura circa 3 s. Senza foto, il testo lo dice («l'HUD non è acceso», «non l'ha mandata entro N s»). Se non è cambiato niente torna l'ultima foto di quella versione, o «Foto: nessuna nuova».
 - In caso di errori: `400 { ok: false, errori: [string] }`, con messaggi chiari perché il cervello possa correggere.
@@ -213,7 +220,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
   dopoRender(),         // subito dopo il render, nello stesso fotogramma: qui si legge il canvas per la foto (preserveDrawingBuffer è false)
   comando(nome, valore),// 'esploso' 0..1 | 'sezione' {asse, posizione, verso}|null | 'modo' | 'seleziona' id | 'isola' id | 'ruota' {dx, dy} | 'zoom' fattore | 'reset' | 'rotazione_auto' bool
   puntatore(ev),        // eventi del mouse: trascina per ruotare, rotella per lo zoom, clic per selezionare
-  gesto(g),             // i gesti di gesti.js
+  gesto(g),             // i gesti di gesti.js; {tipo:'stato', fase} mostra «mani: mostra il palmo» (riposo) o «mani pronte» nella barra, e 'spente' (da stem.js) la svuota
   ridimensiona(),
   info(),               // per le prove: lo stato locale, senza riferimenti interni
 }
@@ -240,32 +247,75 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
 
 ## I gesti (`gesti.js`)
 ```js
-export function createGesti(opzioni) → { aggiorna(mani, t_ms) → Gesto[] , azzera() }
+export function createGesti(opzioni) → { aggiorna(mani, t_ms) → Gesto[], azzera(), stato(), misure(), azzeraMisure() }
+export PREDEFINITI, mappa(n, margine?, curva?), normale(a, b, c), inclinazione(n), testoMisure(g)
 // mani: [{ lato: 'Left'|'Right', punti: [{x, y, z}] × 21 }], coordinate normalizzate 0..1 dell'immagine già specchiata
 Gesto =
-  {tipo:'cursore', x, y, mano}          // punta dell'indice, schermo 0..1
+  {tipo:'stato', fase}                  // 'riposo' | 'pronto' | 'azione', a ogni cambio e una volta all'inizio
+| {tipo:'cursore', x, y, mano}          // punta dell'indice, schermo 0..1
 | {tipo:'ruota', dx, dy}                // pizzico con una mano e trascinamento
 | {tipo:'zoom', fattore}                // due mani che pizzicano: rapporto delle distanze
 | {tipo:'esplodi', delta}               // due palmi aperti che si allargano o si stringono
 | {tipo:'afferra', x, y} | {tipo:'sposta', dx, dy} | {tipo:'lascia'}
 | {tipo:'lancia', x, y, vx, vy}         // rilascio veloce di una presa: il pezzo preso si toglie
 ```
-- `createGesti` restituisce anche `stato()`: lo stato di ogni mano, senza i punti, per le prove e il lab.
+- `stato()`: la fase e lo stato di ogni mano (anche `inclinazione` in gradi, `profilo`, `dentro` la zona attiva), senza i punti, per le prove e il lab.
 - Ruotare e afferrare stanno tutti e due sul pizzico di una mano: un pizzico che si muove entro 350 ms ruota, uno fermo per 350 ms afferra, uno breve e fermo è un clic che seleziona. Si afferra dove l'indice puntava prima di chiudersi (entro 300 ms).
 - `lancia` parte solo da una presa: una mano che sparisce dà `lascia`. Un solo cursore per fotogramma; `mano` vale 'Left', 'Right' o null.
 - Lo zoom usa il rapporto delle distanze fra i centri dei palmi, non fra i pizzichi.
 - Il pizzico è relativo alla mano, come in MRTK3: la distanza pollice-indice divisa per la lunghezza dell'indice (5→6→7→8), chiuso sotto 0,25 e aperto sopra 0,75, con isteresi.
-- Filtro One Euro sui punti.
-- Il lancio parte da circa 1 m/s su 150 mm, misurati con la scala del palmo.
-- Le soglie stanno tutte in `opzioni`, con valori predefiniti esportati.
+- Filtro One Euro sui punti. Il lancio parte da circa 1 m/s su 150 mm, misurati con la scala del palmo (1U, polso→nocca del medio, punti 0→9, rimisurato a ogni fotogramma).
+- Le soglie stanno tutte in `opzioni`, con valori predefiniti esportati e il commento che dice da dove viene il numero.
+
+### Le tre fasi (una sola macchina per tutte le mani)
+- **riposo**: non esce niente, nemmeno il cursore; le tracce si aggiornano lo stesso. Si parte da qui, e `azzera()` ci torna.
+- **riposo → pronto**: una mano stabile, aperta, non di profilo e dentro la zona attiva per `innesco_ms` (300). Un fotogramma falso in mezzo non azzera il conto, due di fila sì. All'innesco una mano che ha già il pizzico chiuso è «consumata»: deve riaprirlo.
+- **pronto**: cursore e gesti come prima.
+- **azione**: finché c'è un gesto continuo (ruota, presa, zoom o esplodi partiti) o nel fotogramma di un clic. L'evento 'azione' esce prima dei gesti del suo fotogramma, il ritorno a 'pronto' dopo.
+- **pronto → riposo**: `riposo_ms` (4000) senza attività, cioè senza gesti emessi (il cursore non conta) e senza un palmo aperto dentro la zona. Da 'azione' non si scade, e il conto parte dalla fine del gesto: uno zoom tenuto fermo a lungo e poi lasciato con le mani fuori zona resta pronto per `riposo_ms`. `riposo_ms` deve essere sopra 0 (a 0 riposo e pronto si alternavano ogni `innesco_ms`).
+- `innesco_ms: 0` vuol dire sempre pronto, come prima del 10/11: è l'interruttore se a Tony l'innesco non piace.
+
+### Le opzioni nuove del 10/11 (regole di Tony, numeri suoi, non misurati su di lui)
+- `assente_ms` 170 (era 150): «meno di 5 fotogrammi» a 30 al secondo, cioè fino a 4 mancanti. Con 4 fotogrammi mancanti la presa tiene, con 5 si chiude.
+- `zona_morta` 0,00625 altezze d'immagine (3 px su 480), **a corda**, dopo il filtro, solo sulle due àncore che vanno allo schermo: la punta dell'indice (cursore, ruota, sposta, mira) e il centro del palmo (zoom, esplodi). Non tocca i punti del pizzico né il palmo. L'uscita sta ferma finché il punto filtrato le resta entro il raggio; oltre, lo segue a un raggio di distanza.
+- `curva` 0,5: la mappa a S `mappa()`, una sola per cursore, gesti e pallini delle dita. Con u da −1 a 1 la posizione lineare, f(u) = (1−c)·u + c·u³, e fuori da ±1 prosegue dritta con la pendenza del bordo: al centro guadagno 0,5 (più preciso), ai bordi 2. Il cursore è f limitata allo schermo; ruota, sposta e la velocità del lancio sono differenze di posizioni mappate non limitate, così una mano oltre il bordo ruota ancora. Una sigmoide vera sulla posizione sarebbe ripida al centro, il contrario di quello che Tony chiedeva: per questo la forma è un'altra.
+- `zona` 0,7: un gesto parte, e l'innesco vale, solo col centro del palmo nel 70% centrale dell'immagine, in x e in y. Un pizzico chiuso fuori è consumato. Un gesto partito continua anche fuori. I gesti a due mani partono solo con tutte e due dentro.
+- `profilo_gradi` 75: la normale del palmo dai punti 0, 5 e 17 in 3D, con la z dei punti dell'immagine scalata come la x; l'inclinazione è l'angolo fra la normale e l'asse della fotocamera (0 palmo o dorso di fronte, 90 di taglio; palmo e dorso non si distinguono apposta) ed è lisciata a 1 Hz. Oltre 75° la mano è di profilo: non vale come palmo aperto, quindi niente innesco né esplodi. Il pizzico invece resta, perché davanti a un portatile si pizzica col palmo in giù, cioè di taglio.
+- `innesco_ms` 300 e `riposo_ms` 4000: vedi le fasi.
+
+### Delle 12 regole di Tony, cosa non si è fatto e perché
+- **1.1 alla lettera** («fermo sotto 3 px dal fotogramma prima»): a 3 cm/s la mano fa 1 px a fotogramma e l'uscita non si muoverebbe mai (in 2 s resta indietro di 61 px). Si è fatta la zona morta a corda.
+- **1.2 la profondità in 1U**: nessun gesto usa la z, quindi non si aggiunge. 1U c'era già (il palmo).
+- **2.1 cinematica inversa**: MediaPipe non dice quale dito è nascosto e dà già 21 punti da un suo modello della mano; in 2D una falange non ha lunghezza fissa. Al suo posto una prova (un salto di un fotogramma non apre la presa) e il conto dei salti nell'uso vero.
+- **2.2 i pesi delle dita nascoste**: di profilo le dita non si contano proprio (niente palmo aperto), non si pesano.
+- **2.3 la previsione dalla velocità** durante un buco: non c'è, perché i buchi non sono mai stati contati. Ora li conta `misure()`.
+- **3.2 il 10% e il 15% di 1U**: non adottati; restano 0,25 e 0,75 della lunghezza dell'indice (MRTK3). Sul banco i pizzichi veri arrivano a 0,08 e 0,10 U in 2D, cioè proprio sul 10%: con quella soglia uno dei due non si chiuderebbe. Si misura sulle mani di Tony con `pizzico_min`.
+- **3.3 il tempo di ricarica di 300 ms**: niente timer. Ogni lancio vuole una presa nuova, cioè un pizzico riaperto e fermo per 350 ms: due lanci di fila non possono stare a meno di 350 ms più un fotogramma. Il più vicino trovato è a 567 ms (corsa di 3 fotogrammi a 1,5 m/s, scansione del revisore dell'11/11 su velocità, corse e attese); le sequenze di `prove/gesti.mjs` danno 667 ms.
+
+### Le misure d'uso vero (`misure()`, solo numeri)
+Servono a tarare sulle mani di Tony le soglie di oggi; `mani.js` le passa a `stem.js`, che le manda con l'azione `misura`. Dall'apertura (o da `azzeraMisure()`): `secondi` con almeno una mano stabile; `tremolio` e `tremolio_n`, lo scarto quadratico medio fra la punta dell'indice grezza e quella filtrata del fotogramma prima, nei fotogrammi col palmo sotto 0,05 altezze al secondo, in altezze d'immagine (`mani.js` aggiunge `tremolio_px`); `buchi`, mani riviste dopo almeno un fotogramma mancante; `gesti_persi`, mani sparite oltre `assente_ms` con un gesto in corso; `inneschi` e `scaduti`; `pizzichi`, `pizzico_min` (mediana della distanza minima pollice-indice in U: dice se il 10% di Tony è raggiungibile) e `pizzichi_profilo`; `lanci`; `prese_sparite_veloci` (prese chiuse dall'assenza mentre la mano correva oltre la soglia del lancio: lanci forse persi per il mosso); `salti` (fotogrammi in cui la punta di pollice o indice si sposta di più di 0,5 U rispetto al palmo); `profilo`, la frazione dei fotogrammi di profilo. `azzera()` dimentica le mani ma tiene le misure.
+
+### I numeri (`node prove/gesti.mjs`, mani sintetiche; `node prove/mani-foto.mjs`, foto vere)
+- Filtro, con rumore σ 0,004 a mano ferma: tremolio ÷2,84, ritardo 17,6 ms a 0,5 m/s; con la zona morta 23,5 ms (raggio/velocità aggiunge 5,9 ms). Gli 80,5 ms che la prova dava il 10/11 erano un errore della prova: supponeva la mappa lineare.
+- Zona morta, mano ferma: il cursore si muove in 3 fotogrammi su 269 con σ 0,004 e in 2 con σ 0,002 (al massimo 1 px su uno schermo alto 1080), contro 269 su 269 senza. Non è zero: dopo uno strappo la corda resta sul bordo del raggio.
+- Salti di un fotogramma durante una presa: la punta dell'indice regge fino a 2,9 U, quella del pollice fino a 1,0 U (0,5 senza filtro).
+- Banco su foto vere (MediaPipe sulla GPU dell'M2, 11/11, 10 mani in 9 foto):
+  - **profilo, quale 3D**: su mani piatte di fronte la z dei punti dell'immagine dà 12–21°, i punti del mondo 32–90° (le due sinistre di `left_hands.jpg`: 12° e 13° contro 90° e 81°). Si usa la z dell'immagine, e `mani.js` non passa i punti del mondo;
+  - **pizzichi veri** (due gesti OK di Wikimedia Commons): pollice-indice a 0,08 e 0,10 U in 2D (0,22 e 0,19 in 3D con la z dell'immagine), rapporto 0,11 e 0,14: pizzico con le soglie di oggi. Una terza foto, in primo piano col polso fuori, non dà nessuna mano;
+  - **falsi pizzichi**: il pugno ha rapporto 0,27, appena sopra la soglia di chiusura (0,25): non è pizzico, ma di poco. Pollice in su, indice in su e vittoria stanno sopra 1,2. Nessuno dei quattro è un palmo aperto.
+  - la foto di prova dell'HUD: due palmi aperti a 20° e 21°, quindi `prove/ologramma-hud.mjs` fa l'innesco (in circa 660 ms dalla partenza delle mani).
 
 ## Le mani (`mani.js`)
 - MediaPipe `@mediapipe/tasks-vision` **0.10.35**, servito in locale da `/mediapipe/`. Il modello `hand_landmarker.task` (float16, 7.819.105 B) sta in `runtime/modelli/` e si serve da `/modelli/hand_landmarker.task`. Lo scarica `mani.js` con fetch, controlla i byte e lo passa come `modelAssetBuffer`; la GPU ripiega sulla CPU.
 - La fotocamera è accesa solo con l'ologramma aperto e le mani attive. Quando si chiude, le tracce si fermano. I fotogrammi non escono dall'HUD.
 - Il rilevatore resta fra un'apertura e l'altra: si chiude solo se si guasta, e il prossimo avvio lo rifà. Ricrearlo a ogni apertura riscaricava 19,3 MB e bloccava l'entrata del modello.
+- Anche `gesti.js` resta fra un avvio e l'altro (si rifà solo se cambiano le proporzioni dell'immagine): `ferma()` dimentica le mani, ma le misure contano tutta l'apertura anche se Tony spegne e riaccende col tasto M. `azzeraMisure()` azzera i tempi di MediaPipe e le misure dei gesti; `stem.js` lo chiama a ogni apertura.
+- A ogni avvio manda subito la fase di partenza ('riposo'), senza aspettare la prima rilevazione.
+- `misure.gesti`: le misure di `gesti.js`, più `tremolio_px` (il tremolio per l'altezza vera dell'immagine), o null se le mani non sono mai partite.
 - Il lato è scambiato rispetto a MediaPipe: 'Right' è la mano destra di chi sta davanti alla fotocamera.
 - In più rispetto al contratto: `onErrore`, `azzeraMisure()`, le opzioni `delegato`, `hz`, `gesti`, `sorgente: 'immagine'`, le esportazioni `MEDIAPIPE` e `MODELLO_MANI`.
 - **Soglia per collegarle** (decisione di Tony del 5/11): l'HUD con l'ologramma e le mani deve restare sopra 45 fps sul suo M2. Se non regge, le mani restano spente. La misura nelle condizioni vere arriva da sola nel registro del server, con l'azione `misura`.
+- Nell'HUD (`stem.js`): i pallini di pollice e indice usano la stessa `mappa()` del cursore, e a riposo sono più tenui (`#dita.riposo`). Quando le mani si fermano (Esc, tasto M, errore) `stem.js` manda a `scena.js` `{tipo:'stato', fase:'spente'}`. Nessun suono per l'innesco: in `sfx.js` non c'è un suono leggero adatto, e i suoni nuovi non si fanno.
 
 ## Nell'HUD (`stem.js`)
 - Report e browser chiudono l'ologramma nell'HUD subito; nel server lo chiude il server (vedi sopra). Solo Esc lo dice al server come «chiuso da Tony».

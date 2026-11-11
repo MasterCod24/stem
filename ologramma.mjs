@@ -489,7 +489,24 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
     return r;
   }
 
-  /** Il riassunto per il cervello: titolo, pezzi, ingombro, massa, vista, carichi, vincoli e analisi. */
+  // Cosa manca alla ricerca sui pezzi: è la riga che fa finire il lavoro al cervello, quindi dice cosa manca e non
+  // come si trova. Un pezzo «ha il materiale» con materiale_vero o con una chiave vera: una staffa che Tony progetta
+  // in PLA non la fa comparire. La fattura si chiede solo ai pezzi con materiale_vero, cioè a quelli di un oggetto cercato.
+  // Contano anche i pezzi tolti: sono ancora del modello. Niente da dire, niente riga.
+  function testoRicerca() {
+    const P = S.pezzi, ids = (f) => P.filter(f).map((p) => p.id);
+    const senza = ids((p) => !p.materiale_vero && p.materiale === 'generico');
+    const senzaFattura = ids((p) => p.materiale_vero && !p.fattura);
+    const stime = ids((p) => (p.materiale_vero || p.fattura) && !p.fonte);
+    if (!senza.length && !senzaFattura.length && !stime.length) return [];
+    const n = P.length - senza.length, r = [`Materiali: ${n} ${n === 1 ? 'pezzo' : 'pezzi'} su ${P.length} ${n === 1 ? 'ha' : 'hanno'} il materiale.`];
+    if (senza.length) r.push(`Senza materiale: ${elenco(senza)}.`);
+    if (senzaFattura.length) r.push(`Senza fattura: ${elenco(senzaFattura)}.`);
+    if (stime.length) r.push(`Senza fonte, quindi stime: ${elenco(stime)}.`);
+    return [r.join(' ')];
+  }
+
+  /** Il riassunto per il cervello: titolo, pezzi, ingombro, massa, materiali che mancano, vista, carichi, vincoli e analisi. */
   function testo() {
     if (!S.modello) return 'Nessun ologramma: non ne è ancora stato mostrato uno.';
     const P = S.pezzi, tolti = new Set(S.tolti), r = [];
@@ -505,6 +522,7 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
     }
     r.push(S.massa_kg === null ? 'Massa: nessun pezzo ha un materiale con densità.'
       : `Massa ${massaTesto(S.massa_kg)}${senzaMassa ? ` (senza ${senzaMassa} ${senzaMassa === 1 ? 'pezzo generico o da file' : 'pezzi generici o da file'})` : ''}.`);
+    r.push(...testoRicerca());
     r.push(`Vista: ${vistaTesto()}.`);
     if (S.carichi.length) r.push(`Carichi: ${S.carichi.map((c) => `${num(c.forza_N)} N su «${c.pezzo}», faccia ${c.faccia}, direzione ${vettore(c.direzione)}`).join('; ')}.`);
     if (S.vincoli.length) r.push(`Incastri: ${S.vincoli.map((v) => `«${v.pezzo}» faccia ${v.faccia}`).join(', ')}.`);

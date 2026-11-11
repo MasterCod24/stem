@@ -13,6 +13,7 @@ import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
+import { testoMisure } from './public/ologramma/gesti.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, 'runtime');
@@ -174,10 +175,12 @@ const brain = createBrain({
   onLog: (l) => { console.error(l); },
   args: [
     '--append-system-prompt', PERSONA,
-    '--tools', 'Read,Write,Edit,Glob,Grep',
+    // WebSearch e WebFetch: per sapere com'è fatto un oggetto vero prima di costruirne l'ologramma. Non passano dal browser
+    // a vista, che alla quarta azione apre il pannello e chiude l'ologramma, e più ricerche partono nella stessa mossa.
+    '--tools', 'Read,Write,Edit,Glob,Grep,WebSearch,WebFetch',
     ...(FILE_DIRS.length ? ['--add-dir', ...FILE_DIRS] : []), // vuoto, --add-dir si prenderebbe l'opzione dopo
     '--mcp-config', MCP_CONFIG, '--strict-mcp-config',
-    '--allowedTools', 'mcp__playwright', 'mcp__mac',
+    '--allowedTools', 'mcp__playwright', 'mcp__mac', 'WebSearch', 'WebFetch',
     '--disallowedTools', 'mcp__playwright__browser_tabs', // una sola pagina: niente schede nuove
     '--permission-mode', 'acceptEdits',    // modifiche approvate da sole, ma solo dentro FILE_DIRS
     '--permission-prompts', 'none',        // tutto il resto (fuori dalle cartelle) è negato senza chiedere
@@ -326,15 +329,20 @@ function pngValido(b) {
 // La misura delle mani nelle condizioni vere (la regola di Tony: mani solo sopra 45 fps sul suo M2), che l'HUD manda alla
 // chiusura dell'ologramma se le mani sono state accese almeno 10 s: la prossima sessione la legge nel registro, senza
 // chiedere a Tony. Dall'HUD arrivano solo numeri, controllati qui; il testo della riga è del server.
+// gesti, facoltativo (un HUD vecchio non lo manda): le misure d'uso vero di gesti.js, che servono a tarare sulle mani di
+// Tony le soglie oggi non misurate. testoMisure le controlla (solo numeri finiti nei loro limiti) e ne fa il resto della riga.
+// Se sono storte si scartano solo loro: gli fps servono alla regola dei 45 fps, e un campo nuovo di misure() dimenticato in
+// LIMITI_MISURE non deve farli sparire dal registro per sempre (revisione dell'11/11).
 function rigaMani(b) {
   const n = (v, max) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
-  const f = b.fps;
+  const f = b.fps, gesti = testoMisure(b.gesti);
   if (!n(b.secondi, 86400) || b.secondi < 10 || !Number.isInteger(b.secondi) || f === null || typeof f !== 'object' ||
     !['mediana', 'p10', 'minimo'].every((k) => n(f[k], 1000)) || !(b.detect_ms === null || n(b.detect_ms, 1e4)) ||
     (b.prova !== undefined && typeof b.prova !== 'boolean')) return null;
   const r = Math.round; // fotogrammi contati e millisecondi interi: niente virgole che si confondono con quelle della riga
   return `[ologramma] mani accese ${b.secondi} s${b.prova ? ' (foto di prova al posto della fotocamera)' : ''}: ` +
-    `fps mediana ${r(f.mediana)}, p10 ${r(f.p10)}, minimo ${r(f.minimo)}, detect ${b.detect_ms === null ? '—' : `${r(b.detect_ms)} ms`}`;
+    `fps mediana ${r(f.mediana)}, p10 ${r(f.p10)}, minimo ${r(f.minimo)}, detect ${b.detect_ms === null ? '—' : `${r(b.detect_ms)} ms`}` +
+    (gesti ?? '; misure dei gesti scartate (storte)');
 }
 
 // GET /api/ologramma/file/<modello>/<id>: solo il file di un pezzo dello stato attuale, mai un percorso scelto dall'HUD.

@@ -234,11 +234,13 @@ function apriOlo() {
 function chiusoOlo() { misuraMani(); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); allarme('calcolo', 0); }
 // La regola di Tony: mani solo sopra 45 fps sul suo M2. Alla chiusura, se le mani sono state accese almeno 10 secondi interi,
 // i fotogrammi di quei secondi e il tempo di MediaPipe vanno al registro del server: solo numeri, la riga la scrive lui.
+// Con loro vanno le misure d'uso vero dei gesti (gesti.js, misure()): solo i numeri finiti, quelli senza campioni restano fuori.
 function misuraMani() {
   const s = SECONDI.filter((x) => x.s >= oloDa && x.mani);
   if (s.length < 10 || !mani) return;
-  const f = statFps(s), d = mani.misure.detect_ms.mediana;
-  post('/api/ologramma', { azione: 'misura', secondi: s.length, fps: { mediana: f.mediana, p10: f.p10, minimo: f.minimo }, detect_ms: d, prova: maniProva }).catch(() => {});
+  const m = mani.misure, f = statFps(s), d = m.detect_ms.mediana;
+  const gesti = Object.fromEntries(Object.entries(m.gesti || {}).filter(([k, v]) => k !== 'tremolio' && Number.isFinite(v)));
+  post('/api/ologramma', { azione: 'misura', secondi: s.length, fps: { mediana: f.mediana, p10: f.p10, minimo: f.minimo }, detect_ms: d, prova: maniProva, gesti }).catch(() => {});
 }
 // Chiuso dall'HUD. Solo Esc lo dice al server, che al cervello scrive «Tony ha chiuso l'ologramma»: report e browser lo nascondono e basta
 // La risposta porta la versione nuova; un 409 (il cervello ha già fatto un modello nuovo) porta lo stato: si rilegge e si mostra quello
@@ -286,17 +288,17 @@ function tastoOlo(e) {
 }
 
 // ---------- Mani: MediaPipe in locale, accese solo con l'ologramma aperto. La scelta del tasto M resta fra un avvio e l'altro ----------
-let mani = null, maniPronte = null, margine = 0.1;
+let mani = null, maniPronte = null, mappaMani = null; // mappaMani: la mappa a S di gesti.js, la stessa del cursore
 const maniProva = DEBUG && params.get('mani') === 'immagine'; // la foto di prova al posto della fotocamera
 const maniVolute = () => { try { return localStorage.getItem('stem-mani') !== '0'; } catch { return true; } };
 const vogliMani = (on) => { try { localStorage.setItem('stem-mani', on ? '1' : '0'); } catch {} };
 function creaMani() { // una volta sola, anche con due aperture di fila
   maniPronte ||= (async () => {
-    const [{ createMani }, { PREDEFINITI }] = await Promise.all([import('./ologramma/mani.js'), import('./ologramma/gesti.js')]);
-    margine = PREDEFINITI.margine;
+    const [{ createMani }, { mappa }] = await Promise.all([import('./ologramma/mani.js'), import('./ologramma/gesti.js')]);
+    mappaMani = mappa;
     // ?debug&mani=immagine: la foto di prova al posto della fotocamera, a 30 Hz come lei, per misurare
     const prova = maniProva ? { sorgente: 'immagine', immagine: await telaProva(), hz: 30 } : {};
-    return (mani = createMani({ ...prova, onGesto: (g) => holo.gesto(g), onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); } }));
+    return (mani = createMani({ ...prova, onGesto: gestoMani, onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); faseMani('spente'); } }));
   })().catch((e) => { maniPronte = null; throw e; });
   return maniPronte;
 }
@@ -309,7 +311,14 @@ async function avviaMani() {
     if (!holo.aperto || !maniVolute()) fermaMani(); // chiuso, o spente col tasto M, mentre partivano
   } catch (e) { warn(String(e?.message || e), 'attenzione'); console.warn(e); }
 }
-function fermaMani() { mani?.ferma(); disegnaDita([]); }
+function fermaMani() { mani?.ferma(); disegnaDita([]); faseMani('spente'); }
+// La fase delle mani (gesti.js: 'riposo', 'pronto', 'azione'; 'spente' quando si fermano): scena.js la mostra nella barra
+// e spegne il cursore a riposo, qui i pallini delle dita si fanno più tenui. Cambia di rado: nessun costo a fotogramma.
+function faseMani(fase) {
+  $('dita').classList.toggle('riposo', fase === 'riposo');
+  holo?.gesto({ tipo: 'stato', fase });
+}
+function gestoMani(g) { if (g.tipo === 'stato') faseMani(g.fase); else holo.gesto(g); }
 async function telaProva() { // come la fotocamera: 640×480, la foto di prova intera su fondo bianco (come lab-mani.html)
   const img = new Image();
   img.src = '/modelli/prova-mani.jpg';
@@ -318,10 +327,11 @@ async function telaProva() { // come la fotocamera: 640×480, la foto di prova i
   g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 480); g.drawImage(img, 0, (480 - h) / 2, 640, h);
   return c;
 }
-// Pollice e indice di ogni mano, nello stesso riquadro di gesti.js (l'immagine meno il margine copre lo schermo)
+// Pollice e indice di ogni mano, grezzi, con la stessa mappa a S del cursore di gesti.js: il cursore sta dove sta il
+// pallino dell'indice, a meno del filtro e della zona morta (pochi pixel)
 const DITA = [...document.querySelectorAll('#dita i')];
 function disegnaDita(lista) {
-  const k = 1 / (1 - 2 * margine), su = (v, L) => (Math.min(1, Math.max(0, (v - margine) * k)) * L).toFixed(1);
+  const su = (v, L) => (Math.min(1, Math.max(0, mappaMani(v))) * L).toFixed(1);
   DITA.forEach((d, i) => {
     const p = lista[i >> 1]?.punti?.[i & 1 ? 8 : 4], ok = Number.isFinite(p?.x) && Number.isFinite(p?.y);
     d.classList.toggle('on', ok);
@@ -458,6 +468,9 @@ async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il 
         else if (ev.t === 'tool') { evento(`TOOL · ${String(ev.name).slice(0, 24)}`); showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'page') $('p-host').textContent = '· ' + ev.detail;
         else if (ev.t === 'file' || ev.t === 'mac') { evento(`${ev.t === 'mac' ? 'MAC' : 'FILE'} · ${String(ev.name).slice(0, 24)}`); showSmall(ev.name, ev.detail); if (!playing) setMode('thinking'); }
+        // Ricerca senza browser (WebSearch, WebFetch): un'etichetta piccola, e l'ologramma resta aperto. Dal server arriva
+        // solo il tipo e, per una pagina, il nome del sito: mai le parole cercate.
+        else if (ev.t === 'web') { const pagina = ev.name === 'pagina'; evento(`WEB · ${pagina ? 'PAGINA' : 'RICERCA'}`); showSmall(pagina ? 'Leggo' : 'Cerco in rete', pagina ? String(ev.detail || '').slice(0, 60) : ''); if (!playing) setMode('thinking'); }
         else if (ev.t === 'media') { evento(`MEDIA · ${ev.kind === 'anim' ? 'ANIM' : 'GIF'}`); showMedia(ev); }
         else if (ev.t === 'ignore') { evento('IGNORE'); report('frase non per STEM (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
         else if (ev.t === 'error') { evento('ERROR · CERVELLO'); allarme('cervello', 2, 'IL CERVELLO HA PERSO IL FILO', 12000); speak('Ho perso il filo, scusami. Riprova tra un attimo.'); }

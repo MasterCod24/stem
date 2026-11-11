@@ -536,6 +536,72 @@ titolo('10c. Titolo e descrizione con modifica; testi che dicono com\'è andato 
   esito(m.O.testo().includes(`Massa ${F.massaTesto(m.O.stato().massa_kg)}.`) && F.massaTesto(m.O.stato().massa_kg) === '2470 kg', 'massa nel testo con la regola dell\'HUD: 2474,3 kg → 2470 kg', F.massaTesto(m.O.stato().massa_kg));
 }
 
+// ------------------------------------------------------------------ 10d. ricerca sui pezzi
+titolo('10d. Ricerca sui pezzi: la riga che dice cosa manca, cambia che toglie, salvataggio e ripresa');
+{
+  const riga = (t) => t.split('\n').find((l) => l.startsWith('Materiali:')) || '';
+  const sc = (id, extra = {}) => ({ id, forma: 'scatola', misure: { x: 10, y: 10, z: 10 }, ...extra });
+  const IFIXIT = { materiale_vero: 'alluminio 6063 riciclato, anodizzato', fattura: 'fresato da un blocco estruso', fonte: 'iFixit 2022' };
+  const portatile = () => ({ titolo: 'Portatile', pezzi: [
+    sc('base', IFIXIT),                                                        // tutto, con la fonte
+    sc('vetro', { materiale_vero: 'vetro alluminosilicato', fattura: 'laminato sul pannello' }), // materiale e fattura, senza fonte: stima
+    sc('cella', { materiale_vero: 'polimeri di litio', fonte: 'Apple 2022' }), // senza fattura
+    sc('vite', { fattura: 'tornita' }),                                        // fattura senza materiale e senza fonte
+    sc('staffa', { materiale: 'pla' }),                                        // solo la chiave del calcolo: ha il materiale
+    sc('boh'),                                                                 // niente
+  ] });
+  const dir = cartella(), { O, fc } = nuovo({ cartella: dir });
+  let r = O.esegui({ azione: 'mostra', modello: portatile() });
+  esito(riga(r.testo) === 'Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: «vite», «boh». Senza fattura: «cella». Senza fonte, quindi stime: «vetro», «vite».',
+    'mostra: quanti hanno il materiale, chi no, chi non ha la fattura e chi è una stima', riga(r.testo));
+  const base = O.stato().pezzi.find((p) => p.id === 'base');
+  esito(F.CAMPI_RICERCA.every((k) => base[k] === IFIXIT[k]) && base.materiale === 'generico', 'i tre campi stanno nello stato del pezzo, che è quello che riceve l\'HUD');
+
+  // cambia: i campi nuovi si fondono nel pezzo, quelli non nominati restano; la riga si accorcia
+  const v0 = O.stato().versione;
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'boh', materiale_vero: 'rame', fattura: 'trafilato', fonte: 'scheda tecnica 2023' }, { id: 'cella', fattura: 'celle a sacchetto incollate' }, { id: 'vite', materiale_vero: 'acciaio inox' }] });
+  esito(r.ok && O.stato().versione === v0 + 1 && riga(r.testo) === 'Materiali: 6 pezzi su 6 hanno il materiale. Senza fonte, quindi stime: «vetro», «vite».' &&
+    O.stato().pezzi.find((p) => p.id === 'cella').fonte === 'Apple 2022', 'cambia completa i pezzi: restano solo le stime, e la fonte di prima non si perde', riga(r.testo));
+  // una stringa vuota toglie il campo
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'base', fonte: '' }, { id: 'boh', materiale_vero: '', fattura: '', fonte: '' }] });
+  const b2 = O.stato().pezzi.find((p) => p.id === 'base'), boh = O.stato().pezzi.find((p) => p.id === 'boh');
+  esito(r.ok && b2.fonte === null && b2.materiale_vero === IFIXIT.materiale_vero && F.CAMPI_RICERCA.every((k) => boh[k] === null) &&
+    riga(r.testo) === 'Materiali: 5 pezzi su 6 hanno il materiale. Senza materiale: «boh». Senza fonte, quindi stime: «base», «vetro», «vite».',
+    'cambia con un testo vuoto toglie il campo: «base» torna stima, «boh» torna senza materiale', riga(r.testo));
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'boh', materiale_vero: '' }] });
+  esito(r.ok && r.testo.startsWith('Niente da cambiare') && O.stato().versione === v0 + 2, 'togliere un campo che non c\'è non fa una versione nuova');
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'boh', fonte: 7 }] });
+  esito(!r.ok && r.codice === 400 && /fonte deve essere un testo/.test(r.errori.join(' ')) && O.stato().versione === v0 + 2, 'un campo che non è un testo: 400 e niente cambia', r.errori?.[0]);
+  r = O.esegui({ azione: 'modifica', aggiungi: [sc('cavo', { fattura: 'f'.repeat(200) })] });
+  esito(r.ok && O.stato().pezzi.find((p) => p.id === 'cavo').fattura.length === 140 && /fattura era più lungo di 140 caratteri: tagliato/.test(r.testo), 'aggiungi con una fattura di 200 caratteri: tagliata a 140, con l\'avviso nella risposta');
+
+  // salvataggio e ripresa: stesso stato e stesso testo, campi compresi
+  const B = nuovo({ cartella: dir });
+  esito(B.O.carica() === true && uguale(B.O.stato(), O.stato()) && B.O.testo() === O.testo() && riga(B.O.testo()).startsWith('Materiali: 5 pezzi su 7') &&
+    B.O.stato().pezzi.find((p) => p.id === 'cella').fattura === 'celle a sacchetto incollate', 'dopo il riavvio i tre campi e la riga sono identici', riga(B.O.testo()));
+
+  // i campi di testo non toccano il calcolo: né una corsa nuova né la scorciatoia
+  const y = await analizzato(mensola());
+  const n0 = y.fc.chiamate.length, a0 = JSON.stringify(y.O.stato().analisi);
+  r = y.O.esegui({ azione: 'modifica', cambia: [{ id: 'muro', materiale_vero: 'PLA nero', fattura: 'stampato in piedi a 0,2 mm', fonte: 'Tony' }] });
+  esito(r.ok && !r.attesa && y.fc.chiamate.length === n0 && JSON.stringify(y.O.stato().analisi) === a0 && !/calcol/i.test(r.testo.split('\n')[0]), 'materiale_vero, fattura e fonte non fanno ricalcolare gli sforzi', r.testo.split('\n')[0]);
+
+  // quando non manca niente la riga non c'è: una mensola che Tony progetta in PLA non chiede ricerche
+  const m = nuovo();
+  r = m.O.esegui({ azione: 'mostra', modello: mensola() });
+  esito(riga(r.testo) === '' && !/Senza (materiale|fattura|fonte)/.test(r.testo), 'pezzi con una chiave vera e nessun campo di ricerca: la riga non compare');
+  r = m.O.esegui({ azione: 'mostra', modello: { titolo: 'Completo', pezzi: [sc('a', IFIXIT), sc('b', { ...IFIXIT, materiale: 'alluminio-6061' })] } });
+  esito(riga(r.testo) === '', 'tutti con materiale, fattura e fonte: la riga non compare');
+  // l'elenco si taglia come gli altri: 12 id e poi il conto
+  r = m.O.esegui({ azione: 'mostra', modello: { titolo: 'Tanti', pezzi: Array.from({ length: 30 }, (_, i) => sc(`p${i}`)) } });
+  esito(riga(r.testo) === `Materiali: 0 pezzi su 30 hanno il materiale. Senza materiale: ${Array.from({ length: 12 }, (_, i) => `«p${i}»`).join(', ')} e altri 18.`, 'trenta pezzi senza materiale: dodici id e «e altri 18»', riga(r.testo));
+  // un pezzo tolto da Tony è ancora del modello: conta
+  m.O.esegui({ azione: 'mostra', modello: { titolo: 'Due', pezzi: [sc('a', IFIXIT), sc('b')] } });
+  r = m.O.esegui({ azione: 'modifica', togli: ['b'] });
+  esito(riga(r.testo) === 'Materiali: 1 pezzo su 2 ha il materiale. Senza materiale: «b».', 'un pezzo tolto resta nella riga', riga(r.testo));
+  void fc;
+}
+
 // ------------------------------------------------------------------ 11. sicurezza del codice
 titolo('11. Niente API vietate');
 {

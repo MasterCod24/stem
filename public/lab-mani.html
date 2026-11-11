@@ -88,12 +88,12 @@ try {
     await attendi(3000); // modello costruito e animazione d'entrata finita
     f.contentWindow.requestAnimationFrame(function c() { if (contando) fotogrammiIframe++; f.contentWindow.requestAnimationFrame(c); });
   }
-  const trovate = [0, 0, 0], lati = {}, palmi = [], gesti = {};
+  const trovate = [0, 0, 0], lati = {}, palmi = [], gesti = {}, fasi = []; // fasi: riposo, pronto, azione di gesti.js, in ordine
   let disegni = 0, mani = null;
   if (!base) {
     mani = createMani({
       sorgente: 'immagine', immagine: sorgente, delegato, hz,
-      onGesto: (g) => { gesti[g.tipo] = (gesti[g.tipo] || 0) + 1; },
+      onGesto: (g) => { gesti[g.tipo] = (gesti[g.tipo] || 0) + 1; if (g.tipo === 'stato' && fasi.length < 50) fasi.push(g.fase); },
       onMani: (m, ris) => {
         trovate[Math.min(2, m.length)]++;
         (ris.handedness || []).forEach((h, i) => { const k = `${h[0]?.categoryName}→${m[i]?.lato}`; lati[k] = (lati[k] || 0) + 1; });
@@ -129,7 +129,7 @@ try {
   if (mani) {
     const m = mani.misure;
     mani.ferma();
-    Object.assign(r, { delegato: m.delegato, avvio_ms: m.avvio_ms, detect_ms: m.detect_ms, rilevazioni: m.rilevazioni, rilevazioni_s: +(m.rilevazioni / durata).toFixed(1), fotogrammi_con_mani: { zero: trovate[0], una: trovate[1], due: trovate[2] }, lati_mediapipe_e_nostri: lati, palmo_mondo_mm: palmi.length ? +quantile(palmi, 0.5).toFixed(1) : null, gesti, errore: m.errore });
+    Object.assign(r, { delegato: m.delegato, avvio_ms: m.avvio_ms, detect_ms: m.detect_ms, rilevazioni: m.rilevazioni, rilevazioni_s: +(m.rilevazioni / durata).toFixed(1), fotogrammi_con_mani: { zero: trovate[0], una: trovate[1], due: trovate[2] }, lati_mediapipe_e_nostri: lati, palmo_mondo_mm: palmi.length ? +quantile(palmi, 0.5).toFixed(1) : null, gesti, fasi, misure_gesti: m.gesti, errore: m.errore });
   }
   const dur = intervalli.reduce((s, v) => s + v, 0) / 1000;
   Object.assign(r, {

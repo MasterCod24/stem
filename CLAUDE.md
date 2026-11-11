@@ -14,7 +14,24 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per STEM (nome, conversazione, comando, saluto), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «stem». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 10/11/2026)
+## Aperto (al 11/11/2026)
+- **Ricerca sui pezzi degli ologrammi: costruita e provata, mai usata da Tony** (11/11). Tony ha chiesto che a ogni ologramma STEM cerchi come è fatto ogni pezzo e di che materiale. Il 10/11 il MacBook Air fatto per lui aveva 37 pezzi su 37 con materiale «non detto».
+  - **Cosa c'è:** ogni pezzo può avere `materiale_vero`, `fattura` (come è fabbricato e montato) e `fonte`, che si vedono nella scheda del pezzo. Senza fonte la scheda scrive «stima di STEM, senza fonte». `materiale` resta la chiave del calcolo.
+  - Il cervello ha WebSearch e WebFetch, che non aprono il pannello e non chiudono l'ologramma. La persona li riserva agli ologrammi: ricerche e report restano a vista nel browser, come prima. La risposta dello strumento ha una riga «Materiali: …» che elenca cosa manca.
+  - **Attesa** (STEM di prova, «Fammi vedere un MacBook Air in 3D.», un campione per corsa): la prima vista arriva a 80 s col codice vecchio, a 109, 139, 155 e 262 s con la ricerca. La voce più grossa è il pensiero in silenzio dopo le ricerche (39–125 s).
+  - **Quanto copre:** in ogni corsa tutti i pezzi hanno `materiale_vero`. La fattura c'è su 11–17 pezzi e la fonte su 0–17, su 30–122 pezzi in tutto. Il cervello cambia molto da una corsa all'altra: 47 pezzi con 11 fonti e il giro mirato, oppure 122 pezzi con 0 fonti e senza giro mirato.
+  - **Le fonti reggono 2 volte su 5** (controllate a mano l'11/11): spesso la pagina conferma una parte sola, o parla di un altro modello (una pagina sull'M2 usata per l'M4). Da decidere con Tony: tenerle così, toglierle, o cercare di più aspettando di più.
+- **Mani con le regole di Tony: costruite e provate, mai usate da Tony** (11/11). Delle 12 regole scritte da STEM il 10/11, nessuna misurata, cinque c'erano già (1U, filtro, isteresi del pizzico, buco breve, niente doppi lanci). Le altre sono in `gesti.js`: il contratto dice come, e perché alcune sono cambiate o non fatte.
+  - **Fasi:** le mani partono a riposo e si accendono mostrando il palmo aperto per 0,3 s nel 70% centrale dell'immagine. La barra dice «mani: mostra il palmo», poi «mani pronte». Tornano a riposo dopo 4 s senza gesti né palmo. Se a Tony non piace: `innesco_ms: 0` in `PREDEFINITI` di `public/ologramma/gesti.js`.
+  - **Soglie nuove, mai provate sulle sue mani:**
+    - mappa a S: al centro metà velocità, ai bordi il doppio;
+    - zona morta di 3 px su 480;
+    - zona attiva del 70%;
+    - profilo oltre 75°: niente innesco né esplodi, il pizzico resta;
+    - un buco fino a 170 ms non interrompe il gesto.
+  - **Non fatte:** pizzico al 10–15% di 1U, scheletro ricostruito, previsione dalla velocità. Al loro posto si conta: la riga «mani accese» porta anche tremolio in px, inneschi, pizzichi con la distanza minima pollice-indice in U, buchi, salti e profilo. Dopo il primo uso vero si decide con quei numeri (`grep 'mani accese' runtime/server.log`).
+  - **Banco su foto vere** (`prove/mani-foto.mjs`): due pizzichi veri a 0,08 e 0,10 U. Il pugno ha rapporto 0,27 contro la soglia 0,25: un falso pizzico è possibile.
+  - HUD headless con due mani, due giri: p10 59 e 58 fps.
 - **HUD in stile JARVIS: costruito e fotografato, mai visto da Tony** (10/11). Al posto dell'umanoide c'è la sfera-cervello di `public/nucleo.js` dentro gli anelli. Le montagne sono state tolte e lo sfondo è nero.
   - **Costo** (`prove/grafica-banco.mjs`, GPU libera): 2,76–3,00 ms a fotogramma in ogni stato, contro i 4,15 dell'umanoide. Il margine per le mani cresce invece di calare.
   - **Mani col nucleo nuovo** (`prove/ologramma-hud.mjs`, headless sulla GPU dell'M2, turbofan con le quote e due mani, due giri il 10/11): fotogrammi contati per secondo con mediana 60 e p10 60. Nella misura mandata alla chiusura il minimo è stato 32, 42 e 43. È sempre con l'ascolto spento e la foto al posto della fotocamera, e la traccia del compositore non è stata rifatta.
@@ -26,14 +43,13 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
     - la scheda dell'ascolto con la voce vera di Tony, cioè con le parole parziali del riconoscitore locale;
     - l'HUD sul suo schermo, che ha accanto un secondo monitor 1920×1080;
     - i colori delle anomalie in un caso vero.
-- **Ologrammi: costruiti e provati, mai usati da Tony** (9/11). Cosa è vero e cosa no, e come si parlano i pezzi, sta nel contratto `public/ologramma/LEGGIMI-ologramma.md`. Tony non ha file CAD: i suoi oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello di Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
-  - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Headless sulla GPU dell'M2, con il turbofan e due mani, la traccia del compositore ha dato 54,4 fps: mediana per secondo 55 e p10 48, quindi 3 fps di margine. Era però con l'ascolto spento e una foto al posto della fotocamera.
+- **Ologrammi: usati da Tony per la prima volta il 10/11** (AirPods Pro e MacBook Air, stilizzati). Cosa è vero e cosa no, e come si parlano i pezzi, sta nel contratto `public/ologramma/LEGGIMI-ologramma.md`. Tony non ha file CAD: i suoi oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello di Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
+  - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Tony le ha usate con la fotocamera vera tre volte (registro al 10/11: 324, 47 e 233 s): p10 54, 48 e 55, minimo 43, 18 e 46. La regola regge; il minimo di 18 non è spiegato.
     - La misura vera arriva da sola. Quando l'ologramma si chiude, dopo almeno 10 s di mani accese, `runtime/server.log` riceve una riga «[ologramma] mani accese N s: fps mediana …, p10 …, minimo …, detect … ms» (`grep 'mani accese' runtime/server.log`).
     - Se il p10 vero sta sotto 45, le mani si spengono di base cambiando `maniVolute` in `public/stem.js`.
     - La riga non arriva se Tony chiude la finestra dell'HUD con l'ologramma aperto.
   - **A batteria sotto il 20%** il Risparmio energetico di Chrome limita ogni pagina a 30 fps, HUD compreso (misurato l'8/11). Una riga «mani accese» con mediana 30 viene da lì. Spegnerlo nel profilo dell'HUD costa batteria: lo decide Tony.
   - **Mai provati:**
-    - la fotocamera vera: la prima volta macOS chiede il permesso per STEM.app e Chrome quello dell'HUD; se Tony li nega, resta il mouse;
     - i gesti su Tony: le soglie sono da rifare con lui (filtro con beta 5, palmo 90 mm, presa 350 ms, lancio da circa 1 m/s);
     - i suoni nuovi, che nessuno ha ascoltato;
     - la frase breve («Te lo costruisco.») che la persona chiede prima di un modello nuovo.
@@ -95,7 +111,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - lo screencast CDP mandato all'HUD come MJPEG su `/api/screen`;
   - l'HUD stesso, un Chrome `--app` a schermo intero con il profilo `runtime/hud-profile`.
 - **`brain.mjs`** è il cervello: un solo `claude -p` in stream-json, sempre acceso. Il modello è Opus 5.5 (`claude-opus-5-5`) a effort `medium`, scelti con `STEM_MODEL` e `STEM_EFFORT`. Senza `--effort` il cervello prenderebbe l'effort delle impostazioni di Claude Code di Tony (`modelSettings` in `~/.claude/settings.json`, oggi `xhigh` per Opus 5.5), che servono a programmare.
-  - **Cosa può fare** (flag in `server.mjs`): `Read`, `Write`, `Edit`, `Glob` e `Grep`, ma non `Bash`. I file sono solo quelli delle cartelle dei documenti (`--add-dir`), e come MCP ha solo `playwright` e `mac`. Non ci sono domande di permesso: è approvato quello che sta dentro le cartelle, il resto è negato.
+  - **Cosa può fare** (flag in `server.mjs`): `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebSearch` e `WebFetch`, ma non `Bash`. WebSearch e WebFetch servono alla ricerca sui pezzi degli ologrammi; vanno anche in `--allowedTools`, se no sono negati in silenzio. I file sono solo quelli delle cartelle dei documenti (`--add-dir`), e come MCP ha solo `playwright` e `mac`. Non ci sono domande di permesso: è approvato quello che sta dentro le cartelle, il resto è negato.
   - **Dove vive:** il suo `cwd` è `~/Library/Application Support/STEM/cervello`, fuori dalla repository. La sua memoria è quella di Claude Code per quella cartella: `~/.claude/projects/-Users-tony-Library-Application-Support-STEM-cervello/memory/`. Lì STEM scrive da solo. `runtime/cervello` e `~/.claude/projects/-Users-tony-STEM-runtime-cervello` sono avanzi del vecchio `cwd`, usato fino al 1/11.
   - **Fare memoria:** da solo salvava quasi niente (3 ricordi in 184 domande al 1/11), quindi glielo chiede il server. Dopo 3 minuti senza domande, o circa 20 secondi dopo che l'HUD si è chiuso, gli manda un messaggio `[memoria]` che non viene letto ad alta voce. Le frasi finite in `[ignora]` non contano. Con `STEM_APP`, chiuso l'HUD, il server aspetta che la memoria finisca prima di spegnersi, ma non oltre 5 minuti dalla chiusura.
   - **Interruzioni:** una domanda nuova interrompe quella in corso con un `control_request` di tipo interrupt; se il turno non si chiude entro 4 secondi, il processo viene ucciso e rilanciato. Se muore, riparte con `--resume` sulla stessa sessione, mentre `/api/reset` lo fa ripartire da zero.
@@ -205,6 +221,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Agenda:** con `?debug`, `stemAsk('ricordami tra due minuti di …')`. Il compito compare in `runtime/agenda.json`, e quando STEM lo dice il registro del server scrive `[agenda] parlo per primo`. Gli strumenti da soli si provano anche senza cervello, con `ricorda` nella prova a mano di `mac/LEGGIMI-mac.md`.
 - **Ologrammi:** le prove stanno in `prove/`, non vogliono STEM acceso e vanno lanciate una alla volta, perché hanno porte fisse.
   - `node prove/ologramma-forme.mjs`, `ologramma-stato.mjs`, `struttura.mjs` (25 s), `ologramma-geometrie.mjs`, `gesti.mjs` e `fea/test-trave.mjs --mg 4 8`.
+  - `node prove/mani-foto.mjs <cartella>`: MediaPipe vero sulla GPU, su foto vere di mani (porte 4491 e 9591). Le foto vanno in `runtime/modelli/` e si scaricano solo se mancano.
   - `node prove/ologramma-server.mjs <cartella>`: il server vero sulle porte 4422, 8932, 9334 e 4498, con un cervello finto e un Chrome headless suo. Dura circa 30 s.
   - `node prove/ologramma-hud.mjs <cartella> <cartella-foto>`: l'HUD vero headless, sulla GPU dell'M2, porte 4431 e 9562. Dura circa 2 minuti e spegne il Risparmio energetico nel suo profilo. Vuole `runtime/modelli/prova-mani.jpg`, che non è nella repository: è un'immagine di prova di MediaPipe, e si scarica con
     ```bash
@@ -259,7 +276,10 @@ Restano decisioni di Tony, non lavoro sul codice:
   - Serve la preferenza `performance_tuning.battery_saver_mode.state = 0` nel `Local State` del profilo.
 - **Un profilo Chrome nuovo con l'HUD scarica il modello vocale italiano**, e intanto le misure sbagliano. Nelle prove di prestazioni il riconoscimento va spento.
 - **three.js: un `Box3` vuoto vale ±Infinity.** Un NaN finito nella camera ci resta per sempre, perché un lerp da NaN dà NaN: l'ingombro si controlla prima di usarlo.
-- **Un limite scritto senza misurarlo era falso.** Il commento di `TRIANGOLI_MAX` prometteva 45 fps con 2 milioni di triangoli; misurati con le mani, erano 33.
+- **Un limite scritto senza misurarlo era falso.** Il commento di `TRIANGOLI_MAX` prometteva 45 fps con 2 milioni di triangoli; misurati con le mani, erano 33. Lo stesso per un minimo trovato su poche sequenze: «due lanci ad almeno 667 ms» era il minimo delle prove, e una scansione più larga ne ha trovati a 567.
+- **Un numero preso da un altro contesto non è il «prima».** L'11/11 l'attesa con la ricerca (109–262 s) era stata confrontata con i circa 50 s di una domanda vera del 10/11, fatta a metà conversazione. Sullo stesso banco il codice vecchio dava 80 s. Prima e dopo si misurano con lo stesso banco, la stessa domanda e lo stesso avvio.
+- **Strumenti col nome nudo confondono il cervello.** Con WebSearch e WebFetch, che hanno il nome nudo, il cervello ha chiamato `mostra_ologramma` senza `mcp__mac__` 3 volte su 3, e mai prima. Riceveva «No such tool available» e riscriveva il modello: da 22 a 56 s persi. Ora la prima riga della sezione Ologrammi della persona scrive i nomi interi (provato su una corsa sola).
+- **Una prova che ricopia una formula del codice mente quando la formula cambia.** Gli 80,5 ms di ritardo del cursore dell'11/11 venivano dalla mappa lineare ricopiata nella prova, contro la mappa a S del codice; il ritardo vero era 23,5 ms. Ora l'atteso si calcola con `mappa()` importata da `gesti.js`.
 - **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
 - **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore.
 - **Un agente fermato dal limite di utilizzo lascia accesi i suoi STEM di prova**, con i loro Chrome e Playwright. È successo due volte, per tre ore e per tre ore e mezza. Alla ripresa si cercano con `lsof` sulle porte di prova e con `ps` sui profili della scratchpad.

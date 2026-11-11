@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { createOlogramma } from '../ologramma.mjs';
 import { DEMO_TURBOFAN, DEMO_STAFFA } from '../public/ologramma/demo.js';
 import { massaTesto, normalizzaPezzo, ingombro } from '../public/ologramma/forme.js';
+import { testoMisure } from '../public/ologramma/gesti.js';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4431, CDP = 9562, ORIGINE = `http://localhost:${PORTA}`, W = 1470, H = 956; // lo schermo di Tony in punti, a 2x
@@ -489,12 +490,21 @@ try {
   await cdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: script });
   script = (await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.removeItem('stem-mani') } catch {}" })).identifier; // la preferenza predefinita
   await vai(`${ORIGINE}/?debug&mani=immagine`);
+  // le fasi di gesti.js come le vede scena.js, con l'ora: stem.js le passa a stemOlo.gesto
+  await ev("window.__fasi = []; const g0 = stemOlo.gesto; stemOlo.gesto = (g) => { if (g?.tipo === 'stato') window.__fasi.push([g.fase, performance.now()]); return g0(g); }; true");
   await ev("stemOlogrammaDemo('turbofan')");
   const partite = await attendi(() => ev('window.__misure.mani?.attive && window.__misure.mani.rilevazioni >= 30'), 20000, 200);
   const m1 = await ev('window.__misure.mani');
+  const indizio = () => ev("({ testo: document.querySelector('.holo-mani')?.textContent ?? null, riposo: document.getElementById('dita').classList.contains('riposo') })");
   const dita = await ev("({ dita: document.querySelectorAll('#dita i.on').length, cursore: !!document.querySelector('.holo-cur.on') })");
   esito(partite && m1.delegato === 'GPU', "MediaPipe parte da solo all'apertura, con la preferenza predefinita", `delegato ${m1.delegato}, avvio ${m1.avvio_ms} ms, ${m1.mani} mani viste`);
   esito(m1.mani > 0 && dita.dita === 2 * m1.mani && dita.cursore, 'pollice e indice di ogni mano, più il cursore dei gesti', JSON.stringify(dita));
+  // la foto di prova ha due palmi aperti: gesti.js parte a riposo e l'innesco arriva da solo, dopo innesco_ms
+  const fasi1 = await ev('window.__fasi'), ind1 = await indizio();
+  const pronto1 = fasi1.find((f) => f[0] === 'pronto'), riposo1 = fasi1.find((f) => f[0] === 'riposo');
+  esito(fasi1[0]?.[0] === 'riposo' && pronto1 && pronto1[1] - riposo1[1] >= 300 && ind1.testo === 'mani pronte' && !ind1.riposo,
+    "le mani partono a riposo e i due palmi aperti della foto fanno l'innesco; la barra dice «mani pronte»",
+    `fasi ${fasi1.map((f) => f[0]).join(' → ')}, innesco ${pronto1 && riposo1 ? Math.round(pronto1[1] - riposo1[1]) : '—'} ms dopo la partenza; barra «${ind1.testo}», dita tenui ${ind1.riposo}`);
   await pausa(1000);
   await misuraFps('con due mani');
   await foto('6-mani');
@@ -503,7 +513,8 @@ try {
   const scaricati = () => ['/mediapipe/wasm/vision_wasm_internal.wasm', '/modelli/hand_landmarker.task'].map((x) => percorsi.get(x) || 0).join('+');
   const prima2 = { rete: scaricati(), script: await ev("document.querySelectorAll('script').length") };
   await tasto('m'); await pausa(300);
-  const spente = await ev("({ attive: window.__misure.mani.attive, scelta: localStorage.getItem('stem-mani'), avviso: document.getElementById('warn').textContent, dita: document.querySelectorAll('#dita i.on').length })");
+  const spente = await ev("({ attive: window.__misure.mani.attive, scelta: localStorage.getItem('stem-mani'), avviso: document.getElementById('warn').textContent, dita: document.querySelectorAll('#dita i.on').length, barra: document.querySelector('.holo-mani')?.textContent })");
+  esito(spente.barra === '' && (await ev('window.__fasi.at(-1)[0]')) === 'spente', 'mani spente col tasto M: la barra non dice niente', `barra «${spente.barra}»`);
   await tasto('m');
   const tRiaccese = Date.now(), riaccese = await attendi(() => ev("window.__misure.mani.attive && localStorage.getItem('stem-mani') === '1'"), 10000, 50);
   esito(!spente.attive && spente.scelta === '0' && /spente/i.test(spente.avviso) && spente.dita === 0 && riaccese, 'M spegne e riaccende le mani, e la scelta resta', JSON.stringify(spente));
@@ -516,7 +527,11 @@ try {
   esito(!fine.attive && fine.video === 0 && fine.dita === 0 && !fine.aperto, 'alla chiusura le mani si fermano', JSON.stringify(fine));
   const mis = (await attendi(() => registro.slice(n4).find((r) => r.via === 'misura'), 2000))?.corpo;
   esito(mis && mis.secondi >= 20 && [mis.fps.mediana, mis.fps.p10, mis.fps.minimo].every(Number.isInteger) && mis.fps.minimo <= mis.fps.p10 && mis.fps.p10 <= mis.fps.mediana &&
-    Number.isFinite(mis.detect_ms) && mis.prova === true, "alla chiusura l'HUD manda al server la misura delle mani: secondi, fps per secondo, detect", JSON.stringify(mis));
+    Number.isFinite(mis.detect_ms) && mis.prova === true, "alla chiusura l'HUD manda al server la misura delle mani: secondi, fps per secondo, detect", JSON.stringify({ ...mis, gesti: undefined }));
+  // con loro le misure d'uso vero dei gesti, dall'ultimo avvio (M le ha azzerate): quelle che server.mjs scrive nella stessa riga
+  const g = mis?.gesti, riga = g && testoMisure(g);
+  esito(g && g.inneschi >= 1 && g.secondi > 2 && Number.isFinite(g.tremolio_px) && g.tremolio_n > 0 && !('tremolio' in g) && typeof riga === 'string' && riga.length > 0,
+    'e le misure dei gesti, solo numeri, che il server accetta', riga ? `riga: …${riga}` : JSON.stringify(g));
 
   titolo('MediaPipe che non parte');
   await cdp('Network.setBlockedURLs', { urls: ['*/mediapipe/*'] });

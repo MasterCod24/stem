@@ -187,6 +187,12 @@ if (esito(Boolean(claude), 'il processo claude del cervello è partito')) {
   esito(dopo('--append-system-prompt') === PERSONA, 'la persona arriva intera, byte per byte', `${Buffer.byteLength(PERSONA)} B`);
   esito(/## Ologrammi/.test(dopo('--append-system-prompt')) && ['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura'].every((n) => dopo('--append-system-prompt').includes(n)),
     'la persona ha la sezione Ologrammi con i tre strumenti');
+  // Le ricerche sui pezzi passano da WebSearch e WebFetch: devono esserci e devono essere approvati, se no con
+  // --permission-prompts none verrebbero negati in silenzio. Bash resta fuori.
+  const strumenti = dopo('--tools').split(','), approvati = a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--disallowedTools'));
+  esito(['WebSearch', 'WebFetch'].every((n) => strumenti.includes(n) && approvati.includes(n)) && !strumenti.includes('Bash') && approvati.includes('mcp__mac') && approvati.includes('mcp__playwright'),
+    'il cervello ha WebSearch e WebFetch, approvati senza domande, e non ha Bash', `--tools ${dopo('--tools')}; --allowedTools ${approvati.join(' ')}`);
+  esito(['WebSearch', 'materiale_vero', 'fattura', 'fonte'].every((n) => dopo('--append-system-prompt').includes(n)), 'la persona dice di cercare con WebSearch e nomina i tre campi del pezzo');
   const dirs = a.slice(a.indexOf('--add-dir') + 1, a.indexOf('--mcp-config'));
   esito(dirs.length === 2 && dirs.includes(path.join(CASA, 'Desktop')) && dirs.includes(DOC) && a.indexOf('--add-dir') > 0,
     'le cartelle dei documenti sono quelle della prova', dirs.join(', '));
@@ -296,6 +302,12 @@ const P = per.mostra_ologramma?.inputSchema?.properties?.pezzi?.items?.propertie
 esito(JSON.stringify(P?.materiale?.enum) === JSON.stringify(Object.keys(MATERIALI)) && JSON.stringify(per.analizza_struttura?.inputSchema?.properties?.carichi?.items?.properties?.faccia?.enum) === JSON.stringify([...FACCE]) &&
   /mm/.test(P?.misure?.description) && per.modifica_ologramma?.inputSchema?.properties?.vista?.properties?.modo?.enum?.includes('raggi-x'),
   'gli schemi hanno le chiavi dei materiali, le facce, le misure in mm e i modi');
+esito(['materiale_vero', 'fattura', 'fonte'].every((k) => P?.[k]?.type === 'string' && /al massimo (60|140)/.test(P[k].description)) && /chiave del calcolo/.test(P?.materiale?.description) && /stima/.test(P?.fonte?.description),
+  'lo schema del pezzo ha materiale_vero, fattura e fonte, e distingue la chiave del calcolo dal materiale vero');
+// Le definizioni stanno nel contesto del cervello a ogni domanda. Prima dei tre campi i tre strumenti pesavano 8.441 B
+// (misurati sul tools/list del 10/11): il tetto lascia 700 B ai campi nuovi, e chi li gonfia lo vede qui.
+const pesoOlo = Buffer.byteLength(JSON.stringify(lista.filter((x) => ['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura'].includes(x.name))));
+esito(pesoOlo <= 8441 + 700, 'i tre strumenti degli ologrammi restano entro 9.141 B', `${pesoOlo} B; tools/list intero ${Buffer.byteLength(JSON.stringify(lista))} B`);
 const MO = per.modifica_ologramma?.inputSchema?.properties;
 esito(MO?.titolo?.type === 'string' && MO?.descrizione?.type === 'string' && /titolo/.test(per.modifica_ologramma?.description) && !/\bsicur[oa]\b/i.test(JSON.stringify(lista)),
   'modifica_ologramma cambia anche titolo e descrizione; nessuno strumento chiama «sicuro» un colore');
@@ -313,6 +325,16 @@ esito(t.testo.includes('2 pezzi.') && t.testo.includes('Ingombro 60 × 56 × 40 
 t = await M.strumento('modifica_ologramma', { titolo: 'Staffa in S235', descrizione: 'Base e braccio.' });
 s = await stato();
 esito(!t.errore && t.testo.startsWith('Fatto: titolo, descrizione.') && s.titolo === 'Staffa in S235' && s.descrizione === 'Base e braccio.', 'modifica_ologramma cambia titolo e descrizione', t.testo.split('\n')[0]);
+// La ricerca sui pezzi: i tre campi arrivano allo stato, la riga dice cosa manca, un testo vuoto li toglie
+const rigaMateriali = (x) => x.split('\n').find((l) => l.startsWith('Materiali:')) || '';
+t = await M.strumento('modifica_ologramma', { cambia: [{ id: 'base', materiale_vero: 'acciaio S235JR zincato', fattura: 'tagliata al laser e piegata', fonte: 'scheda del fornitore 2024' }, { id: 'braccio', materiale_vero: 'acciaio S235JR' }] });
+s = await stato();
+esito(!t.errore && s.pezzi[0].materiale_vero === 'acciaio S235JR zincato' && s.pezzi[0].fattura === 'tagliata al laser e piegata' && s.pezzi[0].fonte === 'scheda del fornitore 2024' && s.pezzi[0].materiale === 'acciaio-s235' &&
+  rigaMateriali(t.testo) === 'Materiali: 2 pezzi su 2 hanno il materiale. Senza fattura: «braccio». Senza fonte, quindi stime: «braccio».',
+  'cambia con materiale_vero, fattura e fonte: stanno nello stato, e il testo dice cosa manca', rigaMateriali(t.testo));
+t = await M.strumento('modifica_ologramma', { cambia: [{ id: 'base', materiale_vero: '', fattura: '', fonte: '' }, { id: 'braccio', materiale_vero: '' }] });
+s = await stato();
+esito(!t.errore && s.pezzi.every((p) => p.materiale_vero === null && p.fattura === null && p.fonte === null) && rigaMateriali(t.testo) === '', 'un testo vuoto toglie i campi, e senza niente da dire la riga sparisce');
 await M.strumento('modifica_ologramma', { titolo: 'Staffa', descrizione: '' });
 t = await M.strumento('modifica_ologramma', { togli: ['braccio'] });
 esito(!t.errore && t.testo.startsWith('Fatto: tolti «braccio».') && t.testo.includes('di cui 1 tolto'), 'modifica_ologramma togli', t.testo.split('\n')[0]);
@@ -452,6 +474,15 @@ r = await chiedi('POST', '/api/ologramma', { corpo: { ...MISURA, secondi: 12, pr
 await attendi(() => S1.registro.includes('mani accese 12 s (foto di prova'), 1000);
 esito(r.codice === 204 && S1.registro.includes('[ologramma] mani accese 12 s (foto di prova al posto della fotocamera): fps mediana 55, p10 48, minimo 46, detect —\n'),
   'con la foto di prova la riga lo dice');
+// le misure dei gesti vanno in coda alla stessa riga; storte, si scartano loro e la riga degli fps resta (regola dei 45 fps)
+r = await chiedi('POST', '/api/ologramma', { corpo: { ...MISURA, secondi: 13, gesti: { inneschi: 5, scaduti: 2, profilo: 0.22 } }, intestazioni: HUD });
+await attendi(() => S1.registro.includes('mani accese 13 s'), 1000);
+esito(r.codice === 204 && S1.registro.includes('[ologramma] mani accese 13 s: fps mediana 55, p10 48, minimo 46, detect 21 ms; inneschi 5 (scaduti 2); profilo 22%\n'),
+  'le misure dei gesti in coda alla stessa riga');
+r = await chiedi('POST', '/api/ologramma', { corpo: { ...MISURA, secondi: 14, gesti: { profilo: 1.5, ignota: 1 } }, intestazioni: HUD });
+await attendi(() => S1.registro.includes('mani accese 14 s'), 1000);
+esito(r.codice === 204 && S1.registro.includes('[ologramma] mani accese 14 s: fps mediana 55, p10 48, minimo 46, detect 21 ms; misure dei gesti scartate (storte)\n'),
+  'gesti storti: si scartano loro, la riga degli fps resta');
 
 // ---------------------------------------------------------------- MediaPipe e modello delle mani
 titolo('MediaPipe e modello delle mani');
@@ -494,6 +525,11 @@ const readline = require('readline');
 const out = (o) => process.stdout.write(JSON.stringify({ ...o, session_id: '00000000-0000-4000-8000-000000004422' }) + '\\n');
 const testo = (s) => { out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: s } } }); out({ type: 'stream_event', event: { type: 'content_block_stop' } }); };
 const report = (blocchi) => out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_prova', name: 'mcp__mac__mostra_report', input: { titolo: 'Prova', blocchi } }] } });
+const ricerca = () => out({ type: 'assistant', message: { content: [
+  { type: 'tool_use', id: 'toolu_w0', name: 'WebSearch', input: { query: 'parolasegreta teardown' } },
+  ...['https://www.ifixit.com/Teardown/parolasegreta/1?q=parolasegreta', 'https://support.apple.com/it-it/parolasegreta', 'https://www.apple.com/environment/pdf/parolasegreta.pdf', 'https://en.wikipedia.org/wiki/parolasegreta', 'non un indirizzo']
+    .map((url, i) => ({ type: 'tool_use', id: 'toolu_w' + (i + 1), name: 'WebFetch', input: { url, prompt: 'parolasegreta: di che materiale è?' } })),
+] } });
 out({ type: 'system', subtype: 'init' });
 readline.createInterface({ input: process.stdin }).on('line', (l) => {
   let m; try { m = JSON.parse(l); } catch { return; }
@@ -502,6 +538,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   if (t.includes('[memoria]')) testo('fatto.');
   else if (/\\bvuoto\\b/.test(t)) report([]);
   else if (/\\breport\\b/.test(t)) report([{ tipo: 'testo', titolo: 'Uno', testo: 'Prova.' }]);
+  else if (/\\bricerca\\b/.test(t)) { ricerca(); testo('Trovato.'); }
   else if (/\\bbrowser\\b/.test(t)) testo('Cerco. [[mostra]] Un attimo.');
   else testo('Va bene.');
   out({ type: 'result', subtype: 'success', is_error: false });
@@ -529,6 +566,14 @@ esito(r.j?.ok && (await stato()).aperto === true, 'vista {} lo riapre davvero', 
 const vAperto = (await stato()).versione;
 ev = await domanda('un report vuoto');
 esito(ev.some((e) => e.t === 'report') && (await stato()).aperto === true && (await stato()).versione === vAperto, 'un report senza blocchi (che chiude il report) lascia aperto l\'ologramma');
+// Sei ricerche senza browser (una WebSearch e cinque WebFetch): eventi «web», niente pannello, ologramma aperto.
+// Prima uscivano come eventi «file»; e con le azioni del browser la quarta apre il pannello e chiude l'ologramma.
+ev = await domanda('fai una ricerca sui pezzi');
+const web = ev.filter((e) => e.t === 'web');
+esito(web.map((e) => e.name).join() === 'ricerca,pagina,pagina,pagina,pagina,pagina' && web.map((e) => e.detail).join() === ',ifixit.com,support.apple.com,apple.com,en.wikipedia.org,' && !ev.some((e) => e.t === 'file' || e.t === 'tool'),
+  'WebSearch e WebFetch escono come eventi «web»: ricerca senza dettaglio, pagina col solo nome del sito', web.map((e) => `${e.name}:${e.detail}`).join(' '));
+esito(!JSON.stringify(ev).includes('parolasegreta') && !S1.registro.includes('parolasegreta'), "le parole cercate e gli indirizzi interi non arrivano né all'HUD né al registro");
+esito(!ev.some((e) => e.t === 'show' || e.t === 'holo') && (await stato()).aperto === true && (await stato()).versione === vAperto, "sei ricerche non aprono il pannello del browser e l'ologramma resta aperto", ev.map((e) => e.t).join(', '));
 ev = await domanda('apri il browser');
 const vChiuso = (await stato()).versione;
 esito(ev.some((e) => e.t === 'show') && (await stato()).aperto === false, "[[mostra]] apre il browser e chiude l'ologramma anche nel server", ev.map((e) => e.t).join(', '));

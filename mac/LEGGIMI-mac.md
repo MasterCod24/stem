@@ -28,7 +28,7 @@ Senza `--porta` vale 4321; una porta non valida non ripiega sulla 4321, così un
 | `mostra_report` | il report a schermo intero nell'HUD; lo strumento risponde e basta, i blocchi li legge `brain.mjs` dalla chiamata |
 | `ricorda` | segna un compito in `runtime/agenda.json` con `tra_minuti` oppure `alle` («18:00», o «2026-11-07T08:30»); a batteria aggiunge l'avviso che il Mac può andare in stop |
 | `agenda` | elenca i compiti; `togli` li cancella per numero. All'ora giusta li consegna `server.mjs` (vedi `orologio.mjs`) |
-| `mostra_ologramma` | apre nell'HUD un ologramma 3D fatto di pezzi con misure in mm (forme, materiali, carichi e vincoli come in `public/ologramma/LEGGIMI-ologramma.md`) |
+| `mostra_ologramma` | apre nell'HUD un ologramma 3D fatto di pezzi con misure in mm (forme, materiali, carichi e vincoli come in `public/ologramma/LEGGIMI-ologramma.md`); ogni pezzo può portare `materiale_vero`, `fattura` e `fonte` da una ricerca, e la risposta elenca i pezzi a cui mancano |
 | `modifica_ologramma` | cambia pezzi, vista, carichi, vincoli, titolo e descrizione; `chiudi` lo chiude; senza campi dice com'è adesso |
 | `analizza_struttura` | calcola gli sforzi e aspetta il risultato fino a 60 s |
 

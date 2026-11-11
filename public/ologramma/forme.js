@@ -37,7 +37,7 @@ function congela(o) {
 
 // Congelati perché sono condivisi: chi li usa ne fa una copia, e i pezzi non li riferiscono mai.
 export const PREDEFINITI = congela({
-  pezzo: { posizione: [0, 0, 0], rotazione: [0, 0, 0], materiale: 'generico', gruppo: null, esplodi: null, interno: false, flusso: null, calcolo: true },
+  pezzo: { posizione: [0, 0, 0], rotazione: [0, 0, 0], materiale: 'generico', materiale_vero: null, fattura: null, fonte: null, gruppo: null, esplodi: null, interno: false, flusso: null, calcolo: true },
   senza_calcolo: ['cavo', 'file'], // per queste forme calcolo vale false se non è detto
   misure: {
     cono: { r_cima: 0 },
@@ -49,8 +49,13 @@ export const PREDEFINITI = congela({
   vista: { esploso: 0, sezione: null, modo: 'ologramma', selezionato: null, isolato: null, rotazione_auto: false },
 });
 // esplodi null vuol dire direzione non detta: la sceglie la scena. gruppo null: il pezzo esplode da solo.
+// materiale_vero, fattura e fonte null: non detti. Con materiale_vero o fattura ma senza fonte, è una stima di STEM.
 
-const TESTO_MAX = { titolo: 80, descrizione: 300, nome: 60, gruppo: 40 };
+const TESTO_MAX = { titolo: 80, descrizione: 300, nome: 60, gruppo: 40, materiale_vero: 60, fattura: 140, fonte: 60 };
+// Quello che una ricerca ha trovato sul pezzo vero: testo libero, solo da leggere nella scheda. `materiale` resta la
+// chiave del calcolo (le 9 di materiali.js): vetro, litio o rame non ci sono, e senza questi campi un «MacBook Air» di
+// 37 pezzi usciva tutto 'generico' (10/11). Corti perché il cervello li scrive per ogni pezzo: numeri di Tony, non misurati.
+export const CAMPI_RICERCA = Object.freeze(['materiale_vero', 'fattura', 'fonte']);
 const FORZA_MAX = 1e7; // N
 const ESPLODI_MAX = 5;
 const DENTI_MIN = 6, DENTI_MAX = 200;
@@ -895,7 +900,7 @@ function leggiPercorso(C, v) {
   return s;
 }
 
-const CAMPI_PEZZO = ['id', 'nome', 'forma', 'misure', 'posizione', 'rotazione', 'materiale', 'gruppo', 'esplodi', 'interno', 'flusso', 'calcolo'];
+const CAMPI_PEZZO = ['id', 'nome', 'forma', 'misure', 'posizione', 'rotazione', 'materiale', ...CAMPI_RICERCA, 'gruppo', 'esplodi', 'interno', 'flusso', 'calcolo'];
 
 function normalizzaPezzoIn(p, posto) {
   if (!oggetto(p)) return { pezzo: null, errori: [`${posto}: deve essere un oggetto { id, forma, misure, … }, non ${mostra(p)}`], avvisi: [] };
@@ -921,6 +926,9 @@ function normalizzaPezzoIn(p, posto) {
     if (typeof p.materiale === 'string' && Object.hasOwn(MATERIALI, p.materiale)) materiale = p.materiale;
     else C.err('materiale', `${mostra(p.materiale)} è sconosciuto: i materiali sono ${Object.keys(MATERIALI).join(', ')}`);
   }
+  // Come nome: testo, spazi puliti, i più lunghi tagliati con un avviso. Vuoto vale non detto, e in cambia toglie il campo.
+  const ricerca = {};
+  for (const k of CAMPI_RICERCA) ricerca[k] = leggiTesto(C, p[k], k, TESTO_MAX[k], { facoltativo: true, predefinito: null });
   const gruppo = leggiTesto(C, p.gruppo, 'gruppo', TESTO_MAX.gruppo, { facoltativo: true, predefinito: null, taglia: false });
   let esplodi = null;
   if (p.esplodi != null) {
@@ -937,7 +945,7 @@ function normalizzaPezzoIn(p, posto) {
   let calcolo = leggiBooleano(C, p.calcolo, 'calcolo', !PREDEFINITI.senza_calcolo.includes(forma));
   if (forma === 'file' && calcolo === true) { C.avv('calcolo', "resta false: il server non apre i file, quindi un pezzo 'file' non entra nel calcolo"); calcolo = false; }
   if (C.errori.length) return { pezzo: null, errori: C.errori, avvisi: C.avvisi };
-  return { pezzo: { id: p.id, nome, forma, misure, posizione, rotazione, materiale, gruppo, esplodi, interno, flusso, calcolo }, errori: [], avvisi: C.avvisi };
+  return { pezzo: { id: p.id, nome, forma, misure, posizione, rotazione, materiale, ...ricerca, gruppo, esplodi, interno, flusso, calcolo }, errori: [], avvisi: C.avvisi };
 }
 
 /** Un pezzo dal cervello → { pezzo, errori, avvisi }: con i predefiniti, i numeri controllati e oggetti tutti nuovi; pezzo è null se ci sono errori. */

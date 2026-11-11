@@ -210,7 +210,7 @@ const CSS = `
 .holo-card b { display: block; margin-bottom: 4px; font: 300 16px/1.2 var(--o-s); letter-spacing: .14em; text-transform: uppercase; color: var(--o-cv); text-shadow: var(--o-gl); }
 .holo-card div { margin-top: 8px; }
 .holo-card .k { display: block; margin-bottom: 3px; font: 400 8.5px/1 var(--o-m); letter-spacing: .22em; text-transform: uppercase; color: var(--o-t2); }
-.holo-card .v { font: 300 12.5px/1.35 var(--o-s); letter-spacing: .03em; color: var(--o-t1); }
+.holo-card .v { font: 300 12.5px/1.35 var(--o-s); letter-spacing: .03em; color: var(--o-t1); overflow-wrap: anywhere; } /* una fonte senza spazi non esce dai 300 px */
 .holo-leg { position: absolute; left: 2.2vw; bottom: 3.2vh; width: min(34vw, 420px); font: 400 9px/1.3 var(--o-m); letter-spacing: .14em; color: var(--o-t1);
   opacity: 0; transition: opacity .3s; }
 .holo-leg.on { opacity: 1; }
@@ -231,7 +231,9 @@ const CSS = `
 .holo-cur { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 1px solid var(--o-cv); border-radius: 50%;
   box-shadow: 0 0 10px rgba(62, 230, 255, .6); opacity: 0; transition: opacity .2s; }
 .holo-cur.on { opacity: 1; }
-.holo-cur.presa { background: rgba(62, 230, 255, .22); }`;
+.holo-cur.presa { background: rgba(62, 230, 255, .22); }
+.holo-cur.azione { box-shadow: 0 0 14px rgba(62, 230, 255, .95); }
+.holo-top .holo-mani { font: 400 9.5px/1 var(--o-m); letter-spacing: .2em; color: var(--o-c); text-shadow: var(--o-gl); }`;
 
 function el(tag, cls, padre) { const e = document.createElement(tag); if (cls) e.className = cls; if (padre) padre.append(e); return e; }
 const taglia = (s, n) => (typeof s === 'string' ? (s.length > n ? s.slice(0, n - 1) + '…' : s) : '');
@@ -309,6 +311,9 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
   if (!document.getElementById('holo-stile')) { const s = el('style'); s.id = 'holo-stile'; s.textContent = CSS; document.head.append(s); }
   const radice = el('div', 'holo', contenitore);
   const barra = el('div', 'holo-top', radice), titoloEl = el('span', '', barra), contaEl = el('span', '', barra);
+  // L'indizio delle mani, fra titolo e conteggio: dice cosa fare quando gesti.js è a riposo. Cambia solo coi cambi di fase
+  const maniEl = el('span', 'holo-mani'); barra.insertBefore(maniEl, contaEl);
+  let faseMani = 'spente';
   const descEl = el('div', 'holo-desc', radice);
   const scheda = el('div', 'holo-card', radice);
   const legenda = el('div', 'holo-leg', radice);
@@ -660,7 +665,12 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     scheda.classList.toggle('on', !!R && aperto);
     if (R) {
       const p = R.p, M = MATERIALI[p.materiale], righe = [];
-      righe.push(['materiale', p.materiale === 'generico' ? 'non detto (si disegna, non si calcola)' : `${M.nome} · ${numero(M.densita, 0)} kg/m³${M.affidabile ? '' : ' · non isotropo'}`]);
+      // materiale_vero, fattura e fonte vengono dalla ricerca di STEM sul pezzo vero; la chiave `materiale` è solo quella
+      // del calcolo, e accanto a un materiale vero si dichiara come tale. Senza fonte è una stima, e la scheda lo dice.
+      const chiave = p.materiale === 'generico' ? '' : `${M.nome} · ${numero(M.densita, 0)} kg/m³${M.affidabile ? '' : ' · non isotropo'}`;
+      righe.push(['materiale', p.materiale_vero ? p.materiale_vero + (chiave ? ` · calcolato come ${chiave}` : '') : chiave || 'non detto (si disegna, non si calcola)']);
+      if (p.fattura) righe.push(['fattura', p.fattura]);
+      if (p.materiale_vero || p.fattura) righe.push(['fonte', p.fonte || 'stima di STEM, senza fonte']);
       const vol = volume(p), kg = finito(vol) && finito(M.densita) ? vol * M.densita * 1e-9 : null;
       const b = R.box.getSize(v1), misure = misurabile(R) ? [b.x, b.y, b.z].map(mmTesto).join(' × ') + ' mm' : ''; // un file non ancora aperto non ha misure
       if (kg !== null || misure) righe.push(['misure', [kg !== null ? massaTesto(kg) : '', misure].filter(Boolean).join(' · ')]);
@@ -942,10 +952,21 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     radice.classList.remove('on'); scheda.classList.remove('on'); legenda.classList.remove('on');
     ostacolo(0, null); ostacolo(1, null);
     spegniCursore(); // chiuso durante una presa: alla riapertura il cursore non deve sembrare ancora «preso»
+    impostaFaseMani('spente'); // le mani si fermano con l'ologramma; alla riapertura gesti.js ridice la sua fase
   }
   // Le mani escono senza un gesto che lo dica: gesti.js smette di mandare 'cursore'. Dopo 400 ms (12 rilevazioni a 30 Hz)
   // il cursore si spegne e il pezzo sotto non resta evidenziato; una presa senza mani è finita.
   function spegniCursore() { ultimoCursore = 0; sopra = null; presa = null; cursore.classList.remove('on', 'presa'); }
+  // Le fasi di gesti.js, più 'spente' da stem.js quando le mani si fermano. A riposo il cursore si spegne subito: nessun
+  // gesto arriva finché Tony non mostra il palmo, e la barra glielo dice; senza, sembrerebbe che le mani non vadano più.
+  const TESTI_MANI = { riposo: 'mani: mostra il palmo', pronto: 'mani pronte', azione: 'mani pronte' };
+  function impostaFaseMani(fase) {
+    if (fase === faseMani) return;
+    faseMani = fase;
+    maniEl.textContent = TESTI_MANI[fase] || '';
+    cursore.classList.toggle('azione', fase === 'azione');
+    if (fase !== 'pronto' && fase !== 'azione') spegniCursore();
+  }
 
   // ---------------------------------------------------------------- ogni fotogramma, prima del render dell'HUD
   function fotogramma(t, dt) {
@@ -1165,6 +1186,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     if (!aperto || !g || typeof g !== 'object') return;
     const W = innerWidth, H = innerHeight, x = Number(g.x) * W, y = Number(g.y) * H;
     switch (g.tipo) {
+      case 'stato': impostaFaseMani(['riposo', 'pronto', 'azione'].includes(g.fase) ? g.fase : 'spente'); break;
       case 'cursore': {
         if (!finito(x) || !finito(y)) return;
         cursore.classList.add('on');
