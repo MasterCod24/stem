@@ -612,6 +612,55 @@ titolo('10d. Ricerca sui pezzi: la riga che dice cosa manca, cambia che toglie, 
   void fc;
 }
 
+// ------------------------------------------------------------------ 10e. colore dei pezzi
+titolo('10e. Colore dei pezzi: mostra, cambia, versione, niente ricalcolo, salvataggio e ripresa');
+{
+  const colori = (O) => Object.fromEntries(O.stato().pezzi.map((p) => [p.id, p.colore]));
+  const acqua = () => ({ titolo: "Molecola d'acqua", pezzi: [
+    { id: 'ossigeno', forma: 'sfera', misure: { r: 76 }, colore: '#E53935' },
+    { id: 'idrogeno-1', forma: 'sfera', misure: { r: 53 }, posizione: [158, -122, 0], colore: '#fff' },
+    { id: 'legame-1', forma: 'cilindro', misure: { r: 10, h: 81 }, posizione: [88, -68, 0], rotazione: [0, 0, 52.25] },
+  ] });
+  const dir = cartella(), { O, cambi } = nuovo({ cartella: dir });
+  let r = O.esegui({ azione: 'mostra', modello: acqua() });
+  esito(r.ok && uguale(colori(O), { ossigeno: '#e53935', 'idrogeno-1': '#ffffff', 'legame-1': null }) && !/sconosciut/.test(r.testo),
+    'mostra: i colori nello stato, normalizzati in #rrggbb minuscolo; senza colore è null, e nessun avviso di campo sconosciuto', JSON.stringify(colori(O)));
+  const v0 = O.stato().versione, n0 = cambi.length;
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '#1E88E5' }, { id: 'legame-1', colore: '#ccc' }] });
+  esito(r.ok && O.stato().versione === v0 + 1 && cambi.length === n0 + 1 && uguale(colori(O), { ossigeno: '#1e88e5', 'idrogeno-1': '#ffffff', 'legame-1': '#cccccc' }) && r.testo.startsWith('Fatto: cambiati'),
+    'cambia col solo colore: versione nuova e un avviso all\'HUD, gli altri pezzi restano', `versione ${v0} → ${O.stato().versione}`);
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '' }, { id: 'legame-1', colore: null }] });
+  esito(r.ok && O.stato().versione === v0 + 2 && uguale(colori(O), { ossigeno: null, 'idrogeno-1': '#ffffff', 'legame-1': null }), 'cambia con colore vuoto o null lo toglie', JSON.stringify(colori(O)));
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '' }] });
+  esito(r.ok && r.testo.startsWith('Niente da cambiare') && O.stato().versione === v0 + 2, 'togliere un colore che non c\'è non fa una versione nuova');
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'idrogeno-1', colore: '#FFFFFF' }] });
+  esito(r.ok && r.testo.startsWith('Niente da cambiare') && O.stato().versione === v0 + 2, 'lo stesso colore scritto in maiuscolo non è un cambio');
+  r = O.esegui({ azione: 'modifica', cambia: [{ id: 'idrogeno-1', colore: 'bianco' }] });
+  esito(!r.ok && r.codice === 400 && /colore "bianco" non è un colore/.test(r.errori.join(' ')) && O.stato().versione === v0 + 2 && colori(O)['idrogeno-1'] === '#ffffff',
+    'un colore a parole: 400, l\'errore lo dice, e niente cambia', r.errori?.[0]);
+  r = O.esegui({ azione: 'modifica', aggiungi: [{ id: 'idrogeno-2', forma: 'sfera', misure: { r: 53 }, posizione: [-158, -122, 0], colore: '#f5f5f5' }] });
+  esito(r.ok && colori(O)['idrogeno-2'] === '#f5f5f5', 'aggiungi accetta il colore come mostra');
+
+  // salvataggio e ripresa: i colori tornano uguali
+  const B = nuovo({ cartella: dir });
+  esito(B.O.carica() === true && uguale(B.O.stato(), O.stato()) && B.O.testo() === O.testo(), 'dopo il riavvio lo stato, colori compresi, è identico', JSON.stringify(colori(B.O)));
+  // uno stato salvato prima del campo colore (senza la chiave) si riapre uguale, con colore null
+  const file = path.join(dir, 'ologramma.json'), salvato = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const p of salvato.stato.pezzi) delete p.colore;
+  fs.writeFileSync(file, JSON.stringify(salvato));
+  const V = nuovo({ cartella: dir });
+  esito(V.O.carica() === true && V.O.stato().pezzi.length === O.stato().pezzi.length && V.O.stato().pezzi.every((p) => p.colore === null) &&
+    uguale(V.O.stato().pezzi.map(({ colore, ...resto }) => resto), O.stato().pezzi.map(({ colore, ...resto }) => resto)) && V.O.stato().versione === O.stato().versione,
+    'uno stato salvato senza colore si riapre uguale, coi pezzi senza colore');
+
+  // il colore non tocca il calcolo: né una corsa nuova né la scorciatoia, ma la versione sale
+  const y = await analizzato(mensola());
+  const c0 = y.fc.chiamate.length, a0 = JSON.stringify(y.O.stato().analisi), w0 = y.O.stato().versione;
+  r = y.O.esegui({ azione: 'modifica', cambia: [{ id: 'muro', colore: '#e53935' }, { id: 'braccio', colore: '#fff' }] });
+  esito(r.ok && !r.attesa && y.fc.chiamate.length === c0 && JSON.stringify(y.O.stato().analisi) === a0 && y.O.stato().versione === w0 + 1 && !/calcol/i.test(r.testo.split('\n')[0]),
+    'un cambio di solo colore con un\'analisi fatta: versione nuova, nessun ricalcolo, analisi identica', r.testo.split('\n')[0]);
+}
+
 // ------------------------------------------------------------------ 11. sicurezza del codice
 titolo('11. Niente API vietate');
 {

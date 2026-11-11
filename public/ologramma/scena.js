@@ -22,6 +22,32 @@ const COL = {
   linea: new THREE.Color(0x2595a6), alta: new THREE.Color(0x37d0e7), interno: new THREE.Color(0x3dffd0),
   solido: lin(0.135, 0.185, 0.2), grigio: lin(0.09, 0.1, 0.12), scuro: lin(0.002, 0.014, 0.02),
 };
+// Il colore di un pezzo (campo colore, già validato da forme.js come «#rrggbb»): vale solo in ologramma e solido, perché
+// densità e sforzi sono dati e i raggi X servono a vedere dentro. Si tiene la tinta e si porta la luminanza nella fascia
+// del modo, come i colori qui sopra: con la sua luminanza vera un bianco (1,0) brucerebbe nel bagliore, un rosso (0,26) lo
+// passerebbe, un blu (0,11) no. La luminanza è quella che legge il bagliore (UnrealBloomPass: 0,299 R + 0,587 G + 0,114 B
+// sui valori lineari), non quella di Rec. 709. Ogni fascia è quella del colore che il pezzo prende al posto del ciano:
+// riempimento come COL.linea (0,226), bordo e spigoli come COL.alta (0,472), corpo del solido come COL.solido (0,172).
+// Dentro la fascia conta la chiarezza del colore, il massimo dei tre canali in lineare (il «valore» dell'HSV), con un
+// pavimento: #ffffff prende tutta la fascia, #808080 il 34%, #202020 il 17%, il nero il 16%. Senza pavimento un nero sparisce
+// sul fondo nero. Nessun canale supera TINTA_MAX: nel solido un canale oltre 1 si taglia all'uscita e l'ombreggiatura
+// sparisce, e un blu puro portato a 0,472 di luminanza varrebbe 4,1. Foto dell'11/11 (prove/hud-foto.mjs, tavolozza di
+// sfere, pixel sRGB al centro): nel solido #ffffff 100, #808080 60, #202020 42, nero 41, #e53935 (156, 36, 33),
+// #1e88e5 (18, 95, 163), fondo 0; in ologramma #ffffff 41, #808080 21, #202020 12, #e53935 (61, 8, 7). Il bianco del solido
+// resta un grigio chiaro: più chiaro passerebbe la soglia del bloom, che col solido a 0,39 bruciava tutto (7/11).
+const LUMA = [0.299, 0.587, 0.114];
+const TINTA_PAVIMENTO = 0.16, TINTA_MAX = 0.9;
+const FASCIA = { riempimento: 0.226, bordo: 0.472, solido: 0.172 };
+/** Il colore lineare con cui si disegna un pezzo colorato, nella fascia di luminanza L (una di FASCIA). */
+export function tinta(hex, L, out = new THREE.Color()) {
+  const n = parseInt(String(hex).slice(1), 16); // un numero, mai una stringa CSS
+  out.setHex(Number.isFinite(n) ? n : 0); // da sRGB a lineare
+  const v = Math.max(out.r, out.g, out.b), l = LUMA[0] * out.r + LUMA[1] * out.g + LUMA[2] * out.b;
+  const T = L * (TINTA_PAVIMENTO + (1 - TINTA_PAVIMENTO) * v);
+  if (l <= 1e-6) return out.setRGB(T, T, T, THREE.LinearSRGBColorSpace); // il nero: un grigio scuro, visibile sul fondo
+  const k = Math.min(T / l, TINTA_MAX / v);
+  return out.setRGB(out.r * k, out.g * k, out.b * k, THREE.LinearSRGBColorSpace);
+}
 // 48 direzioni quasi uniformi (spirale di Fibonacci) per i punti d'appoggio dei pezzi, usati dall'inquadratura
 const DIREZIONI = (() => {
   const d = [], n = 48;
@@ -384,7 +410,9 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     return R;
   }
 
+  let montaggi = 0; // geometrie montate: per le prove, un cambio di solo colore non ne monta di nuove
   function monta(R, geos) {
+    montaggi += geos.length;
     for (const g of geos) {
       const corpo = new THREE.Mesh(g, R.mat.corpo);
       corpo.renderOrder = 3; corpo.userData.id = R.id;
@@ -478,15 +506,20 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     const m = vista.modo, u = R.mat.corpo.uniforms, s = R.mat.spigoli.uniforms, interno = R.p.interno, sez = !!vista.sezione;
     const op = opaco(R), mat = R.mat.corpo;
     u.uOpaco.value = op ? 1 : 0; u.uCampo.value = m === 'sforzi' && R.colorato ? 1 : 0;
-    u.uColB.value.copy(COL.alta);
-    if (m === 'ologramma') { u.uColA.value.copy(COL.linea); u.uFill.value = interno && !sez ? 0.02 : 0.05; u.uRim.value = interno && !sez ? 0.13 : 0.4; }
+    // il colore del pezzo, se c'è, prende il posto del ciano solo in ologramma e solido; negli altri modi resta tutto com'era
+    const col = (m === 'ologramma' || m === 'solido') && R.p.colore ? R.p.colore : null;
+    if (col) tinta(col, FASCIA.bordo, u.uColB.value); else u.uColB.value.copy(COL.alta);
+    if (m === 'ologramma') {
+      if (col) tinta(col, FASCIA.riempimento, u.uColA.value); else u.uColA.value.copy(COL.linea);
+      u.uFill.value = interno && !sez ? 0.02 : 0.05; u.uRim.value = interno && !sez ? 0.13 : 0.4;
+    }
     else if (m === 'raggi-x') {
       // Gli interni si leggono dagli spigoli. Con riempimento 0,085 e bordo 0,55, e poi ancora con 0,014 e 0,3, le
       // decine di facce di taglio dei dischi, viste di sbieco, si sommavano in una macchia bianca (screenshot del
       // 7/11): il bordo fresnel di ogni faccia quasi di taglio valeva da solo più della soglia del bloom.
       if (interno) { u.uColA.value.copy(COL.interno); u.uColB.value.copy(COL.interno); u.uFill.value = 0.008; u.uRim.value = 0.08; }
       else { u.uColA.value.copy(COL.linea); u.uFill.value = 0.005; u.uRim.value = 0.1; }
-    } else if (m === 'solido') { u.uColA.value.copy(COL.solido); u.uAmb.value = 0.3; u.uRim.value = 0.12; }
+    } else if (m === 'solido') { if (col) tinta(col, FASCIA.solido, u.uColA.value); else u.uColA.value.copy(COL.solido); u.uAmb.value = 0.3; u.uRim.value = 0.12; }
     else if (m === 'densita') {
       const rho = MATERIALI[R.p.materiale]?.densita;
       if (finito(rho)) u.uColA.value.setRGB(...coloreDensita(rho), THREE.LinearSRGBColorSpace); else u.uColA.value.copy(COL.grigio);
@@ -502,7 +535,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     if (fl) { u.uColFlusso.value.set(fl[0]); u.uFlussoVel.value = fl[1]; u.uFlussoPasso.value = fl[2] * R.p.misure.r; u.uFlussoCoda.value = fl[3]; u.uLungo.value = R.lunghezza; }
     const sm = R.mat.spigoli;
     if (op) { s.uCol.value.copy(COL.scuro); s.uI.value = 1; sm.blending = THREE.NormalBlending; }
-    else { s.uCol.value.copy(m === 'raggi-x' && interno ? COL.interno : COL.alta); s.uI.value = m === 'raggi-x' ? (interno ? 0.35 : 0.14) : interno && !sez ? 0.14 : 0.45; sm.blending = THREE.AdditiveBlending; }
+    else { if (col) tinta(col, FASCIA.bordo, s.uCol.value); else s.uCol.value.copy(m === 'raggi-x' && interno ? COL.interno : COL.alta); s.uI.value = m === 'raggi-x' ? (interno ? 0.35 : 0.14) : interno && !sez ? 0.14 : 0.45; sm.blending = THREE.AdditiveBlending; }
     trasparenza(R);
   }
   // Un pezzo opaco che sfuma diventa trasparente per quel tempo; three.js lo disegna dopo gli opachi.
@@ -1247,7 +1280,18 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
         caricamenti, fermo: aperto && fermo(), vista: JSON.parse(JSON.stringify(vista)), esploso: anim.esploso, colorati: [...pezzi.values()].filter((R) => R.colorato).length,
         errori: [...pezzi.values()].filter((R) => R.errore).map((R) => `${R.id}: ${R.errore}`), zona: { ...zona }, gruppi: gruppi.length,
         quote: { soggetto: quota.soggetto, alfa: +quota.alfa.toFixed(3), segmenti: quotaGeo.drawRange.count / 2 },
+        montaggi,
       };
+    },
+    /** Per le prove: per ogni pezzo i colori lineari che ha lo shader (riempimento, bordo, spigoli), le intensità e il centro sullo schermo in px. */
+    colori() {
+      const c = (v) => [v.r, v.g, v.b], s = { x: 0, y: 0 }, out = {};
+      for (const R of pezzi.values()) {
+        const u = R.mat.corpo.uniforms, k = R.mat.spigoli.uniforms;
+        out[R.id] = { colA: c(u.uColA.value), colB: c(u.uColB.value), spigoli: c(k.uCol.value), fill: u.uFill.value, rim: u.uRim.value, amb: u.uAmb.value, i: k.uI.value,
+          opaco: u.uOpaco.value, campo: u.uCampo.value, centro: schermo(v1.copy(R.centro).add(R.off), s) ? [s.x, s.y] : null };
+      }
+      return out;
     },
   };
 }

@@ -9,6 +9,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as THREE from 'three';
 import { createOlogramma } from '../ologramma.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 && process.argv[i + 1] !== undefined ? process.argv[i + 1] : d; };
@@ -50,6 +51,23 @@ const PORTATILE = { titolo: 'Portatile di prova', descrizione: 'Cinque pezzi per
   { id: 'cerniera', nome: 'Cerniera', forma: 'cilindro', misure: { r: 4, h: 250 }, posizione: [0, 7, -108], rotazione: [0, 0, 90], materiale: 'acciaio-s235' },
 ] };
 const SCHEDA_ATTESA = PORTATILE.pezzi[0];
+// La molecola d'acqua col campo colore (11/11): ossigeno rosso, idrogeni bianchi, legami senza colore (il ciano di sempre).
+// Angolo H-O-H 104,5°, distanza O-H 200 mm in scala (le sfere hanno i raggi chiesti, 76 e 53 mm): i legami vanno dalla
+// superficie di una sfera all'altra, 5 mm dentro a ogni capo. con: false è la stessa molecola senza colori, per confrontare.
+const META = (104.5 / 2) * Math.PI / 180, DOH = 200, RO = 76, RH = 53;
+function acqua(con = true) {
+  const pezzi = [{ id: 'ossigeno', nome: 'Ossigeno', forma: 'sfera', misure: { r: RO }, ...(con ? { colore: '#e53935' } : {}) }];
+  for (const s of [1, -1]) {
+    const dx = s * Math.sin(META), dy = -Math.cos(META), da = RO - 5, a = DOH - RH + 5, m = (da + a) / 2, n = s > 0 ? 1 : 2;
+    pezzi.push({ id: `idrogeno-${n}`, nome: 'Idrogeno', forma: 'sfera', misure: { r: RH }, posizione: [DOH * dx, DOH * dy, 0], ...(con ? { colore: '#FFF' } : {}) });
+    pezzi.push({ id: `legame-${n}`, nome: 'Legame', forma: 'cilindro', misure: { r: 10, h: a - da }, posizione: [m * dx, m * dy, 0], rotazione: [0, 0, s * META * 180 / Math.PI] });
+  }
+  return { titolo: "Molecola d'acqua", descrizione: 'Ossigeno rosso, idrogeni bianchi: il campo colore dei pezzi.', pezzi };
+}
+// Tavolozza: tre grigi e il nero per l'ordine di chiarezza, quattro tinte, un rosso interno (s8, più tenue in ologramma) e un
+// bianco (s9) che la prova sceglie alla fine, per vedere la selezione su un colore chiaro
+const TAVOLOZZA = { titolo: 'Tavolozza', pezzi: ['#ffffff', '#808080', '#202020', '#000000', '#e53935', '#1e88e5', '#43a047', '#fdd835', '#e53935', '#ffffff'].map((c, i) => ({
+  id: `s${i}`, forma: 'sfera', misure: { r: 40 }, posizione: [(i % 5) * 120 - 240, i < 5 ? 70 : -70, 0], colore: c, interno: i === 8 })) };
 // Se i testi non sono proprio ai limiti, la prova non prova quello che dice (il 11/11 erano 61 e 144: tagliati, e il controllo falliva)
 for (const [k, n] of [['materiale_vero', 60], ['fattura', 140]]) if (Array.from(SCHEDA_ATTESA[k]).length !== n) throw new Error(`${k} della prova deve avere ${n} caratteri`);
 
@@ -145,6 +163,99 @@ const SCHEDA = `(() => { const c = document.querySelector('.holo-card'), r = c.g
     copre: ['.holo-top', '.holo-desc', '.holo-leg.on', '.holo-tag', '.holo-quota'].filter((s) => [...document.querySelectorAll(s)].some(copre)) }; })()`;
 const riga = (c, k) => (c.righe.find((x) => x[0] === k) || [])[1];
 
+// ---------------------------------------------------------------- il campo colore dei pezzi
+// I colori di prima, scritti qui come in scena.js prima del campo colore: un pezzo senza colore deve averli identici
+const hexLin = (h) => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
+const PRIMA = { linea: hexLin(0x2595a6), alta: hexLin(0x37d0e7), solido: [0.135, 0.185, 0.2], scuro: [0.002, 0.014, 0.02] };
+const stessi = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+const CAMPI_U = ['colA', 'colB', 'spigoli', 'fill', 'rim', 'amb', 'i', 'opaco', 'campo'];
+const ugualiU = (a, b, campi = CAMPI_U) => campi.every((k) => (Array.isArray(a?.[k]) ? stessi(a[k], b?.[k]) : a?.[k] === b?.[k]));
+// Media dei pixel di un quadrato di lato px (CSS) attorno a (x, y), da uno screenshot: [R, G, B] in 0..255
+async function pixel([x, y], lato = 8) {
+  const r = await cdp('Page.captureScreenshot', { format: 'png', clip: { x: x - lato / 2, y: y - lato / 2, width: lato, height: lato, scale: 1 } });
+  return ev(`(async () => { const i = await createImageBitmap(await (await fetch('data:image/png;base64,${r.data}')).blob());
+    const g = new OffscreenCanvas(i.width, i.height).getContext('2d'); g.drawImage(i, 0, 0);
+    const d = g.getImageData(0, 0, i.width, i.height).data, s = [0, 0, 0]; for (let k = 0; k < d.length; k += 4) for (let c = 0; c < 3; c++) s[c] += d[k + c];
+    return s.map((v) => Math.round(v / (d.length / 4))); })()`);
+}
+const mostraOlo = (st) => ev(`stemOlogramma(${JSON.stringify(st)}).pezzi`);
+const modoOlo = async (m) => { await ev(`stemOlo.comando('modo', ${JSON.stringify(m)}); true`); await pausa(150); return ev('stemOlo.colori()'); };
+const MODI_TUTTI = ['ologramma', 'solido', 'raggi-x', 'densita', 'sforzi'];
+async function coloriPerModo() { const o = {}; for (const m of MODI_TUTTI) o[m] = await modoOlo(m); await modoOlo('ologramma'); return o; }
+// Rosso: R nettamente sopra G e B. Bianco: tre canali vicini, e più chiari del fondo. Con un margine del 15% passava anche
+// il grigio azzurro del solido senza colore (92, 106, 110: provato togliendo il colore dalla scena), con l'8% no.
+const rosso = (p) => p[0] >= 1.6 * Math.max(p[1], p[2]) && p[0] - Math.max(p[1], p[2]) >= 25;
+const bianco = (p, fondo) => Math.max(...p) - Math.min(...p) <= 0.08 * Math.max(...p) + 3 && (p[0] + p[1] + p[2]) / 3 >= (fondo[0] + fondo[1] + fondo[2]) / 3 + 15;
+
+async function provaColore() {
+  // tinta: la funzione che porta un colore nella fascia di un modo. Ordine dei grigi, pavimento, tetto e tinte
+  const T = await ev(`import('/ologramma/scena.js').then((m) => { const L = (c) => 0.299 * c.r + 0.587 * c.g + 0.114 * c.b, o = {};
+    for (const f of [0.226, 0.472, 0.172]) o[f] = ['#ffffff', '#808080', '#202020', '#000000', '#e53935', '#1e88e5'].map((h) => { const c = m.tinta(h, f); return [c.r, c.g, c.b, L(c)]; });
+    return o; })`);
+  for (const [k, [w, g, s, n, r, b]] of Object.entries(T)) {
+    const f = Number(k);
+    const tutti = [w, g, s, n, r, b];
+    controlla(Math.abs(w[3] - f) < 1e-6 && w[3] > g[3] && g[3] > s[3] && s[3] >= n[3] && n[3] > 0.1 * f, `tinta, fascia ${f}: #ffffff prende la fascia, #808080 e #202020 sotto in ordine, il nero resta sopra lo zero`,
+      [w, g, s, n].map((c) => c[3].toFixed(4)).join(' > '));
+    controlla(tutti.every((c) => c[3] <= f + 1e-9 && Math.max(c[0], c[1], c[2]) <= 0.9 + 1e-9) && r[0] > 3 * Math.max(r[1], r[2]) && b[2] > 1.5 * Math.max(b[0], b[1]),
+      `tinta, fascia ${f}: nessun colore sopra la fascia né un canale sopra 0,9; il rosso resta rosso e il blu blu`, `rosso ${r.slice(0, 3).map((v) => v.toFixed(3))}, blu ${b.slice(0, 3).map((v) => v.toFixed(3))}`);
+  }
+
+  // La stessa molecola senza colori, poi con: gli uniform per modo
+  OLO.esegui({ azione: 'mostra', modello: acqua(false) });
+  await mostraOlo(OLO.stato()); await pausa(2500);
+  const senza = await coloriPerModo();
+  const ids = Object.keys(senza.ologramma);
+  controlla(ids.length === 5 && ids.every((id) => stessi(senza.ologramma[id].colA, PRIMA.linea) && stessi(senza.ologramma[id].colB, PRIMA.alta) && stessi(senza.ologramma[id].spigoli, PRIMA.alta) &&
+    stessi(senza.solido[id].colA, PRIMA.solido) && stessi(senza.solido[id].colB, PRIMA.alta) && stessi(senza.solido[id].spigoli, PRIMA.scuro)),
+    'senza colore i pezzi hanno i colori di prima: ciano in ologramma, il grigio azzurro nel solido, spigoli scuri');
+  OLO.esegui({ azione: 'mostra', modello: acqua(true) });
+  await mostraOlo(OLO.stato()); await pausa(2500);
+  const con = await coloriPerModo();
+  const m0 = (await ev('stemOlo.info()')).montaggi;
+  for (const m of ['raggi-x', 'densita', 'sforzi']) {
+    controlla(ids.every((id) => ugualiU(con[m][id], senza[m][id])), `in ${m} gli uniform di ogni pezzo sono quelli della molecola senza colori`,
+      `ossigeno colA ${con[m].ossigeno?.colA.map((v) => v.toFixed(3))}`);
+  }
+  for (const m of ['ologramma', 'solido']) {
+    controlla(['legame-1', 'legame-2'].every((id) => ugualiU(con[m][id], senza[m][id])) && !stessi(con[m].ossigeno.colA, senza[m].ossigeno.colA) && !stessi(con[m]['idrogeno-1'].colA, senza[m]['idrogeno-1'].colA),
+      `in ${m} i legami senza colore restano come prima, ossigeno e idrogeni cambiano`);
+  }
+  // i pixel al centro degli atomi, col fondo dal punto speculare agli idrogeni rispetto all'ossigeno (122 mm sopra, fuori dalla sfera da 76)
+  for (const m of ['ologramma', 'solido']) {
+    const c = await modoOlo(m); await pausa(1200);
+    const O = c.ossigeno.centro, H1 = c['idrogeno-1'].centro, H2 = c['idrogeno-2'].centro;
+    const F = [2 * O[0] - (H1[0] + H2[0]) / 2, 2 * O[1] - (H1[1] + H2[1]) / 2];
+    const po = await pixel(O), p1 = await pixel(H1), p2 = await pixel(H2), pf = await pixel(F);
+    controlla(rosso(po), `${m}: al centro dell'ossigeno il rosso è nettamente sopra verde e blu`, `ossigeno ${po}, fondo ${pf}`);
+    controlla(bianco(p1, pf) && bianco(p2, pf), `${m}: al centro degli idrogeni tre canali vicini, più chiari del fondo`, `idrogeni ${p1} e ${p2}, fondo ${pf}`);
+    await foto(`molecola-${m}`);
+  }
+  // un cambio di solo colore: versione nuova, materiale aggiornato, nessuna geometria montata di nuovo
+  await modoOlo('ologramma');
+  OLO.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '#1e88e5' }] });
+  await mostraOlo(OLO.stato()); await pausa(300);
+  let c = await ev('stemOlo.colori()'), m1 = (await ev('stemOlo.info()')).montaggi;
+  const blu = c.ossigeno.colA;
+  controlla(m1 === m0 && blu[2] > 2 * Math.max(blu[0], blu[1]), 'cambio di solo colore: l\'ossigeno diventa blu senza montare geometrie nuove', `montaggi ${m0} → ${m1}, colA ${blu.map((v) => v.toFixed(3))}`);
+  OLO.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '' }] });
+  await mostraOlo(OLO.stato()); await pausa(300);
+  c = await ev('stemOlo.colori()'); m1 = (await ev('stemOlo.info()')).montaggi;
+  const COLORI = ['colA', 'colB', 'spigoli', 'fill', 'rim']; // amb resta quello dell'ultimo modo opaco: in ologramma non conta
+  controlla(m1 === m0 && ugualiU(c.ossigeno, senza.ologramma.ossigeno, COLORI) && ugualiU(c['idrogeno-1'], con.ologramma['idrogeno-1'], COLORI), 'colore vuoto: l\'ossigeno torna al ciano di prima, gli idrogeni restano bianchi', `montaggi ${m1}`);
+  // la tavolozza, solo da guardare: ordine dei grigi, nero visibile, tinte, interno più tenue (s8) e scelto più acceso (s9)
+  OLO.esegui({ azione: 'mostra', modello: TAVOLOZZA });
+  await mostraOlo(OLO.stato()); await pausa(3000);
+  // i pixel al centro di ogni sfera, solo stampati: sono i numeri con cui si guardano le foto
+  const centri = async (nome) => { const c = await ev('stemOlo.colori()'), r = [];
+    for (const [id, x] of Object.entries(c)) r.push(`${id} ${TAVOLOZZA.pezzi.find((p) => p.id === id).colore} ${await pixel(x.centro)}`);
+    console.log(`      ${nome}: ${r.join('; ')}`); };
+  await foto('tavolozza-ologramma'); await centri('tavolozza in ologramma');
+  await modoOlo('solido'); await pausa(1200); await foto('tavolozza-solido'); await centri('tavolozza nel solido');
+  await ev("stemOlo.comando('seleziona', 's9'); true"); await pausa(1500); await foto('tavolozza-scelta'); await centri('tavolozza nel solido, s9 scelto');
+  await tasto('Escape', 'Escape', 27); await pausa(1500);
+}
+
 try {
   await connetti();
   for (const d of ['Page', 'Runtime', 'Network']) await cdp(`${d}.enable`);
@@ -222,6 +333,9 @@ try {
     await tasto('Escape', 'Escape', 27); await pausa(1500);
     controlla(OLO.stato().aperto === false, "Esc chiude l'ologramma anche nello stato del server finto");
   }
+  // Il campo colore dei pezzi: la molecola d'acqua in ologramma e solido, i pixel al centro degli atomi, e gli uniform di
+  // densità e sforzi uguali a quelli della stessa molecola senza colori
+  if (!SOLO || ['molecola-ologramma', 'molecola-solido', 'tavolozza-ologramma', 'tavolozza-solido', 'tavolozza-scelta'].some((n) => SOLO.has(n))) await provaColore();
   await ev("stemOlogrammaDemo('turbofan').then(() => true)"); await pausa(3500); await foto('ologramma');
   await tasto('e', 'KeyE', 69); await pausa(2500); await foto('ologramma-esploso');
   await tasto('Escape', 'Escape', 27); await pausa(1500);

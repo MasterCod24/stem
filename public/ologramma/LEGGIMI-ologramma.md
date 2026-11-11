@@ -54,11 +54,13 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
   gruppo?: string,         // ≤ 40: i pezzi dello stesso gruppo esplodono insieme
   esplodi?: [dx, dy, dz],  // direzione della vista esplosa; la lunghezza (≤ 5) moltiplica la distanza
   interno?: boolean,       // pezzo interno: tenue in vista normale, evidente in raggi X e in sezione
+  colore?: string,         // «#rrggbb» o «#rgb»: il colore dell'oggetto, solo nei modi ologramma e solido; se manca, il ciano
   flusso?: 'elettrico'|'fluido'|'aria'|'dati', // solo per 'cavo': impulsi che scorrono, cioè dati dichiarati
   calcolo?: boolean        // entra nel calcolo degli sforzi; predefinito true, false per 'cavo' e 'file' (un 'file' con true resta false, con un avviso)
 }
 ```
 - `materiale_vero` e `fattura` (`CAMPI_RICERCA` di `forme.js`) sono testo libero con le regole di `nome`: devono essere testi, gli a capo e i caratteri di controllo diventano spazi, i più lunghi si tagliano con un avviso, e vuoti valgono non detti (null). Non toccano né la massa né il calcolo: un loro cambio non fa ricalcolare gli sforzi. L'HUD li mostra solo nella scheda del pezzo, con `textContent`.
+- `colore` (11/11, richiesta di Tony: l'ossigeno rosso e gli idrogeni bianchi di una molecola; prima era un campo sconosciuto e si ignorava) vale per ogni forma, file e cavo compresi. `forme.js` accetta «#rgb» e «#rrggbb», maiuscole o minuscole, toglie gli spazi e gli a capo attorno e lo normalizza in «#rrggbb» minuscolo (il pattern dello schema del cervello è più stretto: niente spazi); null, assente o vuoto vuol dire nessun colore (null), e in `cambia` un testo vuoto o null lo toglie. Qualsiasi altra cosa («rosso», «e53935», cinque cifre, un numero) è un errore che cita il campo. Non tocca né la massa né il calcolo: un cambio di solo colore fa una versione nuova (l'HUD rilegge e manda la foto) ma non ricalcola gli sforzi, e la scena non ricostruisce la geometria. Sul cavo i flussi tengono i loro colori e il corpo prende il colore. La scheda del pezzo non lo mostra e non c'è una legenda dei colori.
 - La fonte per pezzo c'era e l'11/11 è stata tolta (scelta di Tony): controllate a mano, ne reggevano 2 su 5, e una fonte sbagliata fa fidare di un dato che nessuno ha controllato. Un `fonte` che arriva ancora, dal cervello o da uno stato salvato prima, è un campo sconosciuto: si ignora con un avviso e il pezzo passa.
 - Perché due campi per il materiale: `materiale` serve al calcolo e ha solo le 9 chiavi qui sotto, dove vetro, litio, rame o silicio non ci sono. Il 10/11 un «MacBook Air» di 37 pezzi era uscito tutto 'generico', anche la «Base in alluminio», e la scheda diceva «non detto».
 
@@ -158,7 +160,7 @@ Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso. Una c
 Dal processo MCP, cioè dagli strumenti del cervello:
 - `{azione:'mostra', modello}`: sostituisce tutto con un modello nuovo e apre l'ologramma.
 - `{azione:'modifica', cambia?, aggiungi?, togli?, rimetti?, vista?, carichi?, vincoli?, titolo?, descrizione?}`:
-  - `cambia: [{id, ...campi}]` sostituisce i campi indicati, e `misure` si fonde campo per campo; con una forma nuova misure, calcolo e flusso vanno dati interi; un testo vuoto in `materiale_vero` o `fattura` toglie il campo;
+  - `cambia: [{id, ...campi}]` sostituisce i campi indicati, e `misure` si fonde campo per campo; con una forma nuova misure, calcolo e flusso vanno dati interi; un testo vuoto in `materiale_vero`, `fattura` o `colore` toglie il campo;
   - `aggiungi: Pezzo[]`;
   - `togli` e `rimetti` sono liste di id;
   - `vista` è parziale;
@@ -222,9 +224,10 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
   puntatore(ev),        // eventi del mouse: trascina per ruotare, rotella per lo zoom, clic per selezionare
   gesto(g),             // i gesti di gesti.js; {tipo:'stato', fase} mostra «mani: mostra il palmo» (riposo) o «mani pronte» nella barra, e 'spente' (da stem.js) la svuota
   ridimensiona(),
-  info(),               // per le prove: lo stato locale, senza riferimenti interni
+  info(),               // per le prove: lo stato locale, senza riferimenti interni; montaggi conta le geometrie montate
+  colori(),             // per le prove: per pezzo i colori lineari dello shader, le intensità e il centro sullo schermo in px
 }
-// onFoto(png, versione, modello); export anche angoloTesta(W, H), rischio(fs), TAPPE_FS e mmTesto(mm)
+// onFoto(png, versione, modello); export anche angoloTesta(W, H), rischio(fs), TAPPE_FS, mmTesto(mm) e tinta(hex, L)
 ```
 - `createScene` di `nucleo.js` (la sfera e gli anelli che hanno preso il posto di `humanoid.js`) restituisce anche `renderer` e `strato`. `strato(scene, camera)` è l'aggancio. Inserisce un RenderPass (clear false, clearDepth true) subito dopo quello dell'HUD e prima del bloom. Il composer dell'HUD usa un render target con `stencilBuffer: true`, perché la sezione piena funzioni (misurato).
 - Il nucleo va nell'angolo come col report (`S.dockTarget`, `dockX`, `dockY`), e la camera dell'ologramma lascia libero quell'angolo.
@@ -232,7 +235,8 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
   - ciano dominante. Gli spigoli sono il ciano scalato alla luminanza dell'azzurro di prima, perché l'aspetto è tarato sulla soglia del bloom (0,18). Gli interni ai raggi X sono verde acqua;
   - densità dal blu petrolio (leggero) al ciano (denso), con la luminanza sotto la soglia del bloom come il solido;
   - flussi tutti nei freddi, distinti per colore, velocità e forma dell'impulso: elettrico scintille bianco-ciano corte e veloci, fluido onde blu lunghe e lente, aria soffi ciano pallido, dati trattini verde acqua fitti;
-  - **arancione e rosso solo per le anomalie:** il rosso della scala degli sforzi (fs ≤ 1), `.cede` sul pezzo o sulla nota con fs sotto 1, `.attenzione` su un calcolo fallito, un campo che non arriva o un file che non si apre. Nient'altro è caldo.
+  - **arancione e rosso solo per le anomalie:** il rosso della scala degli sforzi (fs ≤ 1), `.cede` sul pezzo o sulla nota con fs sotto 1, `.attenzione` su un calcolo fallito, un campo che non arriva o un file che non si apre. Nient'altro è caldo, con un'eccezione decisa da Tony;
+  - **l'eccezione, il `colore` di un pezzo:** è il colore dell'oggetto vero (l'ossigeno rosso di una molecola), anche rosso o arancione, e vale solo nei modi ologramma e solido. In densità e sforzi resta la scala dei dati e ai raggi X restano ciano e verde acqua, identici a prima. Un pezzo senza colore ha gli uniform di prima. `tinta(hex, L)` di `scena.js` tiene la tinta e porta la luminanza (quella del bagliore, 0,299 R + 0,587 G + 0,114 B in lineare) nella fascia del colore che sostituisce: riempimento come l'azzurro (0,226), bordo e spigoli come il ciano chiaro (0,472), corpo del solido come il solido (0,172, sotto la soglia del bloom). Dentro la fascia conta la chiarezza del colore, con un pavimento del 16% perché un nero resti visibile, e nessun canale supera 0,9, perché nel solido un canale tagliato all'uscita cancella l'ombreggiatura. Nel solido gli spigoli restano scuri. Selezione e pezzi interni si riconoscono come prima: sono gli stessi fattori, applicati al colore.
   - Testi: «Helvetica Neue» sottile per titoli e valori, Menlo per etichette e numeri piccoli (`--sottile`, `--mono`), con un ripiego per il laboratorio, che le variabili non le ha. La scheda è un modulo trasparente: gli angoli a staffa li disegna `index.html`.
 - **Quote in millimetri**, come in un disegno tecnico: linee di riferimento staccate dal pezzo, linea di quota con trattini a 45° e un testo `.holo-quota` per asse («1.240 MM», «12,5 MM»: `mmTesto`, punto per le migliaia e una cifra decimale sotto 100 mm).
   - Il pezzo scelto (clic, presa o selezione) ha le tre quote dell'ingombro lungo gli assi del mondo, dove sta adesso, esploso compreso. Senza pezzo scelto si vede l'ingombro del modello intero, più tenue, che si spegne nell'esploso. Un file non ancora aperto non ha misure, né nelle quote né nella scheda.

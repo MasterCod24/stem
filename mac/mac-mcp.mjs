@@ -700,6 +700,7 @@ const PEZZO = { type: 'object', properties: {
   gruppo: { type: 'string', description: 'i pezzi dello stesso gruppo esplodono insieme' },
   esplodi: TERNA('direzione nella vista esplosa; la lunghezza, fino a 5, moltiplica la distanza'),
   interno: { type: 'boolean', description: 'pezzo interno: tenue di solito, evidente ai raggi X e in sezione' },
+  colore: { type: 'string', pattern: '^#([0-9a-fA-F]{3}){1,2}$', description: 'esadecimale, «#e53935»: se Tony lo chiede o se il colore è un dato (atomi, fili); senza, il ciano. In ologramma e solido' },
   flusso: { type: 'string', enum: FLUSSI, description: 'solo cavo: impulsi disegnati che scorrono, dati dichiarati e non simulati' },
   calcolo: { type: 'boolean', description: 'entra nel calcolo degli sforzi: sì di base, no per cavo e file' },
 }, required: ['id', 'forma', 'misure'] };

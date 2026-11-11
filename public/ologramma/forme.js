@@ -37,7 +37,7 @@ function congela(o) {
 
 // Congelati perché sono condivisi: chi li usa ne fa una copia, e i pezzi non li riferiscono mai.
 export const PREDEFINITI = congela({
-  pezzo: { posizione: [0, 0, 0], rotazione: [0, 0, 0], materiale: 'generico', materiale_vero: null, fattura: null, gruppo: null, esplodi: null, interno: false, flusso: null, calcolo: true },
+  pezzo: { posizione: [0, 0, 0], rotazione: [0, 0, 0], materiale: 'generico', materiale_vero: null, fattura: null, gruppo: null, esplodi: null, interno: false, colore: null, flusso: null, calcolo: true },
   senza_calcolo: ['cavo', 'file'], // per queste forme calcolo vale false se non è detto
   misure: {
     cono: { r_cima: 0 },
@@ -49,7 +49,7 @@ export const PREDEFINITI = congela({
   vista: { esploso: 0, sezione: null, modo: 'ologramma', selezionato: null, isolato: null, rotazione_auto: false },
 });
 // esplodi null vuol dire direzione non detta: la sceglie la scena. gruppo null: il pezzo esplode da solo.
-// materiale_vero e fattura null: non detti.
+// materiale_vero e fattura null: non detti. colore null: il ciano dell'ologramma.
 
 const TESTO_MAX = { titolo: 80, descrizione: 300, nome: 60, gruppo: 40, materiale_vero: 60, fattura: 140 };
 // Quello che una ricerca ha trovato sul pezzo vero: testo libero, solo da leggere nella scheda. `materiale` resta la
@@ -902,7 +902,19 @@ function leggiPercorso(C, v) {
   return s;
 }
 
-const CAMPI_PEZZO = ['id', 'nome', 'forma', 'misure', 'posizione', 'rotazione', 'materiale', ...CAMPI_RICERCA, 'gruppo', 'esplodi', 'interno', 'flusso', 'calcolo'];
+// Il colore dell'oggetto vero (11/11, richiesta di Tony): l'ossigeno rosso e gli idrogeni bianchi di una molecola. Prima
+// arrivava come campo sconosciuto e si ignorava. Solo esadecimale, «#rrggbb» o «#rgb», normalizzato in «#rrggbb» minuscolo:
+// la scena lo legge come numero e non lo passa mai a un parser CSS. Come si disegna (e in quali modi) lo decide scena.js.
+const COLORE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+function leggiColore(C, v) {
+  if (v === undefined || v === null || (typeof v === 'string' && !v.trim())) return null; // vuoto: nessun colore, e in cambia lo toglie
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!COLORE.test(s)) { C.err('colore', `${mostra(v)} non è un colore: serve un esadecimale come "#e53935" o "#e53"; vuoto o null lo toglie`); return undefined; }
+  const h = s.slice(1).toLowerCase();
+  return '#' + (h.length === 3 ? [...h].map((c) => c + c).join('') : h);
+}
+
+const CAMPI_PEZZO = ['id', 'nome', 'forma', 'misure', 'posizione', 'rotazione', 'materiale', ...CAMPI_RICERCA, 'gruppo', 'esplodi', 'interno', 'colore', 'flusso', 'calcolo'];
 
 function normalizzaPezzoIn(p, posto) {
   if (!oggetto(p)) return { pezzo: null, errori: [`${posto}: deve essere un oggetto { id, forma, misure, … }, non ${mostra(p)}`], avvisi: [] };
@@ -938,6 +950,7 @@ function normalizzaPezzoIn(p, posto) {
     if (esplodi && Math.hypot(...esplodi) > ESPLODI_MAX) { C.err('esplodi', `è lungo ${giu(Math.hypot(...esplodi))}: al massimo ${ESPLODI_MAX}`); esplodi = undefined; }
   }
   const interno = leggiBooleano(C, p.interno, 'interno', false);
+  const colore = leggiColore(C, p.colore);
   let flusso = null;
   if (p.flusso != null) {
     if (forma !== 'cavo') C.avv('flusso', 'vale solo per i cavi: ignorato');
@@ -947,7 +960,7 @@ function normalizzaPezzoIn(p, posto) {
   let calcolo = leggiBooleano(C, p.calcolo, 'calcolo', !PREDEFINITI.senza_calcolo.includes(forma));
   if (forma === 'file' && calcolo === true) { C.avv('calcolo', "resta false: il server non apre i file, quindi un pezzo 'file' non entra nel calcolo"); calcolo = false; }
   if (C.errori.length) return { pezzo: null, errori: C.errori, avvisi: C.avvisi };
-  return { pezzo: { id: p.id, nome, forma, misure, posizione, rotazione, materiale, ...ricerca, gruppo, esplodi, interno, flusso, calcolo }, errori: [], avvisi: C.avvisi };
+  return { pezzo: { id: p.id, nome, forma, misure, posizione, rotazione, materiale, ...ricerca, gruppo, esplodi, interno, colore, flusso, calcolo }, errori: [], avvisi: C.avvisi };
 }
 
 /** Un pezzo dal cervello → { pezzo, errori, avvisi }: con i predefiniti, i numeri controllati e oggetti tutti nuovi; pezzo è null se ci sono errori. */

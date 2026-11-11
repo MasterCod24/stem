@@ -487,6 +487,36 @@ titolo('5c. Ricerca sui pezzi: materiale_vero e fattura');
   esito(chiave.pezzo === null && chiave.errori[0].includes('materiale'), 'la chiave del calcolo non si allarga: «vetro» in materiale resta un errore', chiave.errori.join(' | '));
 }
 
+// ------------------------------------------------------------------ 5d. colore
+titolo('5d. Colore dei pezzi: esadecimale, normalizzato, facoltativo');
+{
+  for (const [dato, atteso] of [['#e53935', '#e53935'], ['#E53935', '#e53935'], ['#fff', '#ffffff'], ['#F0a', '#ff00aa'], [' #abc ', '#aabbcc']]) {
+    const r = F.normalizzaPezzo(sc('a', { colore: dato }));
+    esito(r.pezzo && r.pezzo.colore === atteso && r.errori.length === 0 && r.avvisi.length === 0, `colore ${JSON.stringify(dato)} diventa ${atteso}`, r.pezzo ? r.pezzo.colore : r.errori.join(' | '));
+  }
+  for (const dato of [undefined, null, '', '   ']) {
+    const r = F.normalizzaPezzo(sc('a', dato === undefined ? {} : { colore: dato }));
+    esito(r.pezzo && r.pezzo.colore === null && r.errori.length === 0 && r.avvisi.length === 0, `colore ${dato === undefined ? 'assente' : JSON.stringify(dato)}: nessun colore (null), senza errori né avvisi`);
+  }
+  esito(F.PREDEFINITI.pezzo.colore === null, 'nei predefiniti il colore è null');
+  for (const dato of ['rosso', 'e53935', '#12345', '#1234567', '#ggg', 0xe53935, ['#fff'], { r: 1 }, true]) {
+    const r = F.normalizzaPezzo(sc('a', { colore: dato }));
+    esito(r.pezzo === null && r.errori.length === 1 && r.errori[0].includes('colore') && r.errori[0].includes('"#e53935"'), `colore ${JSON.stringify(dato)}: errore che cita il campo e dà un esempio`, r.errori.join(' | '));
+  }
+  // vale per tutte le forme, file e cavo compresi; il cavo tiene il suo flusso
+  const cavo = F.normalizzaPezzo({ id: 'filo', forma: 'cavo', misure: { punti: [[0, 0, 0], [10, 0, 0]], r: 1 }, flusso: 'elettrico', colore: '#43A047' });
+  const file = F.normalizzaPezzo({ id: 'scocca', forma: 'file', misure: { file: '/Users/tony/Documents/scocca.stl' }, colore: '#000' });
+  esito(cavo.pezzo?.colore === '#43a047' && cavo.pezzo.flusso === 'elettrico' && file.pezzo?.colore === '#000000', 'cavo e file prendono il colore; il cavo tiene il flusso');
+  // il pezzo normalizzato rinormalizzato resta uguale, e fuso con un colore vuoto lo perde (come fa cambia nel server)
+  const pieno = F.normalizzaPezzo(sc('a', { colore: '#E53935' })).pezzo;
+  const ancora = F.normalizzaPezzo(JSON.parse(JSON.stringify(pieno)));
+  esito(ancora.pezzo && JSON.stringify(ancora.pezzo) === JSON.stringify(pieno) && ancora.avvisi.length === 0, 'un pezzo col colore, rinormalizzato, resta uguale e senza avvisi');
+  esito(F.normalizzaPezzo({ ...pieno, colore: '' }).pezzo?.colore === null && F.normalizzaPezzo({ ...pieno, colore: null }).pezzo?.colore === null, 'fuso con colore vuoto o null: il colore va via');
+  // in un modello intero: niente avviso di campo sconosciuto (prima il colore si ignorava con un avviso)
+  const m = F.normalizzaModello({ titolo: 'Acqua', pezzi: [{ id: 'o', forma: 'sfera', misure: { r: 76 }, colore: '#e53935' }, { id: 'h', forma: 'sfera', misure: { r: 53 }, posizione: [200, 0, 0], colore: '#ffffff' }] });
+  esito(m.modello && m.modello.pezzi.map((p) => p.colore).join() === '#e53935,#ffffff' && m.avvisi.length === 0, 'la molecola d\'acqua passa con i suoi colori e senza avvisi', m.avvisi.join(' | '));
+}
+
 // ------------------------------------------------------------------ 6. prestazioni
 titolo('6. Prestazioni: dentro() su 1 milione di punti, estrusione da 200 punti con 20 fori');
 {

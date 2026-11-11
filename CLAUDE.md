@@ -15,6 +15,10 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 11/11/2026)
+- **Colore dei pezzi degli ologrammi: costruito e provato, mai usato da Tony** (11/11). Ogni pezzo può avere `colore` («#e53935» o «#e53»), in mostra e in cambia. Vale in ologramma e solido; raggi X, densità e sforzi restano come prima. Col cervello vero, «la molecola d'acqua con l'ossigeno rosso e gli idrogeni bianchi» è uscita al primo colpo, con la prima vista a 16 s.
+  - **Limite del solido:** sotto la soglia del bagliore il colore più chiaro possibile è un grigio medio. Il bianco esce 100–106 su 255 e il giallo ocra; in ologramma il bianco si legge bianco. Il bianco vero chiederebbe di disegnare il solido dopo il bagliore: da decidere con Tony, non fatto.
+  - Il tappo della sezione resta ciano anche sui pezzi colorati.
+  - I tre strumenti degli ologrammi pesano 9.076 B, 65 B sotto il tetto di `prove/ologramma-server.mjs`: il prossimo campo lo supera.
 - **Ricerca sui pezzi degli ologrammi: costruita e provata, usata da Tony una volta** (11/11). Tony ha chiesto che a ogni ologramma STEM cerchi come è fatto ogni pezzo e di che materiale. Il 10/11 il MacBook Air fatto per lui aveva 37 pezzi su 37 con materiale «non detto».
   - **Cosa c'è:** ogni pezzo può avere `materiale_vero` e `fattura` (come è fabbricato e montato), che si vedono nella scheda del pezzo. `materiale` resta la chiave del calcolo.
   - Il cervello ha WebSearch e WebFetch, che non aprono il pannello e non chiudono l'ologramma. La persona li riserva agli ologrammi: ricerche e report restano a vista nel browser, come prima. La risposta dello strumento ha una riga «Materiali: …» che elenca cosa manca.
@@ -258,6 +262,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Colori dell'HUD** (scelta di Tony del 10/11):
   - ciano dominante;
   - arancione e rosso solo per le anomalie (`S.allarme`, `.attenzione`, `.cede`, la scala degli sforzi), mai per decorare.
+  - Eccezione (scelta di Tony dell'11/11): il `colore` di un pezzo dell'ologramma è il colore dell'oggetto, anche rosso o arancione, e vale solo nei modi ologramma e solido.
   - Un colore nuovo con un significato va scritto qui.
 
 ## Lezioni da non ripetere

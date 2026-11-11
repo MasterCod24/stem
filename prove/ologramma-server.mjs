@@ -305,8 +305,15 @@ esito(JSON.stringify(P?.materiale?.enum) === JSON.stringify(Object.keys(MATERIAL
   'gli schemi hanno le chiavi dei materiali, le facce, le misure in mm e i modi');
 esito(['materiale_vero', 'fattura'].every((k) => P?.[k]?.type === 'string' && /al massimo (60|140)/.test(P[k].description)) && /chiave del calcolo/.test(P?.materiale?.description) && P && !('fonte' in P),
   'lo schema del pezzo ha materiale_vero e fattura, non la fonte, e distingue la chiave del calcolo dal materiale vero');
+{ // il campo colore (11/11): lo schema accetta quello che accetta forme.js, e la descrizione dice quando usarlo
+  const re = P?.colore?.pattern ? new RegExp(P.colore.pattern) : null;
+  esito(P?.colore?.type === 'string' && re && ['#e53935', '#E53935', '#fff'].every((c) => re.test(c)) && !['rosso', 'e53935', '#12345', '#e539351'].some((c) => re.test(c)) &&
+    /Tony lo chiede/.test(P.colore.description) && /ciano/.test(P.colore.description),
+    'lo schema del pezzo ha colore: esadecimale #rgb o #rrggbb, e la descrizione dice quando usarlo e cosa c\'è senza', P?.colore ? `${P.colore.pattern} — ${P.colore.description}` : 'manca');
+}
 // Le definizioni stanno nel contesto del cervello a ogni domanda. Prima dei campi di ricerca i tre strumenti pesavano 8.441 B
-// (misurati sul tools/list del 10/11): il tetto lascia 700 B ai campi nuovi, e chi li gonfia lo vede qui.
+// (misurati sul tools/list del 10/11): il tetto lascia 700 B ai campi nuovi, e chi li gonfia lo vede qui. Il colore dei pezzi
+// (11/11) ne ha presi 204, da 8.872 a 9.076 B: ne restano 65.
 const pesoOlo = Buffer.byteLength(JSON.stringify(lista.filter((x) => ['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura'].includes(x.name))));
 esito(pesoOlo <= 8441 + 700, 'i tre strumenti degli ologrammi restano entro 9.141 B', `${pesoOlo} B; tools/list intero ${Buffer.byteLength(JSON.stringify(lista))} B`);
 const MO = per.modifica_ologramma?.inputSchema?.properties;
