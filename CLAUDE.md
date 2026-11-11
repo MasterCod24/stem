@@ -15,13 +15,14 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 11/11/2026)
-- **Ricerca sui pezzi degli ologrammi: costruita e provata, mai usata da Tony** (11/11). Tony ha chiesto che a ogni ologramma STEM cerchi come è fatto ogni pezzo e di che materiale. Il 10/11 il MacBook Air fatto per lui aveva 37 pezzi su 37 con materiale «non detto».
-  - **Cosa c'è:** ogni pezzo può avere `materiale_vero`, `fattura` (come è fabbricato e montato) e `fonte`, che si vedono nella scheda del pezzo. Senza fonte la scheda scrive «stima di STEM, senza fonte». `materiale` resta la chiave del calcolo.
+- **Ricerca sui pezzi degli ologrammi: costruita e provata, usata da Tony una volta** (11/11). Tony ha chiesto che a ogni ologramma STEM cerchi come è fatto ogni pezzo e di che materiale. Il 10/11 il MacBook Air fatto per lui aveva 37 pezzi su 37 con materiale «non detto».
+  - **Cosa c'è:** ogni pezzo può avere `materiale_vero` e `fattura` (come è fabbricato e montato), che si vedono nella scheda del pezzo. `materiale` resta la chiave del calcolo.
   - Il cervello ha WebSearch e WebFetch, che non aprono il pannello e non chiudono l'ologramma. La persona li riserva agli ologrammi: ricerche e report restano a vista nel browser, come prima. La risposta dello strumento ha una riga «Materiali: …» che elenca cosa manca.
   - **Attesa** (STEM di prova, «Fammi vedere un MacBook Air in 3D.», un campione per corsa): la prima vista arriva a 80 s col codice vecchio, a 109, 139, 155 e 262 s con la ricerca. La voce più grossa è il pensiero in silenzio dopo le ricerche (39–125 s).
-  - **Quanto copre:** in ogni corsa tutti i pezzi hanno `materiale_vero`. La fattura c'è su 11–17 pezzi e la fonte su 0–17, su 30–122 pezzi in tutto. Il cervello cambia molto da una corsa all'altra: 47 pezzi con 11 fonti e il giro mirato, oppure 122 pezzi con 0 fonti e senza giro mirato.
-  - **Le fonti reggono 2 volte su 5** (controllate a mano l'11/11): spesso la pagina conferma una parte sola, o parla di un altro modello (una pagina sull'M2 usata per l'M4). Da decidere con Tony: tenerle così, toglierle, o cercare di più aspettando di più.
-- **Mani con le regole di Tony: costruite e provate, mai usate da Tony** (11/11). Delle 12 regole scritte da STEM il 10/11, nessuna misurata, cinque c'erano già (1U, filtro, isteresi del pizzico, buco breve, niente doppi lanci). Le altre sono in `gesti.js`: il contratto dice come, e perché alcune sono cambiate o non fatte.
+  - **Quanto copre sul banco:** in ogni corsa tutti i pezzi hanno `materiale_vero`; la fattura c'è su 11–17 pezzi, su 30–122 pezzi in tutto. Il cervello cambia molto da una corsa all'altra: 47 pezzi e il giro mirato, oppure 122 pezzi senza giro mirato.
+  - **Uso vero** (11/11, 15:46, Burj Khalifa, Torre Eiffel e Mole Antonelliana): due WebSearch insieme, prima vista 49 s dopo la domanda, nessun errore del nome nudo. Ma solo 7 pezzi su 24 con `materiale_vero` e 1 con la fattura, e nessun giro mirato, anche se la risposta dello strumento elencava i pezzi senza. Il giro mirato è saltato in 2 corse su 5: la regola della persona non basta.
+  - **La fonte per pezzo è stata tolta** (11/11, scelta di Tony): controllate a mano, ne reggevano 2 su 5 (una pagina sull'M2 usata per l'M4), e una fonte sbagliata fa fidare di un dato non controllato. Il prezzo: la scheda non distingue più un dato cercato da uno indovinato. Se Tony chiede da dove viene un dato, la persona dice di nominare la pagina vera o di dire che è una stima. Un `fonte` che arriva ancora si ignora.
+- **Mani con le regole di Tony: costruite e provate, usate da Tony una volta** (11/11). Delle 12 regole scritte da STEM il 10/11, nessuna misurata, cinque c'erano già (1U, filtro, isteresi del pizzico, buco breve, niente doppi lanci). Le altre sono in `gesti.js`: il contratto dice come, e perché alcune sono cambiate o non fatte.
   - **Fasi:** le mani partono a riposo e si accendono mostrando il palmo aperto per 0,3 s nel 70% centrale dell'immagine. La barra dice «mani: mostra il palmo», poi «mani pronte». Tornano a riposo dopo 4 s senza gesti né palmo. Se a Tony non piace: `innesco_ms: 0` in `PREDEFINITI` di `public/ologramma/gesti.js`.
   - **Soglie nuove, mai provate sulle sue mani:**
     - mappa a S: al centro metà velocità, ai bordi il doppio;
@@ -29,7 +30,15 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
     - zona attiva del 70%;
     - profilo oltre 75°: niente innesco né esplodi, il pizzico resta;
     - un buco fino a 170 ms non interrompe il gesto.
-  - **Non fatte:** pizzico al 10–15% di 1U, scheletro ricostruito, previsione dalla velocità. Al loro posto si conta: la riga «mani accese» porta anche tremolio in px, inneschi, pizzichi con la distanza minima pollice-indice in U, buchi, salti e profilo. Dopo il primo uso vero si decide con quei numeri (`grep 'mani accese' runtime/server.log`).
+  - **Non fatte:** pizzico al 10–15% di 1U, scheletro ricostruito, previsione dalla velocità. Al loro posto si conta: la riga «mani accese» porta anche tremolio in px, inneschi, pizzichi con la distanza minima pollice-indice in U, buchi, salti e profilo (`grep 'mani accese' runtime/server.log`).
+  - **Il primo uso vero** (11/11, una sessione sola, 358 s accese e 252 s con le mani in vista):
+    - fps mediana 54, p10 50, minimo 33: sopra i 45;
+    - tremolio grezzo 3,2 px, quanto la zona morta;
+    - 69 pizzichi, nessuno di profilo, con il minimo pollice-indice mediano a 0,09 U: il 10% di 1U di Tony sarebbe stato a filo;
+    - 8 inneschi, di cui 7 scaduti: non si sa se le mani erano ancora in vista o se Tony le aveva abbassate;
+    - 34 buchi, 7 gesti persi per un buco più lungo di 170 ms, 147 salti (non si sa quanti fossero dita veloci e quanti errori), 0 lanci, profilo 7%.
+
+    Un campione solo: per decidere su riposo, assente_ms e salti ne servono altri.
   - **Banco su foto vere** (`prove/mani-foto.mjs`): due pizzichi veri a 0,08 e 0,10 U. Il pugno ha rapporto 0,27 contro la soglia 0,25: un falso pizzico è possibile.
   - HUD headless con due mani, due giri: p10 59 e 58 fps.
 - **HUD in stile JARVIS: costruito e fotografato, mai visto da Tony** (10/11). Al posto dell'umanoide c'è la sfera-cervello di `public/nucleo.js` dentro gli anelli. Le montagne sono state tolte e lo sfondo è nero.
@@ -278,7 +287,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **three.js: un `Box3` vuoto vale ±Infinity.** Un NaN finito nella camera ci resta per sempre, perché un lerp da NaN dà NaN: l'ingombro si controlla prima di usarlo.
 - **Un limite scritto senza misurarlo era falso.** Il commento di `TRIANGOLI_MAX` prometteva 45 fps con 2 milioni di triangoli; misurati con le mani, erano 33. Lo stesso per un minimo trovato su poche sequenze: «due lanci ad almeno 667 ms» era il minimo delle prove, e una scansione più larga ne ha trovati a 567.
 - **Un numero preso da un altro contesto non è il «prima».** L'11/11 l'attesa con la ricerca (109–262 s) era stata confrontata con i circa 50 s di una domanda vera del 10/11, fatta a metà conversazione. Sullo stesso banco il codice vecchio dava 80 s. Prima e dopo si misurano con lo stesso banco, la stessa domanda e lo stesso avvio.
-- **Strumenti col nome nudo confondono il cervello.** Con WebSearch e WebFetch, che hanno il nome nudo, il cervello ha chiamato `mostra_ologramma` senza `mcp__mac__` 3 volte su 3, e mai prima. Riceveva «No such tool available» e riscriveva il modello: da 22 a 56 s persi. Ora la prima riga della sezione Ologrammi della persona scrive i nomi interi (provato su una corsa sola).
+- **Strumenti col nome nudo confondono il cervello.** Con WebSearch e WebFetch, che hanno il nome nudo, il cervello ha chiamato `mostra_ologramma` senza `mcp__mac__` 3 volte su 3, e mai prima. Riceveva «No such tool available» e riscriveva il modello: da 22 a 56 s persi. Ora la prima riga della sezione Ologrammi della persona scrive i nomi interi: nessun errore in due corse, una di prova e una vera.
 - **Una prova che ricopia una formula del codice mente quando la formula cambia.** Gli 80,5 ms di ritardo del cursore dell'11/11 venivano dalla mappa lineare ricopiata nella prova, contro la mappa a S del codice; il ritardo vero era 23,5 ms. Ora l'atteso si calcola con `mappa()` importata da `gesti.js`.
 - **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
 - **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore.

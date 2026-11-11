@@ -36,23 +36,22 @@ const VOCE = wav();
 
 // ---------------------------------------------------------------- un ologramma con la ricerca sui pezzi
 // Lo stato è quello vero di ologramma.mjs (senza calcolo): l'HUD lo legge da GET /api/ologramma dopo l'evento «holo», come
-// con il cervello. I testi sono ai limiti (60, 140 e 60 caratteri) e la fonte non ha spazi: la scheda, larga al massimo
-// 300 px, deve mandarli a capo. La fattura dello schermo è scritta come HTML: deve restare testo.
+// con il cervello. I testi sono ai limiti (60 e 140 caratteri): la scheda, larga al massimo 300 px, deve mandarli a capo.
+// La fattura dello schermo è scritta come HTML: deve restare testo. La fonte per pezzo è stata tolta l'11/11.
 const OLO = createOlogramma({ cartella: path.join(LAVORO, 'stato'), calcola: () => { throw new Error('questa prova non calcola'); } });
 const PORTATILE = { titolo: 'Portatile di prova', descrizione: 'Cinque pezzi per provare la scheda con la ricerca.', vista: { selezionato: 'scocca' }, pezzi: [
   { id: 'scocca', nome: 'Scocca inferiore', forma: 'scatola', misure: { x: 304, y: 6, z: 215 }, materiale: 'alluminio-6061',
     materiale_vero: 'alluminio 6063 riciclato al 100%, anodizzato, blu mezzanotte', // 60
-    fattura: 'fresata da un blocco estruso, poi sabbiata e anodizzata; le sedi delle viti sono filettate dopo e i bordi smussati da un utensile diamantato', // 140
-    fonte: 'support.apple.com/it-it/guide/macbook-air/apd0a1c0a5b9/2022x' }, // 60, senza spazi
+    fattura: 'fresata da un blocco estruso, poi sabbiata e anodizzata; le sedi delle viti sono filettate dopo e i bordi smussati da un utensile diamantato' }, // 140
   { id: 'schermo', nome: 'Schermo', forma: 'scatola', misure: { x: 304, y: 200, z: 4 }, posizione: [0, 103, -105], rotazione: [-12, 0, 0],
-    materiale_vero: 'vetro alluminosilicato su pannello IPS', fattura: '<img src=x onerror=alert(1)> laminato al pannello, bordi incollati' }, // senza fonte: stima
-  { id: 'batteria', nome: 'Batteria', forma: 'scatola', misure: { x: 220, y: 4, z: 90 }, posizione: [0, 5, 40], interno: true, materiale_vero: 'polimeri di litio, 52,6 Wh', fattura: 'quattro celle a sacchetto incollate', fonte: 'iFixit 2022' },
+    materiale_vero: 'vetro alluminosilicato su pannello IPS', fattura: '<img src=x onerror=alert(1)> laminato al pannello, bordi incollati' }, // senza chiave del calcolo
+  { id: 'batteria', nome: 'Batteria', forma: 'scatola', misure: { x: 220, y: 4, z: 90 }, posizione: [0, 5, 40], interno: true, materiale_vero: 'polimeri di litio, 52,6 Wh', fattura: 'quattro celle a sacchetto incollate' },
   { id: 'scheda', nome: 'Scheda logica', forma: 'scatola', misure: { x: 180, y: 2, z: 40 }, posizione: [0, 5, -60], interno: true, materiale: 'generico' },
   { id: 'cerniera', nome: 'Cerniera', forma: 'cilindro', misure: { r: 4, h: 250 }, posizione: [0, 7, -108], rotazione: [0, 0, 90], materiale: 'acciaio-s235' },
 ] };
 const SCHEDA_ATTESA = PORTATILE.pezzi[0];
 // Se i testi non sono proprio ai limiti, la prova non prova quello che dice (il 11/11 erano 61 e 144: tagliati, e il controllo falliva)
-for (const [k, n] of [['materiale_vero', 60], ['fattura', 140], ['fonte', 60]]) if (Array.from(SCHEDA_ATTESA[k]).length !== n) throw new Error(`${k} della prova deve avere ${n} caratteri`);
+for (const [k, n] of [['materiale_vero', 60], ['fattura', 140]]) if (Array.from(SCHEDA_ATTESA[k]).length !== n) throw new Error(`${k} della prova deve avere ${n} caratteri`);
 
 // ---------------------------------------------------------------- server finto
 let guasto = false; // true: /api/status risponde 500 (server che non c'è più)
@@ -62,9 +61,9 @@ const sotto = (base, rel) => { const f = path.resolve(base, '.' + path.sep + dec
 const corpo = (req) => new Promise((ok) => { let s = ''; req.on('data', (d) => { s += d; }); req.on('end', () => { try { ok(JSON.parse(s || '{}')); } catch { ok({}); } }); });
 async function copione(res, testo) { // il cervello finto: eventi NDJSON con le loro pause
   res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
-  const passi = /scheda/i.test(testo) // una ricerca senza browser (eventi «web»), poi l'ologramma: «stima» sceglie il pezzo senza fonte
+  const passi = /scheda/i.test(testo) // una ricerca senza browser (eventi «web»), poi l'ologramma: «schermo» sceglie il pezzo senza chiave
     ? [[200, { t: 'web', name: 'ricerca', detail: '' }], [700, { t: 'web', name: 'pagina', detail: 'ifixit.com' }],
-      [1300, () => ({ t: 'holo', v: OLO.esegui(/stima/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'schermo' } } : /niente/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'scheda' } } : { azione: 'mostra', modello: PORTATILE }).versione })],
+      [1300, () => ({ t: 'holo', v: OLO.esegui(/schermo/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'schermo' } } : /niente/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'scheda' } } : { azione: 'mostra', modello: PORTATILE }).versione })],
       [300, { t: 'say', s: 'Ecco il portatile.' }]]
     : /browser/i.test(testo)
     ? [[200, { t: 'tool', name: 'browser_navigate', detail: 'google.com' }], [300, { t: 'show' }], [900, { t: 'tool', name: 'browser_snapshot' }], [1500, { t: 'say', s: 'Ecco, ho aperto Google.' }]]
@@ -191,8 +190,8 @@ try {
   await ev("stemParziale('stem chiudi il report'); true"); await pausa(600); await foto('report-ascolto');
   await ev("stemParziale(''); true");
   await tasto('Escape', 'Escape', 27); await pausa(1200);
-  // La ricerca sui pezzi: gli eventi «web» come etichetta piccola, poi la scheda del pezzo scelto con materiale, fattura e fonte
-  if (!SOLO || ['ricerca-web', 'scheda-ricerca', 'scheda-stima'].some((n) => SOLO.has(n))) {
+  // La ricerca sui pezzi: gli eventi «web» come etichetta piccola, poi la scheda del pezzo scelto con materiale e fattura
+  if (!SOLO || ['ricerca-web', 'scheda-ricerca', 'scheda-schermo'].some((n) => SOLO.has(n))) {
     await ev("stemAsk('fammi la scheda del portatile'); true");
     const piccola = await attendi(() => ev("(() => { const e = document.getElementById('small'); return e.classList.contains('on') && e.textContent === 'LEGGO · IFIXIT.COM' ? e.textContent : ''; })()"), 4000, 50);
     controlla(piccola === 'LEGGO · IFIXIT.COM', "l'evento «web» di una pagina compare come etichetta piccola, col solo nome del sito", piccola || await ev("document.getElementById('small').textContent"));
@@ -201,24 +200,24 @@ try {
     await attendi(() => ev("document.querySelector('.holo-card.on') !== null"), 8000); await pausa(3000);
     let c = await ev(SCHEDA);
     const P = SCHEDA_ATTESA;
-    controlla(c.on && c.nome === P.nome && riga(c, 'materiale') === `${P.materiale_vero} · calcolato come alluminio 6061-T6 · 2700 kg/m³` && riga(c, 'fattura') === P.fattura && riga(c, 'fonte') === P.fonte,
-      'scheda con la ricerca: materiale vero e «calcolato come» la chiave, fattura e fonte', JSON.stringify(c.righe.slice(0, 3)));
-    controlla(c.larga <= 300.5 && !c.esce && c.copre.length === 0 && c.basso < H, 'testi ai limiti (60, 140, 60 senza spazi): la scheda resta entro 300 px, niente esce e non copre altre scritte',
+    controlla(c.on && c.nome === P.nome && riga(c, 'materiale') === `${P.materiale_vero} · calcolato come alluminio 6061-T6 · 2700 kg/m³` && riga(c, 'fattura') === P.fattura && riga(c, 'fonte') === undefined,
+      'scheda con la ricerca: materiale vero e «calcolato come» la chiave, fattura, e nessuna riga della fonte', JSON.stringify(c.righe.slice(0, 3)));
+    controlla(c.larga <= 300.5 && !c.esce && c.copre.length === 0 && c.basso < H, 'testi ai limiti (60 e 140 caratteri): la scheda resta entro 300 px, niente esce e non copre altre scritte',
       `${Math.round(c.larga)} × ${Math.round(c.alta)} px, fino a y ${Math.round(c.basso)}; copre: ${c.copre.join(', ') || 'niente'}`);
     await foto('scheda-ricerca');
     await attendi(async () => (await modo()) === 'idle', 12000);
-    await ev("stemAsk('ora la scheda con la stima'); true");
+    await ev("stemAsk('ora la scheda dello schermo'); true");
     await attendi(() => ev("document.querySelector('.holo-card b')?.textContent === 'Schermo'"), 8000); await pausa(1500);
     c = await ev(SCHEDA);
-    controlla(riga(c, 'materiale') === 'vetro alluminosilicato su pannello IPS' && riga(c, 'fonte') === 'stima di STEM, senza fonte', 'senza fonte la scheda dice che è una stima di STEM, e senza chiave non c\'è «calcolato come»', JSON.stringify(c.righe.slice(0, 3)));
+    controlla(riga(c, 'materiale') === 'vetro alluminosilicato su pannello IPS' && riga(c, 'fonte') === undefined, 'senza chiave non c\'è «calcolato come», e la fonte non compare', JSON.stringify(c.righe.slice(0, 3)));
     controlla(riga(c, 'fattura').startsWith('<img src=x onerror=alert(1)>') && c.elementi === 0 && c.allarme === 'undefined', 'una fattura scritta come HTML resta testo: nessun elemento nella scheda');
     controlla(!c.esce && c.copre.length === 0, 'anche questa non esce e non copre altre scritte', `copre: ${c.copre.join(', ') || 'niente'}`);
-    await foto('scheda-stima');
+    await foto('scheda-schermo');
     await attendi(async () => (await modo()) === 'idle', 12000);
     await ev("stemAsk('e la scheda di un pezzo con niente'); true");
     await attendi(() => ev("document.querySelector('.holo-card b')?.textContent === 'Scheda logica'"), 8000); await pausa(800);
     c = await ev(SCHEDA);
-    controlla(riga(c, 'materiale') === 'non detto (si disegna, non si calcola)' && riga(c, 'fattura') === undefined && riga(c, 'fonte') === undefined, 'un pezzo senza ricerca: «non detto», senza righe fattura e fonte', JSON.stringify(c.righe.slice(0, 2)));
+    controlla(riga(c, 'materiale') === 'non detto (si disegna, non si calcola)' && riga(c, 'fattura') === undefined && riga(c, 'fonte') === undefined, 'un pezzo senza ricerca: «non detto», senza riga fattura', JSON.stringify(c.righe.slice(0, 2)));
     await attendi(async () => (await modo()) === 'idle', 12000);
     await tasto('Escape', 'Escape', 27); await pausa(1500);
     controlla(OLO.stato().aperto === false, "Esc chiude l'ologramma anche nello stato del server finto");

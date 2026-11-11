@@ -51,7 +51,6 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
   materiale?: string,      // chiave di materiali.js, solo per il calcolo; se manca: 'generico' (si disegna, non si calcola)
   materiale_vero?: string, // ≤ 60: di cosa è fatto davvero, da una ricerca («alluminio 6063 riciclato, anodizzato»)
   fattura?: string,        // ≤ 140: come è fabbricato e montato («fresato da un blocco estruso», «stampato a iniezione», «incollato»)
-  fonte?: string,          // ≤ 60: da dove vengono i due campi sopra («iFixit 2022»); se manca, sono una stima di STEM
   gruppo?: string,         // ≤ 40: i pezzi dello stesso gruppo esplodono insieme
   esplodi?: [dx, dy, dz],  // direzione della vista esplosa; la lunghezza (≤ 5) moltiplica la distanza
   interno?: boolean,       // pezzo interno: tenue in vista normale, evidente in raggi X e in sezione
@@ -59,7 +58,8 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
   calcolo?: boolean        // entra nel calcolo degli sforzi; predefinito true, false per 'cavo' e 'file' (un 'file' con true resta false, con un avviso)
 }
 ```
-- `materiale_vero`, `fattura` e `fonte` (`CAMPI_RICERCA` di `forme.js`) sono testo libero con le regole di `nome`: devono essere testi, gli a capo e i caratteri di controllo diventano spazi, i più lunghi si tagliano con un avviso, e vuoti valgono non detti (null). Non toccano né la massa né il calcolo: un loro cambio non fa ricalcolare gli sforzi. L'HUD li mostra solo nella scheda del pezzo, con `textContent`.
+- `materiale_vero` e `fattura` (`CAMPI_RICERCA` di `forme.js`) sono testo libero con le regole di `nome`: devono essere testi, gli a capo e i caratteri di controllo diventano spazi, i più lunghi si tagliano con un avviso, e vuoti valgono non detti (null). Non toccano né la massa né il calcolo: un loro cambio non fa ricalcolare gli sforzi. L'HUD li mostra solo nella scheda del pezzo, con `textContent`.
+- La fonte per pezzo c'era e l'11/11 è stata tolta (scelta di Tony): controllate a mano, ne reggevano 2 su 5, e una fonte sbagliata fa fidare di un dato che nessuno ha controllato. Un `fonte` che arriva ancora, dal cervello o da uno stato salvato prima, è un campo sconosciuto: si ignora con un avviso e il pezzo passa.
 - Perché due campi per il materiale: `materiale` serve al calcolo e ha solo le 9 chiavi qui sotto, dove vetro, litio, rame o silicio non ci sono. Il 10/11 un «MacBook Air» di 37 pezzi era uscito tutto 'generico', anche la «Base in alluminio», e la scheda diceva «non detto».
 
 ### Misure per forma (tutte in mm, tutte > 0 salvo dove detto)
@@ -158,7 +158,7 @@ Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso. Una c
 Dal processo MCP, cioè dagli strumenti del cervello:
 - `{azione:'mostra', modello}`: sostituisce tutto con un modello nuovo e apre l'ologramma.
 - `{azione:'modifica', cambia?, aggiungi?, togli?, rimetti?, vista?, carichi?, vincoli?, titolo?, descrizione?}`:
-  - `cambia: [{id, ...campi}]` sostituisce i campi indicati, e `misure` si fonde campo per campo; con una forma nuova misure, calcolo e flusso vanno dati interi; un testo vuoto in `materiale_vero`, `fattura` o `fonte` toglie il campo;
+  - `cambia: [{id, ...campi}]` sostituisce i campi indicati, e `misure` si fonde campo per campo; con una forma nuova misure, calcolo e flusso vanno dati interi; un testo vuoto in `materiale_vero` o `fattura` toglie il campo;
   - `aggiungi: Pezzo[]`;
   - `togli` e `rimetti` sono liste di id;
   - `vista` è parziale;
@@ -182,7 +182,7 @@ Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lanci
 ### Risposte agli strumenti
 - In caso di successo: `{ ok: true, versione, testo, foto? }`. `testo` è in italiano e serve al cervello: pezzi, ingombro, massa, risultati dell'analisi e avvisi. `foto` è il PNG in base64 della vista dopo il cambio.
 - La massa nel testo e nell'HUD ha una regola sola, `massaTesto` di `forme.js`: tre cifre significative, in g sotto 1 kg e in mg sotto 1 g.
-- **La riga dei materiali** (dopo la massa) dice cosa manca alla ricerca sui pezzi, con gli id tagliati come gli altri elenchi: «Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: … Senza fattura: … Senza fonte, quindi stime: …». Un pezzo ha il materiale con `materiale_vero` o con una chiave diversa da `generico`; la fattura si chiede solo a chi ha `materiale_vero`; i pezzi tolti contano. Quando non manca niente la riga non c'è, quindi un pezzo che Tony progetta in PLA non la fa comparire. Dice cosa manca e non come trovarlo: il modo di lavorare sta in `stem-persona.md`.
+- **La riga dei materiali** (dopo la massa) dice cosa manca alla ricerca sui pezzi, con gli id tagliati come gli altri elenchi: «Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: … Senza fattura: …». Un pezzo ha il materiale con `materiale_vero` o con una chiave diversa da `generico`; la fattura si chiede solo a chi ha `materiale_vero`; i pezzi tolti contano. Quando non manca niente la riga non c'è, quindi un pezzo che Tony progetta in PLA non la fa comparire. Dice cosa manca e non come trovarlo: il modo di lavorare sta in `stem-persona.md`.
 - La prima riga dice com'è andato il calcolo quando la risposta parte: «Analisi degli sforzi avviata.» o «Ricalcolo degli sforzi avviato.» solo se è ancora in corso; se la risposta porta già i numeri, «finita» o «ricalcolati». Dopo la scorciatoia della lega la riga dei voxel dice che il campo viene dal calcolo di prima, col tempo vero della scorciatoia.
 - Per la foto il server aspetta, se l'HUD è collegato (visto negli ultimi 15 s), fino a 8 s dopo mostra o se ci sono pezzi `file`, fino a 4 s dopo le altre modifiche: l'entrata di un modello nuovo dura circa 3 s. Senza foto, il testo lo dice («l'HUD non è acceso», «non l'ha mandata entro N s»). Se non è cambiato niente torna l'ultima foto di quella versione, o «Foto: nessuna nuova».
 - In caso di errori: `400 { ok: false, errori: [string] }`, con messaggi chiari perché il cervello possa correggere.

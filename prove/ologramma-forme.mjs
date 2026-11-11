@@ -451,34 +451,38 @@ titolo('5b. Casi giusti: nessun errore, predefiniti applicati');
 }
 
 // ------------------------------------------------------------------ 5c. ricerca sui pezzi
-titolo('5c. Ricerca sui pezzi: materiale_vero, fattura e fonte');
+titolo('5c. Ricerca sui pezzi: materiale_vero e fattura');
 {
-  const R = { materiale_vero: 'alluminio 6063 riciclato, anodizzato', fattura: 'fresato da un blocco estruso', fonte: 'iFixit 2022' };
+  const R = { materiale_vero: 'alluminio 6063 riciclato, anodizzato', fattura: 'fresato da un blocco estruso' };
   const pieno = F.normalizzaPezzo(sc('a', R));
-  esito(pieno.pezzo && F.CAMPI_RICERCA.every((k) => pieno.pezzo[k] === R[k]) && pieno.avvisi.length === 0 && pieno.pezzo.materiale === 'generico',
-    'i tre campi passano così come sono, e la chiave del calcolo resta generico', JSON.stringify(pieno.avvisi.concat(pieno.errori)));
+  esito(pieno.pezzo && F.CAMPI_RICERCA.length === 2 && F.CAMPI_RICERCA.every((k) => pieno.pezzo[k] === R[k]) && pieno.avvisi.length === 0 && pieno.pezzo.materiale === 'generico',
+    'i due campi passano così come sono, e la chiave del calcolo resta generico', JSON.stringify(pieno.avvisi.concat(pieno.errori)));
   const senza = F.normalizzaPezzo(sc('a'));
   esito(senza.pezzo && F.CAMPI_RICERCA.every((k) => senza.pezzo[k] === null && F.PREDEFINITI.pezzo[k] === null), 'non detti valgono null, come nei predefiniti');
-  const vuoti = F.normalizzaPezzo(sc('a', { materiale_vero: '', fattura: '   ', fonte: null }));
+  const vuoti = F.normalizzaPezzo(sc('a', { materiale_vero: '', fattura: '   ' }));
   esito(vuoti.pezzo && F.CAMPI_RICERCA.every((k) => vuoti.pezzo[k] === null) && vuoti.errori.length === 0, 'vuoto, solo spazi e null valgono non detto, senza errori');
   for (const k of F.CAMPI_RICERCA) {
     const r = F.normalizzaPezzo(sc('a', { [k]: 42 })), r2 = F.normalizzaPezzo(sc('a', { [k]: ['vetro'] }));
     esito(r.pezzo === null && r.errori.length === 1 && r.errori[0].includes(k) && r2.pezzo === null, `${k} che non è un testo: errore che cita il campo`, r.errori.join(' | '));
   }
-  const MAX = { materiale_vero: 60, fattura: 140, fonte: 60 };
+  const MAX = { materiale_vero: 60, fattura: 140 };
   for (const k of F.CAMPI_RICERCA) {
     const giusto = F.normalizzaPezzo(sc('a', { [k]: 'x'.repeat(MAX[k]) })), lungo = F.normalizzaPezzo(sc('a', { [k]: 'è'.repeat(MAX[k] + 1) }));
     esito(giusto.pezzo && giusto.pezzo[k].length === MAX[k] && giusto.avvisi.length === 0 && lungo.pezzo && Array.from(lungo.pezzo[k]).length === MAX[k] && lungo.avvisi.length === 1 && lungo.avvisi[0].includes(k),
       `${k}: ${MAX[k]} caratteri passano, uno in più si taglia con un avviso`, lungo.avvisi.join(' | '));
   }
-  const sporco = F.normalizzaPezzo(sc('a', { materiale_vero: '  vetro\n\tal\u0000luminosilicato  ', fattura: '<img src=x onerror=alert(1)>', fonte: 'a\u007fb' }));
-  esito(sporco.pezzo && sporco.pezzo.materiale_vero === 'vetro al luminosilicato' && sporco.pezzo.fonte === 'a b' && sporco.pezzo.fattura === '<img src=x onerror=alert(1)>',
-    'a capo e caratteri di controllo diventano uno spazio; il resto è testo e basta (nell\'HUD entra con textContent)', JSON.stringify(sporco.pezzo && [sporco.pezzo.materiale_vero, sporco.pezzo.fonte]));
+  const sporco = F.normalizzaPezzo(sc('a', { materiale_vero: '  vetro\n\tal\u0000luminosilicato  ', fattura: 'a\u007fb <img src=x onerror=alert(1)>' }));
+  esito(sporco.pezzo && sporco.pezzo.materiale_vero === 'vetro al luminosilicato' && sporco.pezzo.fattura === 'a b <img src=x onerror=alert(1)>',
+    'a capo e caratteri di controllo diventano uno spazio; il resto è testo e basta (nell\'HUD entra con textContent)', JSON.stringify(sporco.pezzo && [sporco.pezzo.materiale_vero, sporco.pezzo.fattura]));
   const ancora = F.normalizzaPezzo(JSON.parse(JSON.stringify(pieno.pezzo)));
-  esito(ancora.pezzo && JSON.stringify(ancora.pezzo) === JSON.stringify(pieno.pezzo) && ancora.avvisi.length === 0, 'un pezzo con i tre campi, rinormalizzato, resta uguale e senza avvisi');
+  esito(ancora.pezzo && JSON.stringify(ancora.pezzo) === JSON.stringify(pieno.pezzo) && ancora.avvisi.length === 0, 'un pezzo con i due campi, rinormalizzato, resta uguale e senza avvisi');
   // Come fa il server in «cambia»: il pezzo di prima fuso con i campi nuovi. Un testo vuoto toglie il campo, gli altri restano.
-  const tolto = F.normalizzaPezzo({ ...pieno.pezzo, fonte: '' });
-  esito(tolto.pezzo && tolto.pezzo.fonte === null && tolto.pezzo.materiale_vero === R.materiale_vero && tolto.pezzo.fattura === R.fattura, 'fuso con fonte vuota: la fonte va via, materiale e fattura restano');
+  const tolto = F.normalizzaPezzo({ ...pieno.pezzo, fattura: '' });
+  esito(tolto.pezzo && tolto.pezzo.fattura === null && tolto.pezzo.materiale_vero === R.materiale_vero, 'fuso con fattura vuota: la fattura va via, il materiale resta');
+  // La fonte per pezzo è stata tolta l'11/11: una conversazione di prima che la manda ancora non deve far fallire il modello
+  const vecchio = F.normalizzaPezzo(sc('a', { ...R, fonte: 'iFixit 2022' }));
+  esito(vecchio.pezzo && !('fonte' in vecchio.pezzo) && vecchio.errori.length === 0 && vecchio.avvisi.length === 1 && vecchio.avvisi[0].includes('fonte'),
+    'fonte non c\'è più: arriva come campo sconosciuto, ignorato con un avviso, e il pezzo passa', vecchio.avvisi.join(' | '));
   const chiave = F.normalizzaPezzo(sc('a', { materiale: 'vetro' }));
   esito(chiave.pezzo === null && chiave.errori[0].includes('materiale'), 'la chiave del calcolo non si allarga: «vetro» in materiale resta un errore', chiave.errori.join(' | '));
 }

@@ -497,12 +497,10 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
     const P = S.pezzi, ids = (f) => P.filter(f).map((p) => p.id);
     const senza = ids((p) => !p.materiale_vero && p.materiale === 'generico');
     const senzaFattura = ids((p) => p.materiale_vero && !p.fattura);
-    const stime = ids((p) => (p.materiale_vero || p.fattura) && !p.fonte);
-    if (!senza.length && !senzaFattura.length && !stime.length) return [];
+    if (!senza.length && !senzaFattura.length) return [];
     const n = P.length - senza.length, r = [`Materiali: ${n} ${n === 1 ? 'pezzo' : 'pezzi'} su ${P.length} ${n === 1 ? 'ha' : 'hanno'} il materiale.`];
     if (senza.length) r.push(`Senza materiale: ${elenco(senza)}.`);
     if (senzaFattura.length) r.push(`Senza fattura: ${elenco(senzaFattura)}.`);
-    if (stime.length) r.push(`Senza fonte, quindi stime: ${elenco(stime)}.`);
     return [r.join(' ')];
   }
 

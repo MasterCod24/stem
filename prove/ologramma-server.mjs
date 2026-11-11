@@ -192,7 +192,8 @@ if (esito(Boolean(claude), 'il processo claude del cervello è partito')) {
   const strumenti = dopo('--tools').split(','), approvati = a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--disallowedTools'));
   esito(['WebSearch', 'WebFetch'].every((n) => strumenti.includes(n) && approvati.includes(n)) && !strumenti.includes('Bash') && approvati.includes('mcp__mac') && approvati.includes('mcp__playwright'),
     'il cervello ha WebSearch e WebFetch, approvati senza domande, e non ha Bash', `--tools ${dopo('--tools')}; --allowedTools ${approvati.join(' ')}`);
-  esito(['WebSearch', 'materiale_vero', 'fattura', 'fonte'].every((n) => dopo('--append-system-prompt').includes(n)), 'la persona dice di cercare con WebSearch e nomina i tre campi del pezzo');
+  esito(['WebSearch', 'materiale_vero', 'fattura'].every((n) => dopo('--append-system-prompt').includes(n)) && !dopo('--append-system-prompt').includes('`fonte`'),
+    'la persona dice di cercare con WebSearch e nomina i due campi del pezzo, non più la fonte (tolta l\'11/11)');
   const dirs = a.slice(a.indexOf('--add-dir') + 1, a.indexOf('--mcp-config'));
   esito(dirs.length === 2 && dirs.includes(path.join(CASA, 'Desktop')) && dirs.includes(DOC) && a.indexOf('--add-dir') > 0,
     'le cartelle dei documenti sono quelle della prova', dirs.join(', '));
@@ -302,9 +303,9 @@ const P = per.mostra_ologramma?.inputSchema?.properties?.pezzi?.items?.propertie
 esito(JSON.stringify(P?.materiale?.enum) === JSON.stringify(Object.keys(MATERIALI)) && JSON.stringify(per.analizza_struttura?.inputSchema?.properties?.carichi?.items?.properties?.faccia?.enum) === JSON.stringify([...FACCE]) &&
   /mm/.test(P?.misure?.description) && per.modifica_ologramma?.inputSchema?.properties?.vista?.properties?.modo?.enum?.includes('raggi-x'),
   'gli schemi hanno le chiavi dei materiali, le facce, le misure in mm e i modi');
-esito(['materiale_vero', 'fattura', 'fonte'].every((k) => P?.[k]?.type === 'string' && /al massimo (60|140)/.test(P[k].description)) && /chiave del calcolo/.test(P?.materiale?.description) && /stima/.test(P?.fonte?.description),
-  'lo schema del pezzo ha materiale_vero, fattura e fonte, e distingue la chiave del calcolo dal materiale vero');
-// Le definizioni stanno nel contesto del cervello a ogni domanda. Prima dei tre campi i tre strumenti pesavano 8.441 B
+esito(['materiale_vero', 'fattura'].every((k) => P?.[k]?.type === 'string' && /al massimo (60|140)/.test(P[k].description)) && /chiave del calcolo/.test(P?.materiale?.description) && P && !('fonte' in P),
+  'lo schema del pezzo ha materiale_vero e fattura, non la fonte, e distingue la chiave del calcolo dal materiale vero');
+// Le definizioni stanno nel contesto del cervello a ogni domanda. Prima dei campi di ricerca i tre strumenti pesavano 8.441 B
 // (misurati sul tools/list del 10/11): il tetto lascia 700 B ai campi nuovi, e chi li gonfia lo vede qui.
 const pesoOlo = Buffer.byteLength(JSON.stringify(lista.filter((x) => ['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura'].includes(x.name))));
 esito(pesoOlo <= 8441 + 700, 'i tre strumenti degli ologrammi restano entro 9.141 B', `${pesoOlo} B; tools/list intero ${Buffer.byteLength(JSON.stringify(lista))} B`);
@@ -325,16 +326,16 @@ esito(t.testo.includes('2 pezzi.') && t.testo.includes('Ingombro 60 × 56 × 40 
 t = await M.strumento('modifica_ologramma', { titolo: 'Staffa in S235', descrizione: 'Base e braccio.' });
 s = await stato();
 esito(!t.errore && t.testo.startsWith('Fatto: titolo, descrizione.') && s.titolo === 'Staffa in S235' && s.descrizione === 'Base e braccio.', 'modifica_ologramma cambia titolo e descrizione', t.testo.split('\n')[0]);
-// La ricerca sui pezzi: i tre campi arrivano allo stato, la riga dice cosa manca, un testo vuoto li toglie
+// La ricerca sui pezzi: i due campi arrivano allo stato, la riga dice cosa manca, un testo vuoto li toglie
 const rigaMateriali = (x) => x.split('\n').find((l) => l.startsWith('Materiali:')) || '';
-t = await M.strumento('modifica_ologramma', { cambia: [{ id: 'base', materiale_vero: 'acciaio S235JR zincato', fattura: 'tagliata al laser e piegata', fonte: 'scheda del fornitore 2024' }, { id: 'braccio', materiale_vero: 'acciaio S235JR' }] });
+t = await M.strumento('modifica_ologramma', { cambia: [{ id: 'base', materiale_vero: 'acciaio S235JR zincato', fattura: 'tagliata al laser e piegata' }, { id: 'braccio', materiale_vero: 'acciaio S235JR' }] });
 s = await stato();
-esito(!t.errore && s.pezzi[0].materiale_vero === 'acciaio S235JR zincato' && s.pezzi[0].fattura === 'tagliata al laser e piegata' && s.pezzi[0].fonte === 'scheda del fornitore 2024' && s.pezzi[0].materiale === 'acciaio-s235' &&
-  rigaMateriali(t.testo) === 'Materiali: 2 pezzi su 2 hanno il materiale. Senza fattura: «braccio». Senza fonte, quindi stime: «braccio».',
-  'cambia con materiale_vero, fattura e fonte: stanno nello stato, e il testo dice cosa manca', rigaMateriali(t.testo));
-t = await M.strumento('modifica_ologramma', { cambia: [{ id: 'base', materiale_vero: '', fattura: '', fonte: '' }, { id: 'braccio', materiale_vero: '' }] });
+esito(!t.errore && s.pezzi[0].materiale_vero === 'acciaio S235JR zincato' && s.pezzi[0].fattura === 'tagliata al laser e piegata' && !('fonte' in s.pezzi[0]) && s.pezzi[0].materiale === 'acciaio-s235' &&
+  rigaMateriali(t.testo) === 'Materiali: 2 pezzi su 2 hanno il materiale. Senza fattura: «braccio».',
+  'cambia con materiale_vero e fattura: stanno nello stato, e il testo dice cosa manca', rigaMateriali(t.testo));
+t = await M.strumento('modifica_ologramma', { cambia: [{ id: 'base', materiale_vero: '', fattura: '' }, { id: 'braccio', materiale_vero: '' }] });
 s = await stato();
-esito(!t.errore && s.pezzi.every((p) => p.materiale_vero === null && p.fattura === null && p.fonte === null) && rigaMateriali(t.testo) === '', 'un testo vuoto toglie i campi, e senza niente da dire la riga sparisce');
+esito(!t.errore && s.pezzi.every((p) => p.materiale_vero === null && p.fattura === null) && rigaMateriali(t.testo) === '', 'un testo vuoto toglie i campi, e senza niente da dire la riga sparisce');
 await M.strumento('modifica_ologramma', { titolo: 'Staffa', descrizione: '' });
 t = await M.strumento('modifica_ologramma', { togli: ['braccio'] });
 esito(!t.errore && t.testo.startsWith('Fatto: tolti «braccio».') && t.testo.includes('di cui 1 tolto'), 'modifica_ologramma togli', t.testo.split('\n')[0]);

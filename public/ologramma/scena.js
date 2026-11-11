@@ -210,7 +210,7 @@ const CSS = `
 .holo-card b { display: block; margin-bottom: 4px; font: 300 16px/1.2 var(--o-s); letter-spacing: .14em; text-transform: uppercase; color: var(--o-cv); text-shadow: var(--o-gl); }
 .holo-card div { margin-top: 8px; }
 .holo-card .k { display: block; margin-bottom: 3px; font: 400 8.5px/1 var(--o-m); letter-spacing: .22em; text-transform: uppercase; color: var(--o-t2); }
-.holo-card .v { font: 300 12.5px/1.35 var(--o-s); letter-spacing: .03em; color: var(--o-t1); overflow-wrap: anywhere; } /* una fonte senza spazi non esce dai 300 px */
+.holo-card .v { font: 300 12.5px/1.35 var(--o-s); letter-spacing: .03em; color: var(--o-t1); overflow-wrap: anywhere; } /* una parola lunghissima non esce dai 300 px */
 .holo-leg { position: absolute; left: 2.2vw; bottom: 3.2vh; width: min(34vw, 420px); font: 400 9px/1.3 var(--o-m); letter-spacing: .14em; color: var(--o-t1);
   opacity: 0; transition: opacity .3s; }
 .holo-leg.on { opacity: 1; }
@@ -665,12 +665,11 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     scheda.classList.toggle('on', !!R && aperto);
     if (R) {
       const p = R.p, M = MATERIALI[p.materiale], righe = [];
-      // materiale_vero, fattura e fonte vengono dalla ricerca di STEM sul pezzo vero; la chiave `materiale` è solo quella
-      // del calcolo, e accanto a un materiale vero si dichiara come tale. Senza fonte è una stima, e la scheda lo dice.
+      // materiale_vero e fattura vengono dalla ricerca di STEM sul pezzo vero; la chiave `materiale` è solo quella del
+      // calcolo, e accanto a un materiale vero si dichiara come tale. La fonte per pezzo è stata tolta l'11/11 (reggeva 2 su 5).
       const chiave = p.materiale === 'generico' ? '' : `${M.nome} · ${numero(M.densita, 0)} kg/m³${M.affidabile ? '' : ' · non isotropo'}`;
       righe.push(['materiale', p.materiale_vero ? p.materiale_vero + (chiave ? ` · calcolato come ${chiave}` : '') : chiave || 'non detto (si disegna, non si calcola)']);
       if (p.fattura) righe.push(['fattura', p.fattura]);
-      if (p.materiale_vero || p.fattura) righe.push(['fonte', p.fonte || 'stima di STEM, senza fonte']);
       const vol = volume(p), kg = finito(vol) && finito(M.densita) ? vol * M.densita * 1e-9 : null;
       const b = R.box.getSize(v1), misure = misurabile(R) ? [b.x, b.y, b.z].map(mmTesto).join(' × ') + ' mm' : ''; // un file non ancora aperto non ha misure
       if (kg !== null || misure) righe.push(['misure', [kg !== null ? massaTesto(kg) : '', misure].filter(Boolean).join(' · ')]);

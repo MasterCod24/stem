@@ -697,7 +697,6 @@ const PEZZO = { type: 'object', properties: {
   materiale: { type: 'string', enum: Object.keys(MATERIALI), description: 'chiave del calcolo: solo se il materiale vero è questo o molto vicino, se no generico (si disegna, non si calcola)' },
   materiale_vero: { type: 'string', description: 'di cosa è fatto davvero, al massimo 60 caratteri: «alluminio 6063 anodizzato», «vetro»' },
   fattura: { type: 'string', description: 'come è fabbricato e montato, al massimo 140: «fresato da un estruso», «stampato a iniezione», «incollato»' },
-  fonte: { type: 'string', description: 'da dove vengono materiale_vero e fattura, al massimo 60: «iFixit 2022»; vuota se sono una tua stima' },
   gruppo: { type: 'string', description: 'i pezzi dello stesso gruppo esplodono insieme' },
   esplodi: TERNA('direzione nella vista esplosa; la lunghezza, fino a 5, moltiplica la distanza'),
   interno: { type: 'boolean', description: 'pezzo interno: tenue di solito, evidente ai raggi X e in sezione' },
@@ -709,7 +708,7 @@ const OLOGRAMMI = new Set(['mostra_ologramma', 'modifica_ologramma', 'analizza_s
 TOOLS.push({
   name: 'mostra_ologramma',
   description: 'Mostra nell\'HUD, a schermo intero, un ologramma 3D fatto di pezzi con misure vere in mm, al posto di quello di prima. ' +
-    'Risponde con il riassunto (pezzi, ingombro, massa, pezzi senza materiale o senza fonte) e, con l\'HUD acceso, con la foto di quello che si vede: guardala e correggi prima di dire che è fatto. ' +
+    'Risponde con il riassunto (pezzi, ingombro, massa, pezzi senza materiale o senza fattura) e, con l\'HUD acceso, con la foto di quello che si vede: guardala e correggi prima di dire che è fatto. ' +
     'Un oggetto vero costruito così è stilizzato; per quello vero serve un file 3D di Tony (forma file).',
   inputSchema: { type: 'object', properties: {
     titolo: { type: 'string', description: 'al massimo 80 caratteri' },

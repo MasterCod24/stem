@@ -37,7 +37,7 @@ function congela(o) {
 
 // Congelati perché sono condivisi: chi li usa ne fa una copia, e i pezzi non li riferiscono mai.
 export const PREDEFINITI = congela({
-  pezzo: { posizione: [0, 0, 0], rotazione: [0, 0, 0], materiale: 'generico', materiale_vero: null, fattura: null, fonte: null, gruppo: null, esplodi: null, interno: false, flusso: null, calcolo: true },
+  pezzo: { posizione: [0, 0, 0], rotazione: [0, 0, 0], materiale: 'generico', materiale_vero: null, fattura: null, gruppo: null, esplodi: null, interno: false, flusso: null, calcolo: true },
   senza_calcolo: ['cavo', 'file'], // per queste forme calcolo vale false se non è detto
   misure: {
     cono: { r_cima: 0 },
@@ -49,13 +49,15 @@ export const PREDEFINITI = congela({
   vista: { esploso: 0, sezione: null, modo: 'ologramma', selezionato: null, isolato: null, rotazione_auto: false },
 });
 // esplodi null vuol dire direzione non detta: la sceglie la scena. gruppo null: il pezzo esplode da solo.
-// materiale_vero, fattura e fonte null: non detti. Con materiale_vero o fattura ma senza fonte, è una stima di STEM.
+// materiale_vero e fattura null: non detti.
 
-const TESTO_MAX = { titolo: 80, descrizione: 300, nome: 60, gruppo: 40, materiale_vero: 60, fattura: 140, fonte: 60 };
+const TESTO_MAX = { titolo: 80, descrizione: 300, nome: 60, gruppo: 40, materiale_vero: 60, fattura: 140 };
 // Quello che una ricerca ha trovato sul pezzo vero: testo libero, solo da leggere nella scheda. `materiale` resta la
 // chiave del calcolo (le 9 di materiali.js): vetro, litio o rame non ci sono, e senza questi campi un «MacBook Air» di
-// 37 pezzi usciva tutto 'generico' (10/11). Corti perché il cervello li scrive per ogni pezzo: numeri di Tony, non misurati.
-export const CAMPI_RICERCA = Object.freeze(['materiale_vero', 'fattura', 'fonte']);
+// 37 pezzi usciva tutto 'generico' (10/11). Corti perché il cervello li scrive per ogni pezzo: limiti scelti, non misurati.
+// La fonte per pezzo c'era e l'11/11 è stata tolta (scelta di Tony): controllate a mano, ne reggevano 2 su 5, e una fonte
+// sbagliata fa fidare di un dato che nessuno ha controllato. Un `fonte` che arriva ancora è un campo sconosciuto, ignorato.
+export const CAMPI_RICERCA = Object.freeze(['materiale_vero', 'fattura']);
 const FORZA_MAX = 1e7; // N
 const ESPLODI_MAX = 5;
 const DENTI_MIN = 6, DENTI_MAX = 200;
