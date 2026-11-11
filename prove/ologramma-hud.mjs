@@ -1,4 +1,4 @@
-// ologramma-hud.mjs — prova l'HUD vero (index.html e stem.js) con l'ologramma, in un Chrome headless sulla GPU del Mac.
+// ologramma-hud.mjs — prova l'HUD vero (index.html e nexus.js) con l'ologramma, in un Chrome headless sulla GPU del Mac.
 // Il server finto qui dentro imita server.mjs: statico come lui (/, /three/, /mediapipe/, /modelli/) e con lo stato vero di
 // ologramma.mjs, ma senza calcolo, cervello né voce; /api/ask segue un copione («modifica», «browser»).
 // Niente fotocamera: le mani guardano la foto di prova (?debug&mani=immagine) e Chrome ha solo dispositivi finti.
@@ -21,8 +21,8 @@ import { testoMisure } from '../public/ologramma/gesti.js';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4431, CDP = 9562, ORIGINE = `http://localhost:${PORTA}`, W = 1470, H = 956; // lo schermo di Tony in punti, a 2x
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const LAVORO = fs.mkdtempSync(path.join(process.argv[2] || os.tmpdir(), 'stem-hud-'));
-const FOTO = process.argv[3] || fs.mkdtempSync(path.join(os.tmpdir(), 'stem-hud-foto-'));
+const LAVORO = fs.mkdtempSync(path.join(process.argv[2] || os.tmpdir(), 'nexus-hud-'));
+const FOTO = process.argv[3] || fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-hud-foto-'));
 fs.mkdirSync(FOTO, { recursive: true });
 
 let passati = 0, falliti = 0;
@@ -170,7 +170,7 @@ async function ev(espressione) {
 }
 async function vai(url) { // l'HUD è pronto quando la formazione è finita e c'è la scena
   await cdp('Page.navigate', { url });
-  if (!(await attendi(() => ev("document.body?.classList.contains('ready') && typeof window.stemOlogrammaDemo === 'function'").catch(() => false), 25000, 200)))
+  if (!(await attendi(() => ev("document.body?.classList.contains('ready') && typeof window.nexusOlogrammaDemo === 'function'").catch(() => false), 25000, 200)))
     throw new Error(`l'HUD non è pronto: ${url}`);
 }
 const CODICI = { Escape: ['Escape', 27], ArrowUp: ['ArrowUp', 38], ArrowDown: ['ArrowDown', 40] };
@@ -217,7 +217,7 @@ const tocca = (r, q) => q && r[0] < q[2] && q[0] < r[2] && r[1] < q[3] && q[1] <
 async function controllaQuote(nome, attesi, { minimo = 0.5, massimo = 1 } = {}) {
   const q = await attendi(async () => { const x = await leggiQuote(); return x.filter((e) => e.op > minimo).length === 3 && x; }, 4000);
   if (!q) { const x = await leggiQuote(); return esito(false, nome, `quote accese: ${x.filter((e) => e.op > minimo).map((e) => e.testo).join(', ') || 'nessuna'}`); }
-  const [a, z, card] = await Promise.all([ev("import('/ologramma/scena.js').then((m) => m.angoloTesta())"), ev('stemOlo.info().zona'),
+  const [a, z, card] = await Promise.all([ev("import('/ologramma/scena.js').then((m) => m.angoloTesta())"), ev('nexusOlo.info().zona'),
     ev("(() => { const r = document.querySelector('.holo-card.on')?.getBoundingClientRect(); return r ? [r.left, r.top, r.right, r.bottom] : null; })()")]);
   const errori = [];
   for (const e of q) {
@@ -230,7 +230,7 @@ async function controllaQuote(nome, attesi, { minimo = 0.5, massimo = 1 } = {}) 
   }
   return esito(!errori.length, nome, errori.length ? errori.join('; ') : q.map((e) => `${e.asse} ${e.testo} (${e.op})`).join(', '));
 }
-const REPORT = "stemReport({ titolo: 'prova', blocchi: [{ tipo: 'testo', titolo: 'Blocco di prova', testo: 'Un testo qualunque.' }] })";
+const REPORT = "nexusReport({ titolo: 'prova', blocchi: [{ tipo: 'testo', titolo: 'Blocco di prova', testo: 'Un testo qualunque.' }] })";
 
 // 21 s, poi una lettura di window.__misure: i fotogrammi contati in ognuno degli ultimi 20 secondi interi, con mediana,
 // p10 e minimo. Contati per secondo, perché la mediana degli intervalli nascondeva un HUD che alterna fotogrammi corti e
@@ -254,7 +254,7 @@ async function misuraFps(nome) {
     `${nome}: __misure.fps conta i fotogrammi in ogni secondo intero, con mediana, p10 e minimo`, riga);
   esito(contati >= 45 && x.mediana >= 45, `${nome}: sopra la soglia di Tony (45 fps) in 20 s`, riga);
   esito(x.p10 >= 45, `${nome}: anche il p10 dei secondi sopra 45 fps, cioè niente scatti frequenti`, `p10 ${x.p10}, minimo ${x.minimo}`);
-  const l = await luce((await ev('stemOlo.info()')).zona);
+  const l = await luce((await ev('nexusOlo.info()')).zona);
   esito(l > 0.2, `${nome}: alla fine della misura il modello è disegnato`, `luminosità al centro ${l.toFixed(3)}`);
 }
 
@@ -277,7 +277,7 @@ try {
   esito(dentro[0] === W && dentro[1] === H && dentro[2] === 2, 'finestra interna grande come lo schermo di Tony', `${dentro[0]}×${dentro[1]} punti a ${dentro[2]}x`);
   // Niente riconoscimento vocale nel Chrome di prova: in un profilo nuovo l'HUD scaricherebbe il modello italiano di Chrome
   await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "for (const k of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, k, { value: undefined })" });
-  script = (await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('stem-mani', '0') } catch {}" })).identifier; // senza mani
+  script = (await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('nexus-mani', '0') } catch {}" })).identifier; // senza mani
   await vai(`${ORIGINE}/?debug`);
   const gpu = await ev(`(() => { const g = document.createElement('canvas').getContext('webgl2'), x = g.getExtension('WEBGL_debug_renderer_info');
     return x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : 'senza WEBGL_debug_renderer_info'; })()`);
@@ -286,17 +286,17 @@ try {
   const libera = await testa(), angolo = await ev("import('/ologramma/scena.js').then((m) => m.angoloTesta())");
 
   titolo("Apertura: la testa nell'angolo, report e browser lasciano il posto");
-  await ev("stemAsk('apri il browser'), true");
+  await ev("nexusAsk('apri il browser'), true");
   const browser = await attendi(() => ev("document.body.classList.contains('browsing')"), 3000);
   await ev(`${REPORT}, true`);
   const report = await ev("document.getElementById('report').classList.contains('on') && !document.body.classList.contains('browsing')");
   esito(browser && report, "prima: il browser aperto da un evento 'show', poi un report al suo posto");
-  const demo = await ev("stemOlogrammaDemo('turbofan')");
+  const demo = await ev("nexusOlogrammaDemo('turbofan')");
   await pausa(1500);
-  const aperto = await ev("({ report: document.getElementById('report').classList.contains('on'), browsing: document.body.classList.contains('browsing'), olo: document.body.classList.contains('olo'), info: stemOlo.info() })");
+  const aperto = await ev("({ report: document.getElementById('report').classList.contains('on'), browsing: document.body.classList.contains('browsing'), olo: document.body.classList.contains('olo'), info: nexusOlo.info() })");
   const inAngolo = await testa();
   esito(aperto.info.aperto && aperto.info.pezzi === demo.pezzi && aperto.info.pezzi > 50 && !aperto.report && !aperto.browsing && aperto.olo,
-    'stemOlogrammaDemo apre il turbofan; report e browser si chiudono', `${aperto.info.pezzi} pezzi, ${aperto.info.triangoli} triangoli`);
+    'nexusOlogrammaDemo apre il turbofan; report e browser si chiudono', `${aperto.info.pezzi} pezzi, ${aperto.info.triangoli} triangoli`);
   esito(Math.abs(inAngolo[0] - angolo.dockX) < 0.03 * W && inAngolo[1] > H / 2, "la testa va nell'angolo in basso a destra",
     `scritta di stato a (${inAngolo}) contro l'angolo (${angolo.dockX.toFixed(0)}, ${angolo.dockY.toFixed(0)}); prima a (${libera})`);
   titolo('Quote in millimetri');
@@ -306,33 +306,33 @@ try {
   titolo('Mouse');
   const z = aperto.info.zona, pd0 = await ev('window.__pd');
   await clic(z.cx, z.cy);
-  const scelto = await ev("({ s: stemOlo.info().vista.selezionato, scheda: document.querySelector('.holo-card.on')?.textContent || '' })");
+  const scelto = await ev("({ s: nexusOlo.info().vista.selezionato, scheda: document.querySelector('.holo-card.on')?.textContent || '' })");
   esito(typeof scelto.s === 'string' && scelto.scheda.length > 0, 'clic su un pezzo: lo sceglie e mostra la scheda', `${scelto.s}: «${scelto.scheda.slice(0, 70)}»`);
   esito((await ev('window.__pd')) > pd0, "il pointerdown arriva lo stesso alla finestra, che sblocca l'audio");
   if (typeof scelto.s === 'string') {
     await controllaQuote(`pezzo scelto (${scelto.s}): tre quote .holo-quota con i lati del suo ingombro`, lati([scelto.s]));
-    const qi = await ev('stemOlo.info().quote');
+    const qi = await ev('nexusOlo.info().quote');
     esito(qi.soggetto === scelto.s && qi.segmenti === 15, 'le quote sono linee: per asse due di riferimento, una di quota e due trattini', JSON.stringify(qi));
     await foto('1b-quote');
   }
   await clic(z.cx, z.cy, 2);
-  const isolato = (await ev('stemOlo.info().vista')).isolato;
+  const isolato = (await ev('nexusOlo.info().vista')).isolato;
   await clic(z.cx, z.cy, 2);
-  const rimesso = (await ev('stemOlo.info().vista')).isolato;
+  const rimesso = (await ev('nexusOlo.info().vista')).isolato;
   esito(typeof isolato === 'string' && rimesso === null, 'doppio clic: isola il pezzo, e un altro doppio clic lo rimette con gli altri', `isolato ${isolato}`);
 
   titolo('Tasti e trascinamento');
   await tasto('e'); await pausa(2000);
-  const v1 = await ev('stemOlo.info()'), et1 = await etichette();
+  const v1 = await ev('nexusOlo.info()'), et1 = await etichette();
   esito(v1.vista.esploso === 1 && Object.keys(et1).length >= 3, 'E: vista esplosa, con le etichette', `${Object.keys(et1).length} etichette visibili`);
   await foto('2-esploso');
-  const selE = (await ev('stemOlo.info().vista')).selezionato;
+  const selE = (await ev('nexusOlo.info().vista')).selezionato;
   if (esito(typeof selE === 'string', 'nell\'esploso il pezzo resta scelto', String(selE))) {
     await controllaQuote(`esploso, pezzo scelto (${selE}): le quote lo seguono con gli stessi valori`, lati([selE]));
-    await ev("stemOlo.comando('seleziona', null), true"); await pausa(900);
+    await ev("nexusOlo.comando('seleziona', null), true"); await pausa(900);
     const spente = (await leggiQuote()).filter((e) => e.op > 0.05);
     esito(!spente.length, "esploso senza pezzo scelto: la quota del modello intero si spegne", spente.map((e) => `${e.asse} ${e.op}`).join(', ') || 'tutte spente');
-    await ev(`stemOlo.comando('seleziona', ${JSON.stringify(selE)}), true`); await pausa(900); // come prima, per le etichette qui sotto
+    await ev(`nexusOlo.comando('seleziona', ${JSON.stringify(selE)}), true`); await pausa(900); // come prima, per le etichette qui sotto
   }
   await trascina(z.cx - 150, z.cy, z.cx + 150, z.cy + 60); await pausa(400);
   const et2 = await etichette();
@@ -346,7 +346,7 @@ try {
   const modi = [];
   let tacche = null;
   for (const [i, k] of ['x', 'x', 'd', 'f', 'l', 'o'].entries()) {
-    await tasto(k); modi.push((await ev('stemOlo.info().vista')).modo);
+    await tasto(k); modi.push((await ev('nexusOlo.info().vista')).modo);
     if (i === 0) { await pausa(900); await foto('3-raggi-x'); }
     if (k === 'f') tacche = await ev("[...document.querySelectorAll('.holo-leg.on .ticks span')].map((s) => s.textContent + ' ' + parseFloat(s.style.left) + '%').join(' | ')");
   }
@@ -357,11 +357,11 @@ try {
     'sforzi: rischio = 1/fs (fs 10 → 0,1, fs 2 → 0,5, rosso da fs 1), e la legenda ha le tappe fs 4, 2, 1,33 e ≤ 1', `${scala.join(', ')}; ${tacche}`);
   await tasto('e'); await pausa(1500);
   await tasto('s');
-  const s1 = (await ev('stemOlo.info().vista')).sezione, assi = [s1?.asse];
+  const s1 = (await ev('nexusOlo.info().vista')).sezione, assi = [s1?.asse];
   await pausa(1000); await foto('4-sezione');
-  await tasto('ArrowUp'); const s2 = (await ev('stemOlo.info().vista')).sezione;
-  await tasto('ArrowDown'); const s3 = (await ev('stemOlo.info().vista')).sezione;
-  for (let i = 0; i < 3; i++) { await tasto('s'); assi.push((await ev('stemOlo.info().vista')).sezione?.asse ?? null); }
+  await tasto('ArrowUp'); const s2 = (await ev('nexusOlo.info().vista')).sezione;
+  await tasto('ArrowDown'); const s3 = (await ev('nexusOlo.info().vista')).sezione;
+  for (let i = 0; i < 3; i++) { await tasto('s'); assi.push((await ev('nexusOlo.info().vista')).sezione?.asse ?? null); }
   esito(assi.join() === 'x,y,z,', 'S: sezione a giro sugli assi x, y, z, poi niente', assi.map(String).join(' → '));
   esito(s2?.posizione > s1?.posizione && Math.abs(s3?.posizione - s1?.posizione) < 1e-9, 'frecce: il taglio si sposta e torna', `${s1?.posizione.toFixed(1)} → ${s2?.posizione.toFixed(1)} → ${s3?.posizione.toFixed(1)} mm`);
   esito((await ev('window.__tasto')).impedito === true, "con l'ologramma aperto i tasti sono suoi (preventDefault)");
@@ -372,7 +372,7 @@ try {
 
   titolo('Esc');
   await tasto('Escape'); await pausa(1500);
-  const chiuso = await ev("({ info: stemOlo.info(), olo: document.body.classList.contains('olo') })"), tornata = await testa();
+  const chiuso = await ev("({ info: nexusOlo.info(), olo: document.body.classList.contains('olo') })"), tornata = await testa();
   esito(!chiuso.info.aperto && !chiuso.olo, "Esc chiude l'ologramma");
   esito(Math.abs(tornata[0] - libera[0]) < 0.03 * W && Math.abs(tornata[1] - libera[1]) < 0.03 * H, 'la testa torna dove stava', `(${tornata}) contro (${libera})`);
   esito(!registro.some((r) => r.via === 'hud' || r.via === 'foto'), 'un ologramma di prova non scrive al server, né azioni né foto');
@@ -383,7 +383,7 @@ try {
   titolo('Collegato al server (lo stato vero di ologramma.mjs, senza calcolo)');
   holo.esegui({ azione: 'mostra', modello: structuredClone(DEMO_TURBOFAN) });
   const M1 = holo.stato().modello, t0 = Date.now();
-  const visto = await attendi(() => ev(`stemOlo.info().aperto && stemOlo.info().modello === ${M1}`), 7000);
+  const visto = await attendi(() => ev(`nexusOlo.info().aperto && nexusOlo.info().modello === ${M1}`), 7000);
   esito(visto, "/api/status porta la versione nuova: l'HUD rilegge e mostra", `dopo ${((Date.now() - t0) / 1000).toFixed(1)} s (il giro di /api/status è ogni 5 s)`);
   const ft = await attendi(() => registro.find((r) => r.via === 'foto' && r.modello === M1), 6000), letto = registro.find((r) => r.via === 'get' && r.t >= t0);
   esito(ft?.attuale && ft.w <= 960 && ft.byte <= 1.5e6, 'foto della versione mostrata, al server', ft ? `${ft.w}×${ft.h}, ${ft.byte} B, ${ft.t - letto.t} ms dopo la lettura dello stato` : 'nessuna foto');
@@ -393,70 +393,70 @@ try {
   const titoloNuovo = await attendi(() => ev("document.querySelector('.holo-top span').textContent").then((t) => /TURBOFAN IN TITANIO/.test(t) && t), 7000);
   esito(titoloNuovo, 'modifica col titolo: la barra dell\'HUD si aggiorna', titoloNuovo || '');
   const n0 = registro.length;
-  await ev("stemAsk('modifica la vista'), true");
+  await ev("nexusAsk('modifica la vista'), true");
   const piccola = await attendi(() => ev("document.getElementById('small').textContent").then((s) => /OLOGRAMMA/.test(s) && s), 2000);
-  const raggi = await attendi(() => ev("stemOlo.info().vista.modo === 'raggi-x'"), 3000);
+  const raggi = await attendi(() => ev("nexusOlo.info().vista.modo === 'raggi-x'"), 3000);
   const cambio = registro.slice(n0).find((r) => r.via === 'cambio'), dopoCambio = cambio && registro.slice(registro.indexOf(cambio)).find((r) => r.via === 'get');
   esito(raggi && dopoCambio && dopoCambio.t - cambio.t < 1000, "evento 'holo' durante un turno: l'HUD rilegge subito", dopoCambio ? `${dopoCambio.t - cambio.t} ms dal cambio alla lettura` : 'nessuna lettura');
   esito(piccola, 'etichetta dello strumento sotto la scritta di stato', piccola || '');
-  const zz = (await ev('stemOlo.info()')).zona, gx = zz.cx / W, gy = zz.cy / H;
+  const zz = (await ev('nexusOlo.info()')).zona, gx = zz.cx / W, gy = zz.cy / H;
   const nLancia = registro.length; // il 7/11 un lancia senza presa toglieva il pezzo sotto il cursore
-  await ev(`stemOlo.gesto({ tipo: 'lascia' }), stemOlo.gesto({ tipo: 'lancia', x: ${gx}, y: ${gy}, vx: 1.5, vy: 0 }), true`);
+  await ev(`nexusOlo.gesto({ tipo: 'lascia' }), nexusOlo.gesto({ tipo: 'lancia', x: ${gx}, y: ${gy}, vx: 1.5, vy: 0 }), true`);
   await pausa(800);
-  esito(!registro.slice(nLancia).some((r) => r.via === 'hud') && (await ev('stemOlo.info().tolti.length')) === 0, 'un lancia senza presa non toglie niente');
+  esito(!registro.slice(nLancia).some((r) => r.via === 'hud') && (await ev('nexusOlo.info().tolti.length')) === 0, 'un lancia senza presa non toglie niente');
   // le mani escono: gesti.js smette di mandare 'cursore', e il cursore si spegne da solo
-  await ev(`stemOlo.gesto({ tipo: 'cursore', x: ${gx}, y: ${gy} }), true`);
+  await ev(`nexusOlo.gesto({ tipo: 'cursore', x: ${gx}, y: ${gy} }), true`);
   const curSubito = await ev("!!document.querySelector('.holo-cur.on')");
   await pausa(700);
   const curDopo = await ev("!!document.querySelector('.holo-cur.on')");
   esito(curSubito && !curDopo, 'il cursore si spegne quando i gesti smettono', `acceso ${curSubito}, 700 ms dopo l'ultimo gesto ${curDopo}`);
-  await ev(`stemOlo.gesto({ tipo: 'afferra', x: ${gx}, y: ${gy} }), stemOlo.gesto({ tipo: 'lancia', x: ${gx}, y: ${gy}, vx: 1.5, vy: 0 }), true`);
+  await ev(`nexusOlo.gesto({ tipo: 'afferra', x: ${gx}, y: ${gy} }), nexusOlo.gesto({ tipo: 'lancia', x: ${gx}, y: ${gy}, vx: 1.5, vy: 0 }), true`);
   const togli = await attendi(() => registro.find((r) => r.via === 'hud' && r.corpo.azione === 'togli'), 3000);
-  const toltoHud = togli && await attendi(() => ev(`stemOlo.info().versione === ${holo.stato().versione}`), 3000);
+  const toltoHud = togli && await attendi(() => ev(`nexusOlo.info().versione === ${holo.stato().versione}`), 3000);
   esito(togli?.codice === 200 && togli.corpo.modello === M1 && holo.stato().tolti.includes(togli.corpo.id) && toltoHud,
     "lancio con le mani: togli al server col numero del modello, poi l'HUD rilegge", togli ? JSON.stringify(togli.corpo) : 'niente');
   await tasto('z');
   const rimetti = await attendi(() => registro.find((r) => r.via === 'hud' && r.corpo.azione === 'rimetti'), 3000);
-  const rimessoHud = rimetti && await attendi(() => ev(`stemOlo.info().tolti.length === 0 && stemOlo.info().versione === ${holo.stato().versione}`), 3000);
+  const rimessoHud = rimetti && await attendi(() => ev(`nexusOlo.info().tolti.length === 0 && nexusOlo.info().versione === ${holo.stato().versione}`), 3000);
   esito(rimetti?.codice === 200 && rimetti.corpo.id === togli?.corpo.id && holo.stato().tolti.length === 0 && rimessoHud, "Z rimette l'ultimo pezzo tolto", rimetti ? JSON.stringify(rimetti.corpo) : 'niente');
-  await ev(`stemOlo.gesto({ tipo: 'cursore', x: ${gx}, y: ${gy} }), stemOlo.gesto({ tipo: 'afferra', x: ${gx}, y: ${gy} }), true`); // Esc durante una presa
+  await ev(`nexusOlo.gesto({ tipo: 'cursore', x: ${gx}, y: ${gy} }), nexusOlo.gesto({ tipo: 'afferra', x: ${gx}, y: ${gy} }), true`); // Esc durante una presa
   await tasto('Escape');
   const curEsc = await ev("document.querySelector('.holo-cur').className");
   esito(!/\b(on|presa)\b/.test(curEsc), 'chiuso durante una presa: il cursore si spegne e non resta «preso»', curEsc);
   const chiudi = await attendi(() => registro.find((r) => r.via === 'hud' && r.corpo.azione === 'chiudi'), 3000);
   await pausa(300);
-  esito(chiudi?.codice === 200 && chiudi.corpo.modello === M1 && !holo.stato().aperto && !(await ev('stemOlo.info().aperto')),
+  esito(chiudi?.codice === 200 && chiudi.corpo.modello === M1 && !holo.stato().aperto && !(await ev('nexusOlo.info().aperto')),
     'Esc: chiudi col numero del modello, e il server lo segna chiuso', chiudi ? JSON.stringify(chiudi.corpo) : 'niente');
   holo.esegui({ azione: 'mostra', modello: structuredClone(DEMO_STAFFA) });
   const MA = holo.stato().modello;
-  await attendi(() => ev(`stemOlo.info().aperto && stemOlo.info().modello === ${MA}`), 7000);
+  await attendi(() => ev(`nexusOlo.info().aperto && nexusOlo.info().modello === ${MA}`), 7000);
   holo.esegui({ azione: 'mostra', modello: structuredClone(DEMO_TURBOFAN) }); // il cervello fa un modello nuovo, l'HUD non l'ha ancora visto
   const MB = holo.stato().modello, n1 = registro.length;
   await tasto('Escape');
   const conflitto = await attendi(() => registro.slice(n1).find((r) => r.via === 'hud' && r.corpo.azione === 'chiudi'), 3000);
-  const nuovo = await attendi(() => ev(`stemOlo.info().aperto && stemOlo.info().modello === ${MB}`), 3000);
+  const nuovo = await attendi(() => ev(`nexusOlo.info().aperto && nexusOlo.info().modello === ${MB}`), 3000);
   esito(conflitto?.codice === 409 && conflitto.corpo.modello === MA && nuovo && holo.stato().aperto, "Esc su un modello vecchio: 409, e l'HUD mostra quello nuovo",
     conflitto ? `chiudi del modello ${conflitto.corpo.modello} → ${conflitto.codice}; ora si vede il ${MB}` : 'niente');
   const n2 = registro.length;
-  await ev("stemAsk('apri il browser'), true");
-  const coperto = await attendi(() => ev("!stemOlo.info().aperto && document.body.classList.contains('browsing')"), 3000);
+  await ev("nexusAsk('apri il browser'), true");
+  const coperto = await attendi(() => ev("!nexusOlo.info().aperto && document.body.classList.contains('browsing')"), 3000);
   await pausa(300);
   esito(coperto && !holo.stato().aperto && !registro.slice(n2).some((r) => r.via === 'hud'), "un 'show' chiude l'ologramma nell'HUD e nel server (lo fa il server, l'HUD non scrive)");
   holo.esegui({ azione: 'modifica', vista: { modo: 'solido' } });
-  const tornato = await attendi(() => ev("stemOlo.info().aperto && stemOlo.info().vista.modo === 'solido' && !document.body.classList.contains('browsing')"), 7000);
+  const tornato = await attendi(() => ev("nexusOlo.info().aperto && nexusOlo.info().vista.modo === 'solido' && !document.body.classList.contains('browsing')"), 7000);
   esito(tornato, 'la modifica dopo lo riporta, al posto del browser');
   const n3 = registro.length;
   await ev(`${REPORT}, true`);
-  const coperto2 = await ev("!stemOlo.info().aperto && document.getElementById('report').classList.contains('on')");
+  const coperto2 = await ev("!nexusOlo.info().aperto && document.getElementById('report').classList.contains('on')");
   await tasto('Escape'); await pausa(800); // il report sparisce in 450 ms
   const dopoEsc = { coperto: coperto2, server: holo.stato().aperto, scritto: registro.slice(n3).some((r) => r.via === 'hud'), report: await ev("document.getElementById('report').classList.contains('on')") };
-  esito(dopoEsc.coperto && dopoEsc.server && !dopoEsc.scritto && !dopoEsc.report, "un report locale (stemReport) chiude l'ologramma nell'HUD; poi Esc chiude il report senza scrivere al server", JSON.stringify(dopoEsc));
+  esito(dopoEsc.coperto && dopoEsc.server && !dopoEsc.scritto && !dopoEsc.report, "un report locale (nexusReport) chiude l'ologramma nell'HUD; poi Esc chiude il report senza scrivere al server", JSON.stringify(dopoEsc));
 
-  titolo("Comandi a voce con l'ologramma aperto (stemSente: una frase finita, senza microfono)");
+  titolo("Comandi a voce con l'ologramma aperto (nexusSente: una frase finita, senza microfono)");
   const sente = async (frase) => { // una frase come dal riconoscimento; poi quello che l'HUD ne ha fatto: registro e domanda
     const n = registro.length;
-    if (!(await ev("typeof stemSente === 'function'"))) return { riga: 'stemSente non c\'è', chiesto: false };
-    await ev(`stemSente(${JSON.stringify(frase)}), true`);
+    if (!(await ev("typeof nexusSente === 'function'"))) return { riga: 'nexusSente non c\'è', chiesto: false };
+    await ev(`nexusSente(${JSON.stringify(frase)}), true`);
     await pausa(1300); // 700 ms per unire le frasi, poi la domanda
     const nuovi = registro.slice(n);
     return { riga: nuovi.find((r) => r.via === 'log')?.riga || '', chiesto: nuovi.some((r) => r.via === 'ask' && r.testo === frase) };
@@ -464,35 +464,35 @@ try {
   const FRASI = ['esplodilo', 'rimontalo', 'togli il coperchio', 'rimettilo', 'taglialo a metà', 'chiudilo'];
   const chiusi = [];
   for (const f of FRASI) chiusi.push(await sente(f));
-  esito(!(await ev('stemOlo.info().aperto')) && chiusi.every((x) => !x.chiesto && x.riga.startsWith('non per STEM')), "a ologramma chiuso il filtro è quello di prima: nessuna di queste è per STEM", chiusi.map((x) => x.riga.split(';')[0]).join(', '));
+  esito(!(await ev('nexusOlo.info().aperto')) && chiusi.every((x) => !x.chiesto && x.riga.startsWith('non per Nexus')), "a ologramma chiuso il filtro è quello di prima: nessuna di queste è per Nexus", chiusi.map((x) => x.riga.split(';')[0]).join(', '));
   holo.esegui({ azione: 'modifica', vista: { modo: 'ologramma' } });
-  await attendi(() => ev('stemOlo.info().aperto'), 7000);
+  await attendi(() => ev('nexusOlo.info().aperto'), 7000);
   const aperti = [];
   for (const f of FRASI) aperti.push(await sente(f));
   esito(aperti.every((x) => x.chiesto && x.riga === 'domanda (comando)'), "a ologramma aperto un verbo dell'ologramma basta, anche da solo e dopo 25 s: va al cervello come comando", aperti.map((x) => `${x.chiesto ? 'chiesta' : 'NO'} (${x.riga})`).join(', '));
   const altro = await sente('sì');
-  esito(!altro.chiesto && altro.riga.startsWith('non per STEM'), "anche a ologramma aperto un «sì» da solo resta non per STEM", altro.riga);
+  esito(!altro.chiesto && altro.riga.startsWith('non per Nexus'), "anche a ologramma aperto un «sì» da solo resta non per Nexus", altro.riga);
   await tasto('Escape');
 
   titolo("Un pezzo da file grande (300.000 triangoli): il cursore delle mani non lo scorre triangolo per triangolo");
-  await ev("stemOlogramma({ aperto: true, modello: -1000, versione: 1, titolo: 'File grande', descrizione: '', pezzi: [{ id: 'grande', forma: 'file', misure: { file: '/Users/tony/Documents/prova.stl' } }], tolti: [], carichi: [], vincoli: [], massa_kg: null, ingombro_mm: null, analisi: null }), true");
-  const caricato = await attendi(() => ev('stemOlo.info().triangoli >= 3e5 && stemOlo.info().caricamenti === 0 && stemOlo.info().fermo'), 20000, 200);
-  const zf = (await ev('stemOlo.info()')).zona;
+  await ev("nexusOlogramma({ aperto: true, modello: -1000, versione: 1, titolo: 'File grande', descrizione: '', pezzi: [{ id: 'grande', forma: 'file', misure: { file: '/Users/tony/Documents/prova.stl' } }], tolti: [], carichi: [], vincoli: [], massa_kg: null, ingombro_mm: null, analisi: null }), true");
+  const caricato = await attendi(() => ev('nexusOlo.info().triangoli >= 3e5 && nexusOlo.info().caricamenti === 0 && nexusOlo.info().fermo'), 20000, 200);
+  const zf = (await ev('nexusOlo.info()')).zona;
   const costi = await ev(`(async () => { const ms = []; for (let i = 0; i < 6; i++) { await new Promise((r) => setTimeout(r, 120)); const a = performance.now();
-    stemOlo.gesto({ tipo: 'cursore', x: ${zf.cx / W}, y: ${zf.cy / H} }); ms.push(performance.now() - a); } return ms.sort((a, b) => a - b); })()`);
+    nexusOlo.gesto({ tipo: 'cursore', x: ${zf.cx / W}, y: ${zf.cy / H} }); ms.push(performance.now() - a); } return ms.sort((a, b) => a - b); })()`);
   await clic(zf.cx, zf.cy);
-  const sceltoFile = (await ev('stemOlo.info().vista')).selezionato;
+  const sceltoFile = (await ev('nexusOlo.info().vista')).selezionato;
   esito(caricato && costi[3] < 3 && sceltoFile === 'grande', 'il cursore sul file costa meno di 3 ms (prima un raycast su ogni triangolo), e il clic sceglie il pezzo',
     `${costi.map((x) => x.toFixed(2)).join(', ')} ms; scelto ${sceltoFile}`);
   await tasto('Escape');
 
   titolo('Mani: la foto di prova al posto della fotocamera (?debug&mani=immagine, 30 Hz)');
   await cdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: script });
-  script = (await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.removeItem('stem-mani') } catch {}" })).identifier; // la preferenza predefinita
+  script = (await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.removeItem('nexus-mani') } catch {}" })).identifier; // la preferenza predefinita
   await vai(`${ORIGINE}/?debug&mani=immagine`);
-  // le fasi di gesti.js come le vede scena.js, con l'ora: stem.js le passa a stemOlo.gesto
-  await ev("window.__fasi = []; const g0 = stemOlo.gesto; stemOlo.gesto = (g) => { if (g?.tipo === 'stato') window.__fasi.push([g.fase, performance.now()]); return g0(g); }; true");
-  await ev("stemOlogrammaDemo('turbofan')");
+  // le fasi di gesti.js come le vede scena.js, con l'ora: nexus.js le passa a nexusOlo.gesto
+  await ev("window.__fasi = []; const g0 = nexusOlo.gesto; nexusOlo.gesto = (g) => { if (g?.tipo === 'stato') window.__fasi.push([g.fase, performance.now()]); return g0(g); }; true");
+  await ev("nexusOlogrammaDemo('turbofan')");
   const partite = await attendi(() => ev('window.__misure.mani?.attive && window.__misure.mani.rilevazioni >= 30'), 20000, 200);
   const m1 = await ev('window.__misure.mani');
   const indizio = () => ev("({ testo: document.querySelector('.holo-mani')?.textContent ?? null, riposo: document.getElementById('dita').classList.contains('riposo') })");
@@ -513,17 +513,17 @@ try {
   const scaricati = () => ['/mediapipe/wasm/vision_wasm_internal.wasm', '/modelli/hand_landmarker.task'].map((x) => percorsi.get(x) || 0).join('+');
   const prima2 = { rete: scaricati(), script: await ev("document.querySelectorAll('script').length") };
   await tasto('m'); await pausa(300);
-  const spente = await ev("({ attive: window.__misure.mani.attive, scelta: localStorage.getItem('stem-mani'), avviso: document.getElementById('warn').textContent, dita: document.querySelectorAll('#dita i.on').length, barra: document.querySelector('.holo-mani')?.textContent })");
+  const spente = await ev("({ attive: window.__misure.mani.attive, scelta: localStorage.getItem('nexus-mani'), avviso: document.getElementById('warn').textContent, dita: document.querySelectorAll('#dita i.on').length, barra: document.querySelector('.holo-mani')?.textContent })");
   esito(spente.barra === '' && (await ev('window.__fasi.at(-1)[0]')) === 'spente', 'mani spente col tasto M: la barra non dice niente', `barra «${spente.barra}»`);
   await tasto('m');
-  const tRiaccese = Date.now(), riaccese = await attendi(() => ev("window.__misure.mani.attive && localStorage.getItem('stem-mani') === '1'"), 10000, 50);
+  const tRiaccese = Date.now(), riaccese = await attendi(() => ev("window.__misure.mani.attive && localStorage.getItem('nexus-mani') === '1'"), 10000, 50);
   esito(!spente.attive && spente.scelta === '0' && /spente/i.test(spente.avviso) && spente.dita === 0 && riaccese, 'M spegne e riaccende le mani, e la scelta resta', JSON.stringify(spente));
   const dopo2 = { rete: scaricati(), script: await ev("document.querySelectorAll('script').length") };
   esito(riaccese && prima2.rete === '1+1' && dopo2.rete === prima2.rete && dopo2.script === prima2.script, 'riaccese, le mani riusano il rilevatore: niente wasm né modello riscaricati, niente <script> in più',
     `wasm+modello ${prima2.rete} → ${dopo2.rete}, <script> ${prima2.script} → ${dopo2.script}, attive dopo ${Date.now() - tRiaccese} ms`);
   const n4 = registro.length;
   await tasto('Escape'); await pausa(500);
-  const fine = await ev("({ attive: window.__misure.mani.attive, video: document.querySelectorAll('video').length, dita: document.querySelectorAll('#dita i.on').length, aperto: stemOlo.info().aperto })");
+  const fine = await ev("({ attive: window.__misure.mani.attive, video: document.querySelectorAll('video').length, dita: document.querySelectorAll('#dita i.on').length, aperto: nexusOlo.info().aperto })");
   esito(!fine.attive && fine.video === 0 && fine.dita === 0 && !fine.aperto, 'alla chiusura le mani si fermano', JSON.stringify(fine));
   const mis = (await attendi(() => registro.slice(n4).find((r) => r.via === 'misura'), 2000))?.corpo;
   esito(mis && mis.secondi >= 20 && [mis.fps.mediana, mis.fps.p10, mis.fps.minimo].every(Number.isInteger) && mis.fps.minimo <= mis.fps.p10 && mis.fps.p10 <= mis.fps.mediana &&
@@ -536,9 +536,9 @@ try {
   titolo('MediaPipe che non parte');
   await cdp('Network.setBlockedURLs', { urls: ['*/mediapipe/*'] });
   await vai(`${ORIGINE}/?debug&mani=immagine`);
-  await ev("stemOlogrammaDemo('staffa')");
+  await ev("nexusOlogrammaDemo('staffa')");
   const avviso = await attendi(() => ev("document.getElementById('warn').textContent").then((t) => /^mani:/.test(t) && t), 8000, 200);
-  const resta = await ev('({ aperto: stemOlo.info().aperto, mani: window.__misure.mani })');
+  const resta = await ev('({ aperto: nexusOlo.info().aperto, mani: window.__misure.mani })');
   esito(avviso && resta.aperto && !resta.mani?.attive, "un avviso a schermo, e l'ologramma resta col mouse", avviso || '');
   await cdp('Network.setBlockedURLs', { urls: [] });
   await tasto('Escape');

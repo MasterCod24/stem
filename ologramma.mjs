@@ -144,7 +144,7 @@ const byte = (t) => Buffer.from(t.buffer, t.byteOffset, t.byteLength);
 export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = Date.now } = {}) {
   const FILE = path.join(cartella, 'ologramma.json'), BIN = path.join(cartella, 'ologramma-campo.bin');
   let S = statoVuoto(0, 0);
-  let chiusoDa = null;  // 'tony' (Esc nell'HUD) o 'stem': il cervello deve sapere chi l'ha chiuso
+  let chiusoDa = null;  // 'tony' (Esc nell'HUD) o 'nexus': il cervello deve sapere chi l'ha chiuso
   let base = null;      // l'ultimo calcolo risolto: { versione, geo, tutto, mats, r, vm, vp }
   let sicurezza = null; // fs per voxel, rifatto da base con i materiali di adesso
   let corsa = null;     // il calcolo in volo: { versione, geo, tutto, lavoro, inizio }
@@ -442,7 +442,7 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
       case 'mostra': return mostra(a);
       case 'modifica': return modifica(a);
       case 'analizza': return analizza(a);
-      case 'chiudi': return chiudi('stem');
+      case 'chiudi': return chiudi('nexus');
       default: return no(400, [`azione ${breve(a.azione)} sconosciuta: le azioni sono mostra, modifica, analizza e chiudi (togli e rimetti stanno dentro modifica)`]);
     }
   }
@@ -562,7 +562,7 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
     const s = oggetto(d) && oggetto(d.stato) ? d.stato : {};
     S = statoVuoto(intero(s.modello), intero(s.versione)); // i contatori prima di tutto: un modello non si riusa mai
     corsa = base = sicurezza = null;
-    chiusoDa = d.chiusoDa === 'tony' || d.chiusoDa === 'stem' ? d.chiusoDa : null;
+    chiusoDa = d.chiusoDa === 'tony' || d.chiusoDa === 'nexus' ? d.chiusoDa : null;
     if (Array.isArray(s.pezzi) && s.pezzi.length) {
       // Il file è nostro, ma passa dalla stessa validazione del cervello: un file rovinato non entra nello stato
       const r = normalizzaModello({ titolo: s.titolo, descrizione: s.descrizione, pezzi: s.pezzi, carichi: s.carichi, vincoli: s.vincoli, vista: s.vista });

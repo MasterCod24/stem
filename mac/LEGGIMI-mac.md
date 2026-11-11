@@ -1,4 +1,4 @@
-# STEM — controllo del Mac
+# Nexus — controllo del Mac
 
 `mac-mcp.mjs` è un server MCP su stdio (JSON-RPC, un messaggio per riga, senza pacchetti npm). Le azioni native le fa
 `runtime/stem-mac`, compilato da solo con `/usr/bin/swiftc` da `helper.swift` quando manca o è più vecchio del sorgente
@@ -12,7 +12,7 @@ Si aggancia a `claude -p` così:
 
 con `--allowedTools mcp__mac` (gli strumenti diventano `mcp__mac__<nome>`). `--porta` è la porta di `server.mjs`, che serve
 agli strumenti degli ologrammi: `server.mjs` la scrive da solo in `mcp.json`, perché `.env` non arriva ai processi figli.
-Senza `--porta` vale 4321; una porta non valida non ripiega sulla 4321, così una prova non finisce sullo STEM vero.
+Senza `--porta` vale 4321; una porta non valida non ripiega sulla 4321, così una prova non finisce sul Nexus vero.
 
 ## Strumenti
 
@@ -40,7 +40,7 @@ annulla anche la loro attesa.
 ## Permessi
 
 Servono **Accessibilità** (mouse e tastiera) e **Registrazione schermo e audio di sistema** (schermo), in
-Impostazioni di Sistema → Privacy e sicurezza. Li riceve l'app da cui parte STEM, non `stem-mac`: «STEM» se lo avvii da
+Impostazioni di Sistema → Privacy e sicurezza. Li riceve l'app da cui parte Nexus, non `stem-mac`: «STEM» se lo avvii da
 STEM.app, «Terminale» se da `avvia.command`. Lo strumento `permessi` dice quale app è, e se manca qualcosa ogni strumento
 risponde con il pannello da aprire invece di fallire in silenzio. Ricompilare l'aiutante non fa perdere i permessi.
 
@@ -49,9 +49,9 @@ risponde con il pannello da aprire invece di fallire in silenzio. Ricompilare l'
 - Mai nei campi password: `scrivi` e `tasti` (caratteri e cmd+v) rifiutano se l'inserimento sicuro della tastiera è
   attivo o se il campo selezionato è `AXSecureTextField`.
 - Niente tastiera in terminali, Script Editor e gestori di password (elenco `NO_TYPING` in `mac-mcp.mjs`): è la stessa
-  regola «Niente Terminale» di `server.mjs`, e impedisce che una pagina web faccia digitare comandi a STEM.
+  regola «Niente Terminale» di `server.mjs`, e impedisce che una pagina web faccia digitare comandi a Nexus.
 - Niente AppleScript come strumento, niente stringhe passate alla shell: solo `execFile` con argomenti separati.
-- `chiudi_app` non tocca i Chrome di STEM (profilo dentro `runtime/`). Tutti gli altri, compreso il Chrome di Tony, li chiude se glielo chiedi.
+- `chiudi_app` non tocca i Chrome di Nexus (profilo dentro `runtime/`). Tutti gli altri, compreso il Chrome di Tony, li chiude se glielo chiedi.
 
 ## Prova a mano
 
@@ -60,4 +60,4 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"permessi","arguments":{}}}' | node mac/mac-mcp.mjs
 ```
 
-Con `"name":"ricorda","arguments":{"cosa":"Prova","tra_minuti":2}` il compito finisce in `runtime/agenda.json`, e uno STEM acceso lo dirà davvero: toglilo dopo, con `agenda` e `togli`.
+Con `"name":"ricorda","arguments":{"cosa":"Prova","tra_minuti":2}` il compito finisce in `runtime/agenda.json`, e un Nexus acceso lo dirà davvero: toglilo dopo, con `agenda` e `togli`.

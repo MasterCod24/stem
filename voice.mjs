@@ -1,4 +1,4 @@
-// La voce di STEM. Una risposta ha UN solo fornitore dall'inizio alla fine: mai più ElevenLabs → Mac → ElevenLabs.
+// La voce di Nexus. Una risposta ha UN solo fornitore dall'inizio alla fine: mai più ElevenLabs → Mac → ElevenLabs.
 // Prima la causa era il piano gratuito: con pochi crediti rimasti le frasi corte passavano e quelle lunghe no.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -53,7 +53,7 @@ export function createVoice({ key, voiceId, model, macVoice, onLog = () => {} })
   pickMacVoice();
 
   async function macSpeak(text) {
-    const file = path.join(os.tmpdir(), `stem-voce-${crypto.randomUUID()}.wav`); // nome unico: due frasi insieme non si pestano
+    const file = path.join(os.tmpdir(), `nexus-voce-${crypto.randomUUID()}.wav`); // nome unico: due frasi insieme non si pestano
     const v = await pickMacVoice();
     await run('/usr/bin/say', [...(v ? ['-v', v] : []), '-r', '185', '-o', file, '--data-format=LEI16@24000', '--', text]); // "--": una frase che inizia con "-" non è un'opzione
     const data = fs.readFileSync(file);
@@ -73,7 +73,7 @@ export function createVoice({ key, voiceId, model, macVoice, onLog = () => {} })
       const id = typeof voiceId === 'function' ? voiceId() : voiceId; // può cambiare dopo l'avvio (scelta automatica)
       const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}?output_format=mp3_44100_128`, {
         method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json', accept: 'audio/mpeg' }, body: JSON.stringify(body),
-        signal: AbortSignal.timeout(12000), // una connessione bloccata non deve lasciare STEM muto
+        signal: AbortSignal.timeout(12000), // una connessione bloccata non deve lasciare Nexus muto
       });
       if (r.ok) {
         if (credits !== null) credits -= Math.ceil(text.length * COST);

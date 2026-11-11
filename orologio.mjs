@@ -1,4 +1,4 @@
-// L'orologio di STEM: che ore sono, e l'agenda dei compiti «per dopo».
+// L'orologio di Nexus: che ore sono, e l'agenda dei compiti «per dopo».
 // L'agenda è runtime/agenda.json (mai online). La scrivono due processi, mai insieme:
 //   mac/mac-mcp.mjs aggiunge e toglie, quando il cervello chiama «ricorda» o «agenda», cioè durante un suo turno;
 //   server.mjs toglie i compiti che consegna, e consegna solo quando il cervello è fermo.

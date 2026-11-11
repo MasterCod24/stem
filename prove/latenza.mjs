@@ -1,8 +1,8 @@
-// Quanto ci mette il cervello a dire la prima parola, con un modello e un effort: serve a scegliere STEM_MODEL misurando.
-// Come in brain.mjs, un solo claude -p sempre acceso con la persona di STEM; le domande arrivano una dopo l'altra.
+// Quanto ci mette il cervello a dire la prima parola, con un modello e un effort: serve a scegliere NEXUS_MODEL misurando.
+// Come in brain.mjs, un solo claude -p sempre acceso con la persona di Nexus; le domande arrivano una dopo l'altra.
 // Il primo turno paga l'avvio del processo e la cache fredda, quindi mediana e massimo contano solo gli altri.
 // uso: node prove/latenza.mjs <modello> [effort]      es. node prove/latenza.mjs claude-opus-5-5
-// Ogni domanda è un turno vero del modello: consuma come una domanda a STEM.
+// Ogni domanda è un turno vero del modello: consuma come una domanda a Nexus.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,12 +12,12 @@ import { fileURLToPath } from 'node:url';
 const [model, effort] = process.argv.slice(2);
 if (!model) { console.error('uso: node prove/latenza.mjs <modello> [effort]'); process.exit(1); }
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const persona = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
+const persona = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
 const QS = ['Ciao, ci sei?', 'Spiegami in due frasi perché il cielo è blu.', 'Quanto fa 17 per 23?',
   'Che differenza c\'è tra un virus e un batterio?', 'Dammi un consiglio per dormire meglio.', 'Che cos\'è un buco nero, in breve?',
   'Come si dice in inglese «domani piove»?', 'Raccontami una battuta.'];
 // Cartella vuota come quella del cervello: dalla radice della repository caricherebbe il CLAUDE.md di sviluppo
-const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'stem-latenza-'));
+const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-latenza-'));
 const c = spawn('claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
   '--append-system-prompt', persona, '--tools', 'Read', '--model', model, ...(effort ? ['--effort', effort] : [])],
 { cwd, stdio: ['pipe', 'pipe', 'inherit'] });

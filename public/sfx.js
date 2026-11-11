@@ -1,4 +1,4 @@
-// Effetti sonori di STEM: sintesi Web Audio pura, nessun file audio.
+// Effetti sonori di Nexus: sintesi Web Audio pura, nessun file audio.
 // Ricostruiti misurando lo spettrogramma del video di riferimento:
 //   formazione  fondamentale ~30 → 77 Hz (esponenziale) con molte armoniche, passa-basso
 //               risonante che si apre ~240 Hz → ~1.9 kHz, scaletta di blip k×49.2 Hz,
@@ -233,7 +233,7 @@ export function createSfx(ctx) {
     listening = { g: v.gain, z: z.gain, end: t0 + keep + 1.2 };
   }
 
-  // ── conferma: la frase è presa, STEM sta per rispondere ────────────────────
+  // ── conferma: la frase è presa, Nexus sta per rispondere ────────────────────
   function ack(t0 = now()) {
     if (listening && t0 < listening.end) {                    // zittisce il sonar
       for (const p of [listening.g, listening.z]) { hold(p, t0); p.setTargetAtTime(0, t0, 0.04); }

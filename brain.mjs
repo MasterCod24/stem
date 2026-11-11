@@ -1,17 +1,17 @@
-// Il cervello di STEM: un solo processo Claude Code sempre acceso (stream-json in ingresso e in uscita).
+// Il cervello di Nexus: un solo processo Claude Code sempre acceso (stream-json in ingresso e in uscita).
 // Niente avvio a ogni domanda: dalla seconda in poi il primo testo arriva in circa un secondo invece di tre.
 // Una domanda nuova interrompe quella in corso (control_request interrupt) senza uccidere il processo.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Segnali che STEM scrive nel testo e che non vanno letti ad alta voce:
+// Segnali che Nexus scrive nel testo e che non vanno letti ad alta voce:
 //   [ignora]        la frase non era per lui: nessuna risposta
 //   [[mostra]]      compito complesso: apri il pannello del browser nell'HUD
 //   [gif: parole]   GIF simpatica (GIPHY)      [anim: words]   animazione che spiega (Wikimedia Commons)
 const TAG = /\[\[?\s*([a-zà-ù]+)\s*(?::\s*([^\]]*?))?\s*\]\]?/gi;
 
-// Dopo un riavvio di STEM riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
+// Dopo un riavvio di Nexus riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
 // riaprendo l'HUD poco dopo, "e il secondo film che mi hai detto?" ha ancora senso. Più in là vale la memoria.
 const RESUME_MS = 2 * 3600_000;
 
@@ -122,7 +122,7 @@ export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
       if (c.input?.url) { try { detail = new URL(c.input.url).hostname.replace(/^www\./, ''); } catch {} }
       T.browserActions++;
       T.emit({ t: 'tool', name, detail });
-      // Rete di sicurezza: se STEM non ha detto [[mostra]] ma sta facendo una ricerca lunga, il pannello si apre lo stesso
+      // Rete di sicurezza: se Nexus non ha detto [[mostra]] ma sta facendo una ricerca lunga, il pannello si apre lo stesso
       if (T.browserActions === 4) T.emit({ t: 'show' });
     } else if (c.name === 'mcp__mac__mostra_report') { // il report va all'HUD così com'è: lo strumento serve solo a dargli una forma
       T.emit({ t: 'report', titolo: c.input?.titolo, blocchi: c.input?.blocchi });

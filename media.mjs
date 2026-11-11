@@ -1,7 +1,7 @@
-// GIF e animazioni da mostrare nell'HUD mentre STEM parla.
+// GIF e animazioni da mostrare nell'HUD mentre Nexus parla.
 //   gif  → GIPHY (simpatiche; serve GIPHY_API_KEY gratuita in .env, altrimenti niente)
 //   anim → Wikimedia Commons (animazioni che spiegano come funziona qualcosa; nessuna chiave, parole in inglese)
-const UA = { 'user-agent': 'STEM/1.0 (assistente personale di Tony)' };
+const UA = { 'user-agent': 'Nexus/1.0 (assistente personale di Tony)' };
 
 export function createMedia({ giphyKey, onLog = () => {} }) {
   async function giphy(q) {

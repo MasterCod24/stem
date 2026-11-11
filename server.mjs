@@ -1,4 +1,4 @@
-// STEM — server locale: HUD, cervello (Claude Code sempre acceso), voce, browser (Playwright MCP), controllo del Mac.
+// Nexus — server locale: HUD, cervello (Claude Code sempre acceso), voce, browser (Playwright MCP), controllo del Mac.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,8 +19,8 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, 'runtime');
 fs.mkdirSync(RUNTIME, { recursive: true });
 
-// .env minimale: CHIAVE=valore, una per riga. Le variabili date a mano vincono: una prova con STEM_PORT=4422
-// non deve finire sulla porta dello STEM vero perché .env dice 4321.
+// .env minimale: CHIAVE=valore, una per riga. Le variabili date a mano vincono: una prova con NEXUS_PORT=4422
+// non deve finire sulla porta del Nexus vero perché .env dice 4321.
 const env = { ...process.env };
 const envFile = path.join(ROOT, '.env');
 if (fs.existsSync(envFile)) {
@@ -29,38 +29,40 @@ if (fs.existsSync(envFile)) {
     if (m && !line.trim().startsWith('#') && !(m[1] in process.env)) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
   }
 }
-// STEM_CERVELLO (solo per le prove): uno STEM di prova che vive tutto in quella cartella. Il cervello ci lavora, il server
+// NEXUS_CERVELLO (solo per le prove): un Nexus di prova che vive tutto in quella cartella. Il cervello ci lavora, il server
 // ci scrive i suoi file (conversazione, mcp.json, ologramma, ascolto.log) e le cartelle dei documenti sono le sue
 // sottocartelle: così una prova non scrive nella memoria vera, non riprende la sua conversazione e non legge i file di Tony.
-const PROVA = env.STEM_CERVELLO ? path.resolve(env.STEM_CERVELLO) : null;
+const PROVA = env.NEXUS_CERVELLO ? path.resolve(env.NEXUS_CERVELLO) : null;
 const STATO = PROVA || RUNTIME;
 if (PROVA) fs.mkdirSync(PROVA, { recursive: true });
 
-const PORT = Number(env.STEM_PORT || 4321);
-const PW_PORT = Number(env.STEM_BROWSER_PORT || 8931);
+const PORT = Number(env.NEXUS_PORT || 4321);
+const PW_PORT = Number(env.NEXUS_BROWSER_PORT || 8931);
 const ELEVEN_KEY = env.ELEVENLABS_API_KEY || '';
 let VOICE_ID = env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'; // George, finché non trovo una voce italiana
 const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_v4_turbo'; // il più veloce ed emotivo, mezzo credito a carattere
-// Opus 5.5 a effort medium. L'effort va scelto qui: se no il cervello eredita quello di Claude Code di Tony (xhigh, per programmare),
-// e misurato il 5/11 (prove/latenza.mjs) xhigh tace fino a 10 s prima della prima parola, medium circa 2,3 s, Sonnet 0,8 s.
-const MODEL = env.STEM_MODEL || 'claude-opus-5-5';
-const EFFORT = env.STEM_EFFORT || 'medium';
-const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
+// Sonnet 5.5 a effort max, scelta di Tony del 12/11. L'effort va scelto qui: se no il cervello eredita quello di Claude Code
+// di Tony (per programmare). Le misure di prove/latenza.mjs stanno nel CLAUDE.md, alla voce del modello.
+const MODEL = env.NEXUS_MODEL || 'claude-sonnet-5-5';
+const EFFORT = env.NEXUS_EFFORT || 'max';
+// La riga [sentito: …] che precede ogni frase di Tony: perché l'HUD l'ha fatta passare (nexus.js, addressed)
+const SENTITO = { nome: 'col nome', conversazione: 'senza nome, mentre parlavate', comando: 'senza nome, comincia come un comando', saluto: 'senza nome, è un saluto' };
+const PERSONA = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
 
-// File del Mac: STEM legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
-// la Libreria (portachiavi, cookie) e la cartella di STEM (chiave, profili). Niente Terminale.
+// File del Mac: Nexus legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
+// la Libreria (portachiavi, cookie) e la cartella del progetto (chiave, profili). Niente Terminale.
 const HOME = process.env.HOME;
 const FILE_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', 'Library/Mobile Documents/com~apple~CloudDocs']
   .map((d) => path.join(PROVA || HOME, d)).filter((d) => fs.existsSync(d));
-// Cartella di lavoro del cervello: vuota e FUORI dalla repository, così STEM ha una memoria sua
+// Cartella di lavoro del cervello: vuota e FUORI dalla repository, così Nexus ha una memoria sua
 // e non mescola i suoi ricordi con quelli delle sessioni di sviluppo (prima condividevano ~/STEM)
-const BRAIN = PROVA || path.join(HOME, 'Library', 'Application Support', 'STEM', 'cervello');
+const BRAIN = PROVA || path.join(HOME, 'Library', 'Application Support', 'Nexus', 'cervello');
 fs.mkdirSync(BRAIN, { recursive: true });
 
 // --- Finestre: HUD a sinistra, Google a destra ---
-const CHROME = env.STEM_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const CDP_PORT = Number(env.STEM_CDP_PORT || 9333);
-const launched = []; // Chrome avviati da STEM, da chiudere all'uscita
+const CHROME = env.NEXUS_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CDP_PORT = Number(env.NEXUS_CDP_PORT || 9333);
+const launched = []; // Chrome avviati da Nexus, da chiudere all'uscita
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function launchChrome(args) {
@@ -215,7 +217,7 @@ pickVoice();
 // Se passi a un piano a pagamento le voci italiane della Voice Library diventano usabili: ricontrollo ogni 10 minuti
 setInterval(() => { if (VOICE_ID === 'JBFqnCBsd6RMkjVDRZzb') pickVoice(); }, 10 * 60 * 1000).unref();
 
-const voice = createVoice({ key: ELEVEN_KEY, voiceId: () => VOICE_ID, model: VOICE_MODEL, macVoice: env.STEM_MAC_VOICE, onLog: (l) => console.error(l) });
+const voice = createVoice({ key: ELEVEN_KEY, voiceId: () => VOICE_ID, model: VOICE_MODEL, macVoice: env.NEXUS_MAC_VOICE, onLog: (l) => console.error(l) });
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
 const LOG_FILE = path.join(STATO, 'ascolto.log');
@@ -237,8 +239,8 @@ function noteHud(q) {
 }
 
 // --- Agenda: i compiti che il cervello si è segnato con «ricorda» (orologio.mjs) ---
-// L'HUD chiede /api/status ogni 5 s: quando un compito è arrivato all'ora e STEM è fermo, chiede /api/ask con agenda:true
-// e STEM parla per primo. Il messaggio contiene tutto il compito, perché dopo un riavvio il cervello non ricorda di averlo segnato.
+// L'HUD chiede /api/status ogni 5 s: quando un compito è arrivato all'ora e Nexus è fermo, chiede /api/ask con agenda:true
+// e Nexus parla per primo. Il messaggio contiene tutto il compito, perché dopo un riavvio il cervello non ricorda di averlo segnato.
 function agendaText(due) {
   const now = Date.now();
   const righe = due.map((x) => {
@@ -270,14 +272,14 @@ async function rememberNow() {
   memoryBusy = false;
 }
 
-// --- Avviato dall'app STEM (in background): quando chiudi l'HUD, STEM si spegne da solo ---
+// --- Avviato dall'app Nexus (in background): quando chiudi l'HUD, Nexus si spegne da solo ---
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
-if (env.STEM_APP) {
+if (env.NEXUS_APP) {
   setInterval(() => { // 15 giri da 10 s senza notizie dall'HUD: è chiuso
     hudMissed++;
     if (hudMissed >= 2) rememberNow(); // 20 s senza HUD: la conversazione è finita, faccio memoria (anche di un compito che finisce dopo)
     const memoryPending = memoryBusy || memoryDue;
-    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo STEM'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
+    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo Nexus'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
   }, 10000);
 }
 
@@ -293,7 +295,7 @@ const holo = createOlogramma({
 });
 holo.carica();
 holoOra = riassunto(holo.stato());
-// Un ologramma rimasto aperto quando STEM si è spento non riappare da solo all'avvio dopo: resta, chiuso, e si riapre a voce
+// Un ologramma rimasto aperto quando Nexus si è spento non riappare da solo all'avvio dopo: resta, chiuso, e si riapre a voce
 if (holoOra.aperto) holo.esegui({ azione: 'chiudi' });
 
 let holoFoto = null;          // l'ultima foto dell'HUD: { modello, versione, png } in base64
@@ -413,7 +415,7 @@ const MIME = {
 };
 const PUBLIC = path.join(ROOT, 'public'), THREE = path.join(ROOT, 'node_modules', 'three'), MP = path.join(ROOT, 'node_modules', '@mediapipe', 'tasks-vision');
 
-// Le pagine di STEM non si aprono dentro una pagina di un'altra origine: l'HUD è il telecomando di STEM, e in un iframe di
+// Le pagine di Nexus non si aprono dentro una pagina di un'altra origine: l'HUD è il telecomando di Nexus, e in un iframe di
 // un sito qualsiasi partirebbe lo stesso, con microfono e fotocamera già permessi (provato l'8/11). Stessa origine sì:
 // lab-mani.html mette lab-ologramma.html in un iframe.
 const NIENTE_CORNICI = { 'x-frame-options': 'SAMEORIGIN', 'content-security-policy': "frame-ancestors 'self'" };
@@ -466,7 +468,7 @@ const server = http.createServer(async (req, res) => {
     return f ? serveFile(res, f) : res.writeHead(403).end();
   }
 
-  // Le POST accettano solo l'HUD e i processi locali: una pagina web qualsiasi non deve poter comandare STEM
+  // Le POST accettano solo l'HUD e i processi locali: una pagina web qualsiasi non deve poter comandare Nexus
   let body = {};
   if (req.method === 'POST') {
     const origin = req.headers.origin;
@@ -484,7 +486,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && p === '/api/log') { // diagnostica di «Stem», solo locale
+  if (req.method === 'POST' && p === '/api/log') { // diagnostica di «Nexus», solo locale
     const { line } = body;
     if (line) appendLog(String(line).slice(0, 200));
     return res.writeHead(204).end();
@@ -551,7 +553,10 @@ const server = http.createServer(async (req, res) => {
       text = agendaText(due);
     }
     if (!text) return res.writeHead(400).end();
-    text = `[adesso: ${adesso()}]\n${text}`; // l'ora a ogni domanda: Claude Code gli dà solo la data
+    // Perché la frase è passata dal filtro dell'HUD: senza nome può essere la TV o Tony che parla con altri, e la persona
+    // decide [ignora] su questa riga. Solo i quattro valori noti: dall'HUD non entra testo libero.
+    const sentito = !body.agenda && Object.hasOwn(SENTITO, body.why) && SENTITO[body.why]; // hasOwn: «constructor» non passa
+    text = `[adesso: ${adesso()}]\n${sentito ? `[sentito: ${sentito}]\n` : ''}${text}`; // l'ora a ogni domanda: Claude Code gli dà solo la data
     res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' });
     let open = true, pending = 0, finished = false;
     const write = (ev) => { if (open) res.write(JSON.stringify(ev) + '\n'); };
@@ -568,15 +573,15 @@ const server = http.createServer(async (req, res) => {
         if (ev.t === 'show' || (ev.t === 'report' && Array.isArray(ev.blocchi) && ev.blocchi.length)) holo.esegui({ azione: 'chiudi' });
         return;
       }
-      pending++; // GIF e animazioni: le cerco mentre STEM parla, arrivano quando sono pronte
+      pending++; // GIF e animazioni: le cerco mentre Nexus parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
     });
     finished = true; close();
-    if (!ignored) conversationTurn(); // una frase non per STEM non è conversazione: niente memoria da fare
+    if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
     return;
   }
 
-  if (req.method === 'POST' && p === '/api/hud') { // l'app STEM, se STEM è già acceso, riapre l'HUD solo se non ce n'è uno
+  if (req.method === 'POST' && p === '/api/hud') { // l'app Nexus, se Nexus è già acceso, riapre l'HUD solo se non ce n'è uno
     if (!hudOpening && Date.now() - hudSeen > 12000) openHud();
     return res.writeHead(204).end();
   }
@@ -595,7 +600,7 @@ const server = http.createServer(async (req, res) => {
     const { text, answer } = body;
     try {
       const a = await voice.speak(String(text || '').slice(0, 2000), String(answer || 'x'));
-      return res.writeHead(200, { 'content-type': a.type, 'x-stem-voce': a.provider + (a.switched ? ';cambio' : '') }).end(a.data);
+      return res.writeHead(200, { 'content-type': a.type, 'x-nexus-voce': a.provider + (a.switched ? ';cambio' : '') }).end(a.data);
     } catch (e) {
       console.error(`[voce] ${e.message}`);
       return res.writeHead(502).end();
@@ -607,15 +612,15 @@ const server = http.createServer(async (req, res) => {
 
 server.on('error', async (e) => {
   if (e.code !== 'EADDRINUSE') throw e;
-  console.log(`Porta ${PORT} occupata: STEM è già acceso, riapro il suo HUD.`);
+  console.log(`Porta ${PORT} occupata: Nexus è già acceso, riapro il suo HUD.`);
   await fetch(`http://127.0.0.1:${PORT}/api/hud`, { method: 'POST', headers: { 'content-type': 'application/json' } }).catch(() => {});
   process.exit(0);
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`STEM online su http://localhost:${PORT}`);
+  console.log(`Nexus online su http://localhost:${PORT}`);
   if (!ELEVEN_KEY) console.log('Voce ElevenLabs spenta: manca ELEVENLABS_API_KEY in .env (uso la voce del Mac).');
-  if (env.STEM_NO_OPEN) return;
+  if (env.NEXUS_NO_OPEN) return;
   // Prima il Chrome di Google, poi l'HUD: l'ultima finestra aperta prende il fuoco, e deve essere l'HUD a schermo intero
   hudOpening = true; // anche mentre aspetto Chrome: un secondo clic sull'app non apre un altro HUD
   ensureBrowserWindow().finally(openHud);
@@ -633,6 +638,6 @@ function openHud() {
 // All'uscita, per qualunque motivo (Ctrl-C, finestra del Terminale chiusa, crash), spengo tutto quello che ho acceso
 process.on('exit', () => {
   brain.kill();
-  for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di STEM
+  for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di Nexus
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));

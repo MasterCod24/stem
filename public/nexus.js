@@ -1,4 +1,4 @@
-// STEM — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni, ologramma, la scheda dell'ascolto,
+// Nexus — l'HUD: ascolto sempre acceso, voce, pannello del browser, GIF, suoni, ologramma, la scheda dell'ascolto,
 // i dati a raggiera e i micro-dati ai bordi. La grafica (sfera e anelli) sta in nucleo.js.
 import { showReport, hideReport, reportDock } from './report.js';
 // allarme: 0 normale, 1 attenzione (arancione), 2 critico (rosso). Lo calcola aggiornaAllarme() dalle cause attive.
@@ -108,7 +108,7 @@ function liberaColonne(scritte) {
 }
 
 // ---------- Stato dei sistemi (al server, per il registro: solo stati, niente audio né testo) ----------
-// La risposta dice anche quanti compiti dell'agenda sono arrivati all'ora: se STEM è fermo e nessuno sta parlando, parla per primo
+// La risposta dice anche quanti compiti dell'agenda sono arrivati all'ora: se Nexus è fermo e nessuno sta parlando, parla per primo
 let micPeak = 0, ultimoStato = null, statoFalliti = 0;
 async function pollStatus() {
   try {
@@ -116,7 +116,7 @@ async function pollStatus() {
     micPeak = 0;
     const st = await (await fetch('/api/status?' + q)).json();
     ultimoStato = st; statoFalliti = 0; allarme('server', 0);
-    if (st.agenda > 0 && S.mode === 'idle' && !S.hearing && !pending) { report('agenda: STEM parla per primo'); evento('AGENDA · PARLO PER PRIMO'); ask('', { agenda: true }); }
+    if (st.agenda > 0 && S.mode === 'idle' && !S.hearing && !pending) { report('agenda: Nexus parla per primo'); evento('AGENDA · PARLO PER PRIMO'); ask('', { agenda: true }); }
     rileggiOlogramma(Number(st.ologramma)); // senza un turno del cervello l'evento 'holo' non arriva: lo dice questo giro
   } catch { // due giri persi di fila (10 s): il server non c'è più
     if (++statoFalliti === 2) { allarme('server', 2, 'SERVER NON RAGGIUNGIBILE'); evento('NET · SERVER PERSO'); }
@@ -148,9 +148,9 @@ function allarmeOlogramma(st) {
   else allarme('calcolo', 0);
 }
 
-// ---------- Pannello del browser: solo per i compiti complessi (STEM lo chiede con [[mostra]]) ----------
+// ---------- Pannello del browser: solo per i compiti complessi (Nexus lo chiede con [[mostra]]) ----------
 let screenTimer = 0;
-function showScreen(on) { // si chiude 15 s dopo che STEM ha finito
+function showScreen(on) { // si chiude 15 s dopo che Nexus ha finito
   clearTimeout(screenTimer);
   if (on) { document.body.classList.add('browsing'); S.splitTarget = 1; }
   else screenTimer = setTimeout(() => { document.body.classList.remove('browsing'); S.splitTarget = 0; }, 15000);
@@ -178,10 +178,10 @@ function showSmall(name, detail) {
   smallTimer = setTimeout(() => $('small').classList.remove('on'), 6000);
 }
 
-// ---------- Report a schermo intero (STEM lo manda con lo strumento mostra_report) ----------
+// ---------- Report a schermo intero (Nexus lo manda con lo strumento mostra_report) ----------
 function openReport(r) {
   const plan = showReport(r);
-  if (!plan) return closeReport(); // zero blocchi: STEM lo sta chiudendo
+  if (!plan) return closeReport(); // zero blocchi: Nexus lo sta chiudendo
   chiudiOlo(); // anche l'ologramma: un report del cervello lo chiude anche nel server (server.mjs), così il cervello lo sa
   sfx?.report(plan);
   clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0; // il report prende il posto del browser
@@ -290,8 +290,8 @@ function tastoOlo(e) {
 // ---------- Mani: MediaPipe in locale, accese solo con l'ologramma aperto. La scelta del tasto M resta fra un avvio e l'altro ----------
 let mani = null, maniPronte = null, mappaMani = null; // mappaMani: la mappa a S di gesti.js, la stessa del cursore
 const maniProva = DEBUG && params.get('mani') === 'immagine'; // la foto di prova al posto della fotocamera
-const maniVolute = () => { try { return localStorage.getItem('stem-mani') !== '0'; } catch { return true; } };
-const vogliMani = (on) => { try { localStorage.setItem('stem-mani', on ? '1' : '0'); } catch {} };
+const maniVolute = () => { try { return localStorage.getItem('nexus-mani') !== '0'; } catch { return true; } };
+const vogliMani = (on) => { try { localStorage.setItem('nexus-mani', on ? '1' : '0'); } catch {} };
 function creaMani() { // una volta sola, anche con due aperture di fila
   maniPronte ||= (async () => {
     const [{ createMani }, { mappa }] = await Promise.all([import('./ologramma/mani.js'), import('./ologramma/gesti.js')]);
@@ -404,7 +404,7 @@ async function playNext() {
   if (!item) {
     playing = false;
     if (streamDone && (S.mode === 'speaking' || S.mode === 'thinking')) { setMode('idle'); if (spokeThisAnswer) lastReplyAt = performance.now(); }
-    else if (!streamDone && S.mode === 'speaking') setMode('thinking'); // la frase è finita ma STEM sta ancora lavorando
+    else if (!streamDone && S.mode === 'speaking') setMode('thinking'); // la frase è finita ma Nexus sta ancora lavorando
     return;
   }
   playing = true;
@@ -434,7 +434,8 @@ function silence() {
 
 // ---------- Cervello ----------
 let controller = null, lastReplyAt = -1e9, latenza = null; // latenza: secondi dalla domanda alla prima frase dell'ultima risposta
-async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il server prende i compiti arrivati all'ora
+async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente testo, il server prende i compiti arrivati all'ora
+  // why: perché la frase è passata (nome, conversazione, comando, saluto). Il cervello lo legge per decidere se rispondere
   silence();
   spokeThisAnswer = false; earlySent = '';
   const gen = generation, chiesto = performance.now();
@@ -445,7 +446,7 @@ async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il 
   sfx?.ack();
   streamDone = false;
   try {
-    const r = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(agenda ? { agenda } : { text }), signal: controller.signal });
+    const r = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(agenda ? { agenda } : { text, why }), signal: controller.signal });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
     let rest = '';
@@ -472,7 +473,7 @@ async function ask(text, { agenda = false } = {}) { // agenda: niente testo, il 
         // solo il tipo e, per una pagina, il nome del sito: mai le parole cercate.
         else if (ev.t === 'web') { const pagina = ev.name === 'pagina'; evento(`WEB · ${pagina ? 'PAGINA' : 'RICERCA'}`); showSmall(pagina ? 'Leggo' : 'Cerco in rete', pagina ? String(ev.detail || '').slice(0, 60) : ''); if (!playing) setMode('thinking'); }
         else if (ev.t === 'media') { evento(`MEDIA · ${ev.kind === 'anim' ? 'ANIM' : 'GIF'}`); showMedia(ev); }
-        else if (ev.t === 'ignore') { evento('IGNORE'); report('frase non per STEM (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
+        else if (ev.t === 'ignore') { evento('IGNORE'); report('frase non per Nexus (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
         else if (ev.t === 'error') { evento('ERROR · CERVELLO'); allarme('cervello', 2, 'IL CERVELLO HA PERSO IL FILO', 12000); speak('Ho perso il filo, scusami. Riprova tra un attimo.'); }
       }
     }
@@ -490,7 +491,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const LOCAL = { langs: ['it-IT'], processLocally: true };
 let rec = null, ear = 'prep', earLock = !navigator.locks, earTimer = 0, earBackoff = 300, earFails = 0;
 const EAR_TEXT = { prep: 'preparo', install: 'installo il modello italiano', click: 'clic per attivare', on: 'acceso', denied: 'microfono negato', nolocal: 'non disponibile' };
-navigator.locks?.request('stem-ear', () => { earLock = true; scheduleEar(300); return new Promise(() => {}); });
+navigator.locks?.request('nexus-ear', () => { earLock = true; scheduleEar(300); return new Promise(() => {}); });
 
 const norm = (w) => w.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
 const report = (line) => fetch('/api/log', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line }) }).catch(() => {});
@@ -504,17 +505,12 @@ function lev1(a, b) { // distanza di modifica ≤ 1?
   }
   return e + (a.length - i) + (b.length - j) <= 1;
 }
-// Il nome è Nexus dall'11/11, scelta di Tony provata con STEM a voce (Vega era stato bocciato: 4 trascrizioni giuste su 6).
-// Il vecchio «stem», con le sue storpiature, sveglia ancora per un periodo di prova chiesto da Tony: si toglie quando lo decide.
-// Come «stem», «nexus» vale anche sbagliato di una lettera, tranne «lexus»: con «nesso» e «annessi» è una delle attivazioni
-// per sbaglio che la prova di Tony vuole evitare (le altre due distano più di una lettera).
-const NOMI = ['nexus', 'stem'];
-const NOT_NAME = new Set(['item', 'step', 'stei', 'sto', 'tema', 'ste', 'lexus']); // "Ste" è un diminutivo di Stefano
-// Storpiature reali del riconoscitore: "System" (locale it-IT), "Charge them" per "Ciao STEM" (memoria di STEM)
-const NAME_ALIASES = new Set(['system', 'sistem', 'sistemm', 'charge']);
-// "Stemma" (registro del 1/11: due richieste perse) è anche una parola vera: vale come nome solo a inizio frase o dopo un saluto
-const NAME_AT_START = new Set(['stemma']);
-const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && (NOMI.some((x) => lev1(n, x)) || NAME_ALIASES.has(n)); };
+// Il nome è Nexus: scelto da Tony l'11/11 (Vega era stato bocciato, 4 trascrizioni giuste su 6), unico nome dal 12/11.
+// Vale anche sbagliato di una lettera, tranne «lexus»: con «nesso» e «annessi» (più lontani di una lettera) è una delle
+// attivazioni per sbaglio che Tony vuole evitare. Un alias si aggiunge solo dopo averlo visto in ascolto.log.
+const NOMI = ['nexus'];
+const NOT_NAME = new Set(['lexus']);
+const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && NOMI.some((x) => lev1(n, x)); };
 const COMMANDS = /^(apri|chiudi|cerca|trova|dimmi|dammi|fammi|mostrami|fai|crea|scrivi|leggi|leggimi|metti|ricordami|calcola|traduci|spiegami|raccontami|avvia|controlla|prepara|manda|riassumi|aiutami|puoi|potresti|sai|mi\s+(dici|fai|trovi|apri|cerchi|spieghi|racconti))\b/i;
 const STOP = /^(stop|basta|zitto|fermati|aspetta|silenzio)\b/i;
 const GREETING = /^(buongiorno|buon\s?giorno|buonasera|buona\s?sera|buonanotte|ciao|ehi|ehy|hey|salve|eccomi|sono\s+tornato)\b/i;
@@ -538,10 +534,10 @@ function clue(text) {
   return `${words.length} parole; prima: "${words[0] || ''}"` + (best && best[2] <= 3 ? `; più simile a ${best[1]}: "${best[0]}" (distanza ${best[2]})` : '');
 }
 
-// È per STEM? Il nome (anche storpiato), la conversazione in corso, o un comando all'inizio della frase
+// È per Nexus? Il nome (anche storpiato), la conversazione in corso, o un comando all'inizio della frase
 function addressed(text) {
   const words = text.trim().split(/\s+/);
-  const nameAt = words.findIndex((w, i) => isName(w) || (NAME_AT_START.has(norm(w)) && (i === 0 || (i === 1 && GREETING.test(words[0])))));
+  const nameAt = words.findIndex(isName);
   if (nameAt >= 0) return { why: 'nome', text: [...words.slice(0, nameAt), ...words.slice(nameAt + 1)].join(' ').replace(/^[\s,.:;!?]+/, '').trim() || 'Ciao!' };
   if (holo?.aperto && COMANDI_OLO.test(text.trim())) return { why: 'comando', text };
   if (words.length < 2) return GREETING.test(text.trim()) ? { why: 'saluto', text } : null; // un "sì" isolato è quasi sempre per altri, un "ciao" no
@@ -552,7 +548,7 @@ function addressed(text) {
 }
 
 async function prepareEar() {
-  if (!SR || typeof SR.available !== 'function') { ear = 'nolocal'; allarmeAscolto(); return; } // senza riconoscimento locale STEM non sente: è un'anomalia
+  if (!SR || typeof SR.available !== 'function') { ear = 'nolocal'; allarmeAscolto(); return; } // senza riconoscimento locale Nexus non sente: è un'anomalia
   let st = await SR.available(LOCAL).catch(() => 'unavailable');
   if (st === 'downloadable' || st === 'downloading') {
     ear = 'install';
@@ -585,9 +581,9 @@ async function loadDebugTrack(file) {
 }
 
 let earlySent = '', earlyTimer = 0, joinTimer = 0, pending = '', heardAt = 0, spokeUntil = -1e9;
-// Eco: le ultime parole di STEM arrivano al riconoscitore anche dopo che ha smesso di parlare.
+// Eco: le ultime parole di Nexus arrivano al riconoscitore anche dopo che ha smesso di parlare.
 // Le scarto se arrivano entro 1,2 s dalla fine o se somigliano per più del 60% a ciò che ha appena detto.
-function echoWords() { // parole dette da STEM negli ultimi 6 secondi
+function echoWords() { // parole dette da Nexus negli ultimi 6 secondi
   const now = performance.now();
   return new Set(recentSpoken.filter((r) => now - r.at < 6000).flatMap((r) => r.text.split(/\s+/).map(norm)));
 }
@@ -634,7 +630,7 @@ function startEar() {
   try { if (debugTrack) r.start(debugTrack); else r.start(); } catch { rec = null; scheduleEar(1000); }
 }
 
-// Parole parziali: mentre parli STEM ti "guarda" (anelli e sfera); se ti fermi 0,8 s su una richiesta, parte già
+// Parole parziali: mentre parli Nexus ti "guarda" (anelli e sfera); se ti fermi 0,8 s su una richiesta, parte già
 function onInterim(text) {
   S.hearing = Boolean(text);
   if (!text) { ascolto.viva(''); return; }
@@ -654,11 +650,11 @@ function onInterim(text) {
   earlyTimer = setTimeout(() => {
     if (a.text.split(/\s+/).length < 3 || norm(a.text) === norm(earlySent)) return;
     earlySent = a.text; report(`parto in anticipo (${a.why})`); evento(`ASK · ${a.why.toUpperCase()} · IN ANTICIPO`);
-    ascolto.esito(`PER NEXUS · ${PERCHE[a.why]}`, true); ask(a.text);
+    ascolto.esito(`PER NEXUS · ${PERCHE[a.why]}`, true); ask(a.text, { why: a.why });
   }, 800);
 }
 
-// Frase finita: decido se è per STEM, poi aspetto 0,6 s nel caso continui
+// Frase finita: decido se è per Nexus, poi aspetto 0,6 s nel caso continui
 function heard(text) {
   dbg('finale', text, '| modo', S.mode);
   S.hearing = false;
@@ -668,33 +664,33 @@ function heard(text) {
       interrupt(); report('interrotto a voce');
       const a = addressed(text), riparte = a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1;
       ascolto.fissa(text); ascolto.esito(riparte ? `PER NEXUS · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
-      if (riparte) ask(a.text);
+      if (riparte) ask(a.text, { why: a.why });
       return;
     }
     if (S.mode === 'speaking') return;
   }
-  if (isEcho(text)) { report('scartata: eco della voce di STEM'); evento('INPUT · ECO'); ascolto.viva(''); return; }
+  if (isEcho(text)) { report('scartata: eco della voce di Nexus'); evento('INPUT · ECO'); ascolto.viva(''); return; }
   pending = pending ? `${pending} ${text}` : text;
   ascolto.fissa(pending);
   clearTimeout(joinTimer);
-  // Solo il nome ("Stem…"): aspetto di più, probabilmente stai per dire la domanda
+  // Solo il nome ("Nexus…"): aspetto di più, probabilmente stai per dire la domanda
   const onlyName = pending.trim().split(/\s+/).every(isName);
   joinTimer = setTimeout(() => {
     const full = pending; pending = '';
     const a = addressed(full);
-    dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per STEM');
-    if (!a) { report(`non per STEM; ${clue(full)}`); evento('INPUT · NON PER NEXUS'); ascolto.esito('NON PER NEXUS', false); if (S.mode === 'listening') setMode('idle'); return; }
+    dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per Nexus');
+    if (!a) { report(`non per Nexus; ${clue(full)}`); evento('INPUT · NON PER NEXUS'); ascolto.esito('NON PER NEXUS', false); if (S.mode === 'listening') setMode('idle'); return; }
     ascolto.esito(`PER NEXUS · ${PERCHE[a.why]}`, true);
     // già partito in anticipo con lo stesso identico testo: non ricomincio; se è cambiato anche di una parola, riparto
     const sameAsEarly = earlySent && norm(a.text) === norm(earlySent);
     earlySent = '';
     if (sameAsEarly) return;
     report(`domanda (${a.why})`); evento(`ASK · ${a.why.toUpperCase()}`);
-    ask(a.text);
+    ask(a.text, { why: a.why });
   }, onlyName ? 2000 : 700);
 }
 
-// ---------- La scheda dell'ascolto: le parole mentre arrivano, poi cosa ne ha fatto STEM. Solo sullo schermo: mai nei registri ----------
+// ---------- La scheda dell'ascolto: le parole mentre arrivano, poi cosa ne ha fatto Nexus. Solo sullo schermo: mai nei registri ----------
 const PERCHE = { nome: 'NOME', conversazione: 'CONVERSAZIONE', comando: 'COMANDO', saluto: 'SALUTO' };
 const ascolto = (() => {
   const box = $('ascolto'), elFissa = $('frase-fissa'), elViva = $('frase-viva'), elEsito = $('esito');
@@ -736,7 +732,7 @@ function warn(msg, livello = '') {
 }
 
 // ---------- Micro-dati ai bordi e valori a raggiera: tutti numeri veri ----------
-// A sinistra lo spettro del microfono in esadecimale (della voce di STEM se il microfono non c'è), a destra gli eventi
+// A sinistra lo spettro del microfono in esadecimale (della voce di Nexus se il microfono non c'è), a destra gli eventi
 // (solo tipi e nomi di strumenti, mai frasi), in alto ora e memoria, in basso i livelli. 8 aggiornamenti al secondo.
 const EVENTI = [], RIGHE_ESA = [];
 let eventiNuovi = false, indirizzo = 0x4f00, giro = 0;
@@ -797,9 +793,9 @@ function disegnaLivello() {
 }
 
 // ---------- Avvio ----------
-// Prove senza microfono e senza ricerca: stemSente è una frase finita e stemParziale una parziale, come dal riconoscimento;
-// stemAllarme(causa, livello, testo, ms) accende un'anomalia finta
-if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; window.stemSente = heard; window.stemParziale = onInterim; window.stemAllarme = allarme; window.stemNome = isName; }
+// Prove senza microfono e senza ricerca: nexusSente è una frase finita e nexusParziale una parziale, come dal riconoscimento;
+// nexusAllarme(causa, livello, testo, ms) accende un'anomalia finta
+if (DEBUG) { window.nexusAsk = ask; window.nexusReport = openReport; window.nexusSente = heard; window.nexusParziale = onInterim; window.nexusAllarme = allarme; window.nexusNome = isName; }
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
 const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./nucleo.js'),
@@ -817,15 +813,15 @@ try {
 } catch (e) { console.warn('ologramma non disponibile', e); holo = null; }
 rileggiOlogramma(holoAncora); // una versione vista da /api/status prima che la scena fosse pronta
 if (DEBUG && holo) {
-  window.stemOlo = holo; // per le prove: info(), comando(), gesto()
-  window.stemOlogramma = (st) => { holoLocale = true; applicaOlogramma(st); if (!holo.aperto) holoLocale = false; return holo.info(); };
-  window.stemOlogrammaDemo = async (nome = 'turbofan') => { // lo stato come lo farebbe ologramma.mjs, senza server
+  window.nexusOlo = holo; // per le prove: info(), comando(), gesto()
+  window.nexusOlogramma = (st) => { holoLocale = true; applicaOlogramma(st); if (!holo.aperto) holoLocale = false; return holo.info(); };
+  window.nexusOlogrammaDemo = async (nome = 'turbofan') => { // lo stato come lo farebbe ologramma.mjs, senza server
     const [{ DEMO_TURBOFAN, DEMO_STAFFA }, F] = await Promise.all([import('./ologramma/demo.js'), import('./ologramma/forme.js')]);
     const r = F.normalizzaModello(structuredClone(nome === 'staffa' ? DEMO_STAFFA : DEMO_TURBOFAN));
     if (!r.modello) throw new Error(r.errori.slice(0, 3).join('; '));
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const g of r.modello.pezzi.map(F.ingombro)) if (g) for (let c = 0; c < 3; c++) { min[c] = Math.min(min[c], g.min[c]); max[c] = Math.max(max[c], g.max[c]); }
-    return window.stemOlogramma({ aperto: true, modello: --modelloProva, versione: 1, ...r.modello, tolti: [], massa_kg: null,
+    return window.nexusOlogramma({ aperto: true, modello: --modelloProva, versione: 1, ...r.modello, tolti: [], massa_kg: null,
       ingombro_mm: min[0] <= max[0] ? { min, max } : null, analisi: null });
   };
 }

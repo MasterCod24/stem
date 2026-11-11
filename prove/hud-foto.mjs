@@ -1,8 +1,8 @@
-// hud-foto.mjs — l'HUD vero (public/index.html e stem.js) in un Chrome headless sulla GPU del Mac, con un server finto:
+// hud-foto.mjs — l'HUD vero (public/index.html e nexus.js) in un Chrome headless sulla GPU del Mac, con un server finto:
 // cervello a copione, voce finta (un tono a sillabe), stato fisso. Fa una sequenza di foto dei momenti che contano.
 //   node prove/hud-foto.mjs [--uscita <cartella>] [--porta 4481] [--cdp 9581] [--solo casa,report]
 // Niente microfono né fotocamera veri (dispositivi finti), niente rete: solo questo server. Il riconoscimento vocale è finto
-// (disponibile ma muto), così l'HUD è «in ascolto» senza scaricare il modello italiano; le frasi arrivano da stemSente/stemParziale.
+// (disponibile ma muto), così l'HUD è «in ascolto» senza scaricare il modello italiano; le frasi arrivano da nexusSente/nexusParziale.
 import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -76,6 +76,7 @@ let guasto = false; // true: /api/status risponde 500 (server che non c'è più)
 const TIPI = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.wasm': 'application/wasm', '.task': 'application/octet-stream', '.css': 'text/css' };
 const PUB = path.join(REPO, 'public'), THREE_DIR = path.join(REPO, 'node_modules', 'three'), MP = path.join(REPO, 'node_modules', '@mediapipe', 'tasks-vision');
 const sotto = (base, rel) => { const f = path.resolve(base, '.' + path.sep + decodeURIComponent(rel)); return f === base || f.startsWith(base + path.sep) ? f : null; };
+let ultimoPerche; // il perché dell'ultima domanda: il server vero ne fa la riga [sentito] per il cervello
 const corpo = (req) => new Promise((ok) => { let s = ''; req.on('data', (d) => { s += d; }); req.on('end', () => { try { ok(JSON.parse(s || '{}')); } catch { ok({}); } }); });
 async function copione(res, testo) { // il cervello finto: eventi NDJSON con le loro pause
   res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
@@ -93,8 +94,8 @@ const server = http.createServer(async (req, res) => {
   const p = new URL(req.url, 'http://x').pathname;
   if (p === '/api/status') { if (guasto) { res.writeHead(500); return res.end(); } res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ voice: { provider: 'mac', credits: 0, mac: 'Siri Paolo' }, browser: true, gifs: false, agenda: 0, ologramma: 0 })); }
-  if (p === '/api/ask') return copione(res, (await corpo(req)).text || '');
-  if (p === '/api/tts') { await corpo(req); res.writeHead(200, { 'content-type': 'audio/wav', 'x-stem-voce': 'mac' }); return res.end(VOCE); }
+  if (p === '/api/ask') { const b = await corpo(req); ultimoPerche = b.why; return copione(res, b.text || ''); }
+  if (p === '/api/tts') { await corpo(req); res.writeHead(200, { 'content-type': 'audio/wav', 'x-nexus-voce': 'mac' }); return res.end(VOCE); }
   if (p === '/api/ologramma' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(OLO.stato())); }
   if (p === '/api/ologramma') { const r = OLO.esegui(await corpo(req), { daHud: true }); res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ ok: r.ok, versione: r.versione })); } // Esc dall'HUD
   if (p.startsWith('/api/')) { await corpo(req); res.writeHead(204); return res.end(); }
@@ -178,8 +179,8 @@ async function pixel([x, y], lato = 8) {
     const d = g.getImageData(0, 0, i.width, i.height).data, s = [0, 0, 0]; for (let k = 0; k < d.length; k += 4) for (let c = 0; c < 3; c++) s[c] += d[k + c];
     return s.map((v) => Math.round(v / (d.length / 4))); })()`);
 }
-const mostraOlo = (st) => ev(`stemOlogramma(${JSON.stringify(st)}).pezzi`);
-const modoOlo = async (m) => { await ev(`stemOlo.comando('modo', ${JSON.stringify(m)}); true`); await pausa(150); return ev('stemOlo.colori()'); };
+const mostraOlo = (st) => ev(`nexusOlogramma(${JSON.stringify(st)}).pezzi`);
+const modoOlo = async (m) => { await ev(`nexusOlo.comando('modo', ${JSON.stringify(m)}); true`); await pausa(150); return ev('nexusOlo.colori()'); };
 const MODI_TUTTI = ['ologramma', 'solido', 'raggi-x', 'densita', 'sforzi'];
 async function coloriPerModo() { const o = {}; for (const m of MODI_TUTTI) o[m] = await modoOlo(m); await modoOlo('ologramma'); return o; }
 // Rosso: R nettamente sopra G e B. Bianco: tre canali vicini, e più chiari del fondo. Con un margine del 15% passava anche
@@ -212,7 +213,7 @@ async function provaColore() {
   OLO.esegui({ azione: 'mostra', modello: acqua(true) });
   await mostraOlo(OLO.stato()); await pausa(2500);
   const con = await coloriPerModo();
-  const m0 = (await ev('stemOlo.info()')).montaggi;
+  const m0 = (await ev('nexusOlo.info()')).montaggi;
   for (const m of ['raggi-x', 'densita', 'sforzi']) {
     controlla(ids.every((id) => ugualiU(con[m][id], senza[m][id])), `in ${m} gli uniform di ogni pezzo sono quelli della molecola senza colori`,
       `ossigeno colA ${con[m].ossigeno?.colA.map((v) => v.toFixed(3))}`);
@@ -235,24 +236,24 @@ async function provaColore() {
   await modoOlo('ologramma');
   OLO.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '#1e88e5' }] });
   await mostraOlo(OLO.stato()); await pausa(300);
-  let c = await ev('stemOlo.colori()'), m1 = (await ev('stemOlo.info()')).montaggi;
+  let c = await ev('nexusOlo.colori()'), m1 = (await ev('nexusOlo.info()')).montaggi;
   const blu = c.ossigeno.colA;
   controlla(m1 === m0 && blu[2] > 2 * Math.max(blu[0], blu[1]), 'cambio di solo colore: l\'ossigeno diventa blu senza montare geometrie nuove', `montaggi ${m0} → ${m1}, colA ${blu.map((v) => v.toFixed(3))}`);
   OLO.esegui({ azione: 'modifica', cambia: [{ id: 'ossigeno', colore: '' }] });
   await mostraOlo(OLO.stato()); await pausa(300);
-  c = await ev('stemOlo.colori()'); m1 = (await ev('stemOlo.info()')).montaggi;
+  c = await ev('nexusOlo.colori()'); m1 = (await ev('nexusOlo.info()')).montaggi;
   const COLORI = ['colA', 'colB', 'spigoli', 'fill', 'rim']; // amb resta quello dell'ultimo modo opaco: in ologramma non conta
   controlla(m1 === m0 && ugualiU(c.ossigeno, senza.ologramma.ossigeno, COLORI) && ugualiU(c['idrogeno-1'], con.ologramma['idrogeno-1'], COLORI), 'colore vuoto: l\'ossigeno torna al ciano di prima, gli idrogeni restano bianchi', `montaggi ${m1}`);
   // la tavolozza, solo da guardare: ordine dei grigi, nero visibile, tinte, interno più tenue (s8) e scelto più acceso (s9)
   OLO.esegui({ azione: 'mostra', modello: TAVOLOZZA });
   await mostraOlo(OLO.stato()); await pausa(3000);
   // i pixel al centro di ogni sfera, solo stampati: sono i numeri con cui si guardano le foto
-  const centri = async (nome) => { const c = await ev('stemOlo.colori()'), r = [];
+  const centri = async (nome) => { const c = await ev('nexusOlo.colori()'), r = [];
     for (const [id, x] of Object.entries(c)) r.push(`${id} ${TAVOLOZZA.pezzi.find((p) => p.id === id).colore} ${await pixel(x.centro)}`);
     console.log(`      ${nome}: ${r.join('; ')}`); };
   await foto('tavolozza-ologramma'); await centri('tavolozza in ologramma');
   await modoOlo('solido'); await pausa(1200); await foto('tavolozza-solido'); await centri('tavolozza nel solido');
-  await ev("stemOlo.comando('seleziona', 's9'); true"); await pausa(1500); await foto('tavolozza-scelta'); await centri('tavolozza nel solido, s9 scelto');
+  await ev("nexusOlo.comando('seleziona', 's9'); true"); await pausa(1500); await foto('tavolozza-scelta'); await centri('tavolozza nel solido, s9 scelto');
   await tasto('Escape', 'Escape', 27); await pausa(1500);
 }
 
@@ -270,7 +271,7 @@ try {
   await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `class FintoSR { static available() { return Promise.resolve('available'); } static install() { return Promise.resolve(true); }
     start() {} stop() {} abort() {} }
     Object.defineProperty(window, 'SpeechRecognition', { value: FintoSR }); Object.defineProperty(window, 'webkitSpeechRecognition', { value: FintoSR });
-    try { localStorage.setItem('stem-mani', '0') } catch {}` });
+    try { localStorage.setItem('nexus-mani', '0') } catch {}` });
 
   // Avvio: la formazione ferma a 1, 3,5 e 6 secondi
   if (!SOLO || ['avvio-1', 'avvio-3', 'avvio-6'].some((n) => SOLO.has(n))) {
@@ -278,27 +279,29 @@ try {
   }
   await vai('?debug');
   await pausa(2500); await foto('casa');
-  // Il nome è Nexus dall'11/11; il vecchio «stem» sveglia ancora, per la prova chiesta da Tony. Le attivazioni per sbaglio
-  // da evitare, scritte nella sua prova: nesso, annessi, Lexus.
-  const SI = ['Nexus', 'nexus,', 'NEXUS.', 'nexis', 'stem', 'Stem,', 'system', 'charge'], NO = ['nesso', 'annessi', 'Lexus', 'next', 'nessuno', 'step', 'sesso', 'connessione'];
-  const nomi = await ev(`${JSON.stringify([...SI, ...NO])}.map((w) => window.stemNome(w))`);
+  // Il nome è solo Nexus dal 12/11: il vecchio «stem» e le sue storpiature non svegliano più. Le attivazioni per sbaglio
+  // da evitare, scritte nella prova di Tony: nesso, annessi, Lexus.
+  const SI = ['Nexus', 'nexus,', 'NEXUS.', 'nexis'], NO = ['nesso', 'annessi', 'Lexus', 'next', 'nessuno', 'sesso', 'connessione', 'stem', 'Stem,', 'system', 'charge', 'stemma'];
+  const nomi = await ev(`${JSON.stringify([...SI, ...NO])}.map((w) => window.nexusNome(w))`);
   controlla(Array.isArray(nomi) && nomi.slice(0, SI.length).every(Boolean) && nomi.slice(SI.length).every((x) => !x),
-    'il nome: Nexus (anche sbagliato di una lettera) e il vecchio STEM svegliano; nesso, annessi e Lexus no', JSON.stringify([...SI, ...NO].map((w, i) => `${w} ${nomi?.[i] ? 'sì' : 'no'}`)));
-  await ev("stemParziale('nexus dimmi che tempo fa domani a'); true"); await pausa(700); await foto('ascolto-parziale');
-  await ev("stemParziale(''); stemSente('nexus dimmi che tempo fa domani a Torino'); true"); await pausa(1000); await foto('ascolto-esito');
+    'il nome: Nexus sveglia, anche sbagliato di una lettera; nesso, annessi, Lexus e il vecchio stem no', JSON.stringify([...SI, ...NO].map((w, i) => `${w} ${nomi?.[i] ? 'sì' : 'no'}`)));
+  await ev("nexusParziale('nexus dimmi che tempo fa domani a'); true"); await pausa(700); await foto('ascolto-parziale');
+  await ev("nexusParziale(''); nexusSente('nexus dimmi che tempo fa domani a Torino'); true"); await pausa(1000); await foto('ascolto-esito');
   const esitoNome = await attendi(() => ev("document.getElementById('esito').textContent").then((t) => t === 'PER NEXUS · NOME' && t), 3000, 100);
   controlla(esitoNome === 'PER NEXUS · NOME', 'chiamato «nexus», la scheda dell\'ascolto scrive PER NEXUS · NOME', esitoNome || await ev("document.getElementById('esito').textContent"));
+  await attendi(() => ultimoPerche === 'nome', 3000, 100);
+  controlla(ultimoPerche === 'nome', 'la domanda arriva al server col suo perché (nome)', String(ultimoPerche));
   await pausa(900); await foto('pensiero');
   await attendi(async () => (await modo()) === 'speaking', 6000); await pausa(500); await foto('parla');
   await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
-  await ev("stemSente('boh'); true"); await pausa(1200); await foto('non-per-stem');
-  await ev("stemAllarme('prova', 1, 'CALCOLO DEGLI SFORZI FALLITO'); true"); await pausa(1500); await foto('allarme-1');
-  await ev("stemAllarme('prova', 2, 'SERVER NON RAGGIUNGIBILE'); true"); await pausa(1500); await foto('allarme-2');
-  await ev("stemAllarme('prova', 0); true"); await pausa(600);
-  await ev("stemAsk('apri il browser'); true"); await pausa(2600); await foto('browser');
+  await ev("nexusSente('boh'); true"); await pausa(1200); await foto('non-per-nexus');
+  await ev("nexusAllarme('prova', 1, 'CALCOLO DEGLI SFORZI FALLITO'); true"); await pausa(1500); await foto('allarme-1');
+  await ev("nexusAllarme('prova', 2, 'SERVER NON RAGGIUNGIBILE'); true"); await pausa(1500); await foto('allarme-2');
+  await ev("nexusAllarme('prova', 0); true"); await pausa(600);
+  await ev("nexusAsk('apri il browser'); true"); await pausa(2600); await foto('browser');
   await attendi(async () => (await modo()) === 'idle', 12000);
   await tasto('Escape', 'Escape', 27); await pausa(800);
-  await ev(`stemReport({ titolo: 'Realtà virtuale nel 2026', blocchi: [
+  await ev(`nexusReport({ titolo: 'Realtà virtuale nel 2026', blocchi: [
     { tipo: 'testo', titolo: 'Il mercato', testo: 'Le spedizioni di visori sono cresciute del 12% rispetto al 2025, trainate dai modelli leggeri.', fonte: 'IDC' },
     { tipo: 'dato', titolo: 'Visori venduti', valore: '9,4 mln', testo: 'Nel mondo, primi tre trimestri.', fonte: 'IDC' },
     { tipo: 'grafico', titolo: 'Quote', valori: [{ etichetta: 'Meta', valore: 62 }, { etichetta: 'Apple', valore: 14 }, { etichetta: 'Sony', valore: 9 }, { etichetta: 'Altri', valore: 15 }], unita: '%', testo: 'Quote di mercato.', fonte: 'IDC' },
@@ -306,12 +309,12 @@ try {
     { tipo: 'dato', titolo: 'Peso medio', valore: '410 g', testo: 'Contro i 520 g del 2023.' },
     { tipo: 'testo', titolo: 'Limiti', testo: 'Batteria e prezzo restano i freni principali.' } ] }); true`);
   await pausa(3000); await foto('report');
-  await ev("stemParziale('stem chiudi il report'); true"); await pausa(600); await foto('report-ascolto');
-  await ev("stemParziale(''); true");
+  await ev("nexusParziale('nexus chiudi il report'); true"); await pausa(600); await foto('report-ascolto');
+  await ev("nexusParziale(''); true");
   await tasto('Escape', 'Escape', 27); await pausa(1200);
   // La ricerca sui pezzi: gli eventi «web» come etichetta piccola, poi la scheda del pezzo scelto con materiale e fattura
   if (!SOLO || ['ricerca-web', 'scheda-ricerca', 'scheda-schermo'].some((n) => SOLO.has(n))) {
-    await ev("stemAsk('fammi la scheda del portatile'); true");
+    await ev("nexusAsk('fammi la scheda del portatile'); true");
     const piccola = await attendi(() => ev("(() => { const e = document.getElementById('small'); return e.classList.contains('on') && e.textContent === 'LEGGO · IFIXIT.COM' ? e.textContent : ''; })()"), 4000, 50);
     controlla(piccola === 'LEGGO · IFIXIT.COM', "l'evento «web» di una pagina compare come etichetta piccola, col solo nome del sito", piccola || await ev("document.getElementById('small').textContent"));
     controlla(await ev("!document.body.classList.contains('browsing')"), 'una ricerca senza browser non apre il pannello del browser');
@@ -325,7 +328,7 @@ try {
       `${Math.round(c.larga)} × ${Math.round(c.alta)} px, fino a y ${Math.round(c.basso)}; copre: ${c.copre.join(', ') || 'niente'}`);
     await foto('scheda-ricerca');
     await attendi(async () => (await modo()) === 'idle', 12000);
-    await ev("stemAsk('ora la scheda dello schermo'); true");
+    await ev("nexusAsk('ora la scheda dello schermo'); true");
     await attendi(() => ev("document.querySelector('.holo-card b')?.textContent === 'Schermo'"), 8000); await pausa(1500);
     c = await ev(SCHEDA);
     controlla(riga(c, 'materiale') === 'vetro alluminosilicato su pannello IPS' && riga(c, 'fonte') === undefined, 'senza chiave non c\'è «calcolato come», e la fonte non compare', JSON.stringify(c.righe.slice(0, 3)));
@@ -333,7 +336,7 @@ try {
     controlla(!c.esce && c.copre.length === 0, 'anche questa non esce e non copre altre scritte', `copre: ${c.copre.join(', ') || 'niente'}`);
     await foto('scheda-schermo');
     await attendi(async () => (await modo()) === 'idle', 12000);
-    await ev("stemAsk('e la scheda di un pezzo con niente'); true");
+    await ev("nexusAsk('e la scheda di un pezzo con niente'); true");
     await attendi(() => ev("document.querySelector('.holo-card b')?.textContent === 'Scheda logica'"), 8000); await pausa(800);
     c = await ev(SCHEDA);
     controlla(riga(c, 'materiale') === 'non detto (si disegna, non si calcola)' && riga(c, 'fattura') === undefined && riga(c, 'fonte') === undefined, 'un pezzo senza ricerca: «non detto», senza riga fattura', JSON.stringify(c.righe.slice(0, 2)));
@@ -344,7 +347,7 @@ try {
   // Il campo colore dei pezzi: la molecola d'acqua in ologramma e solido, i pixel al centro degli atomi, e gli uniform di
   // densità e sforzi uguali a quelli della stessa molecola senza colori
   if (!SOLO || ['molecola-ologramma', 'molecola-solido', 'tavolozza-ologramma', 'tavolozza-solido', 'tavolozza-scelta'].some((n) => SOLO.has(n))) await provaColore();
-  await ev("stemOlogrammaDemo('turbofan').then(() => true)"); await pausa(3500); await foto('ologramma');
+  await ev("nexusOlogrammaDemo('turbofan').then(() => true)"); await pausa(3500); await foto('ologramma');
   await tasto('e', 'KeyE', 69); await pausa(2500); await foto('ologramma-esploso');
   await tasto('Escape', 'Escape', 27); await pausa(1500);
   await fetch(`${ORIGINE}/__guasto?on=1`); await pausa(11500); await foto('server-perso'); await fetch(`${ORIGINE}/__guasto?on=0`);

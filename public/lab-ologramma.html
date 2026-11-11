@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STEM lab ologramma</title>
+<title>Nexus lab ologramma</title>
 <!-- Laboratorio dell'ologramma con la stessa catena dell'HUD (nucleo.js: composer con stencil, bloom con soglia 0,18)
      e i due modelli di demo.js, senza server: lo stato finto è fatto qui come lo farebbe ologramma.mjs.
      ?demo=turbofan|staffa  ?modo=…  ?suoni (suoni al primo clic). Tasti: 1–5 modi, E esploso, S sezione, A rotazione,
@@ -159,7 +159,7 @@ try {
   }
   requestAnimationFrame(loop);
 
-  // ---- tastiera e mouse, come li girerebbe stem.js
+  // ---- tastiera e mouse, come li girerebbe nexus.js
   for (const tipo of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dblclick']) $('gl').addEventListener(tipo, (e) => holo.puntatore(e));
   $('gl').addEventListener('wheel', (e) => holo.puntatore(e), { passive: false });
   const MODI = ['ologramma', 'solido', 'raggi-x', 'densita', 'sforzi'];

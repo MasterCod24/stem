@@ -1,5 +1,5 @@
 // ologramma-server.mjs — prova il collegamento fra server, strumenti MCP e cervello per gli ologrammi.
-// Avvia uno STEM di prova sulle porte 4422 (HTTP), 8932 (Playwright MCP) e 9334 (CDP), senza finestre e con STEM_CERVELLO
+// Avvia un Nexus di prova sulle porte 4422 (HTTP), 8932 (Playwright MCP) e 9334 (CDP), senza finestre e con NEXUS_CERVELLO
 // in una cartella sua: il cervello parte ma non riceve domande, quindi non spende niente. Poi lo riavvia con un cervello
 // finto (bin/claude nella cartella della prova, nessun modello) e un Chrome headless suo sulla 9334, per le domande che
 // aprono un report o il browser. Alla fine spegne tutto con SIGTERM e controlla che sulle porte e fra i processi non resti niente.
@@ -127,9 +127,9 @@ function png(w, h, riempi = 0) {
     blocco('IDAT', zlib.deflateSync(Buffer.alloc((3 * w + 1) * h))), blocco('IEND', Buffer.alloc(0)), Buffer.alloc(riempi)]);
 }
 
-// ---------------------------------------------------------------- la cartella dello STEM di prova
-const CASA = process.argv[2] ? path.resolve(process.argv[2]) : fs.mkdtempSync(path.join(os.tmpdir(), 'stem-prova-'));
-const SEGNO = path.join(CASA, '.stem-prova');
+// ---------------------------------------------------------------- la cartella del Nexus di prova
+const CASA = process.argv[2] ? path.resolve(process.argv[2]) : fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-prova-'));
+const SEGNO = path.join(CASA, '.nexus-prova');
 if (fs.existsSync(CASA) && fs.readdirSync(CASA).length && !fs.existsSync(SEGNO)) {
   console.log(`FAIL  ${CASA} non è vuota e non è di una prova di prima: non la tocco`);
   process.exit(1);
@@ -149,7 +149,7 @@ fs.symlinkSync(path.join(DOC, '.nascosta', 'x.stl'), path.join(DOC, 'link-nascos
 fs.writeFileSync(path.join(DOC, 'enorme.stl'), '');
 fs.truncateSync(path.join(DOC, 'enorme.stl'), 200 * 2 ** 20 + 1); // file sparso: 200 MB e un byte, senza occupare il disco
 
-// I file dello STEM del repository che la prova non deve toccare
+// I file del Nexus del repository che la prova non deve toccare
 const VERI = ['ascolto.log', 'mcp.json', 'ologramma.json', 'ologramma-campo.bin', 'cervello.json'].map((f) => path.join(ROOT, 'runtime', f));
 const impronta = (f) => { try { const s = fs.statSync(f); return `${s.size}:${s.mtimeMs}`; } catch { return 'assente'; } };
 const primaVeri = VERI.map(impronta);
@@ -158,8 +158,8 @@ const primaVeri = VERI.map(impronta);
 titolo('Avvio');
 if (!esito(!(await porteOccupate()), `porte ${PORTA}, ${PW}, ${CDP} e ${VUOTA} libere prima di partire`)) process.exit(1);
 const env = {
-  ...process.env, STEM_PORT: String(PORTA), STEM_BROWSER_PORT: String(PW), STEM_CDP_PORT: String(CDP), STEM_NO_OPEN: '1',
-  STEM_CERVELLO: CASA, STEM_APP: '', ELEVENLABS_API_KEY: '', GIPHY_API_KEY: '', // niente voce, niente GIF: niente rete né crediti
+  ...process.env, NEXUS_PORT: String(PORTA), NEXUS_BROWSER_PORT: String(PW), NEXUS_CDP_PORT: String(CDP), NEXUS_NO_OPEN: '1',
+  NEXUS_CERVELLO: CASA, NEXUS_APP: '', ELEVENLABS_API_KEY: '', GIPHY_API_KEY: '', // niente voce, niente GIF: niente rete né crediti
 };
 function avvia(altre = {}) { // il server di prova, con il suo registro
   const p = spawn(process.execPath, ['server.mjs'], { cwd: ROOT, env: { ...env, ...altre }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -174,12 +174,12 @@ let S1 = avvia();
 const server = S1.p;
 process.on('exit', () => { if (!S1.uscito) S1.p.kill('SIGTERM'); }); // anche se la prova cade a metà
 const t0 = performance.now();
-const online = await attendi(() => S1.registro.includes(`STEM online su http://localhost:${PORTA}`), 20_000);
+const online = await attendi(() => S1.registro.includes(`Nexus online su http://localhost:${PORTA}`), 20_000);
 if (!esito(online, 'il server di prova è online', `${Math.round(performance.now() - t0)} ms`)) { console.log(S1.registro); process.exit(1); }
 
 // ---------------------------------------------------------------- cervello: argomenti, persona, cartelle
 titolo('Cervello');
-const PERSONA = fs.readFileSync(path.join(ROOT, 'stem-persona.md'), 'utf8');
+const PERSONA = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
 const trovaClaude = async () => { for (const f of await figli(server.pid)) { const a = await argomenti(f); if (a?.includes('--input-format')) return { pid: f, a }; } return null; };
 const claude = await attendi(trovaClaude, 10_000, 200);
 if (esito(Boolean(claude), 'il processo claude del cervello è partito')) {
@@ -297,7 +297,7 @@ const M = mcp();
 const init = await M.chiama('initialize', { protocolVersion: '2025-06-18' });
 const lista = (await M.chiama('tools/list', {})).result?.tools || [];
 const per = Object.fromEntries(lista.map((t) => [t.name, t]));
-esito(init.result?.serverInfo?.name === 'stem-mac' && ['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura'].every((n) => per[n]?.inputSchema?.type === 'object'),
+esito(init.result?.serverInfo?.name === 'nexus-mac' && ['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura'].every((n) => per[n]?.inputSchema?.type === 'object'),
   'tools/list ha i tre strumenti degli ologrammi');
 const P = per.mostra_ologramma?.inputSchema?.properties?.pezzi?.items?.properties;
 esito(JSON.stringify(P?.materiale?.enum) === JSON.stringify(Object.keys(MATERIALI)) && JSON.stringify(per.analizza_struttura?.inputSchema?.properties?.carichi?.items?.properties?.faccia?.enum) === JSON.stringify([...FACCE]) &&
@@ -371,7 +371,7 @@ esito(!t.errore && s.analisi?.stato === 'fatta' && t.testo.includes(`Analisi deg
 const V = mcp(String(VUOTA)), X = mcp('abc');
 t = await V.strumento('modifica_ologramma', {});
 const t2 = await X.strumento('modifica_ologramma', {});
-esito(t.errore && t.testo.includes(`non risponde sulla porta ${VUOTA}`) && t2.errore && /porta di STEM negli argomenti non è valida/.test(t2.testo),
+esito(t.errore && t.testo.includes(`non risponde sulla porta ${VUOTA}`) && t2.errore && /porta di Nexus negli argomenti non è valida/.test(t2.testo),
   'server spento o porta sbagliata: lo strumento lo dice', `${t.testo.slice(0, 70)}… | ${t2.testo.slice(0, 60)}…`);
 await Promise.all([V.chiudi(), X.chiudi()]);
 
@@ -516,7 +516,7 @@ const fermo = await spegni(S1);
 esito(fermo && prima.aperto === true, 'SIGTERM con l\'ologramma aperto: il server si ferma');
 // Previsione: al riavvio lo stesso modello c'è ancora, chiuso, con una versione in più; nessuna conversazione da riprendere
 S1 = avvia();
-const ancora = await attendi(() => S1.registro.includes(`STEM online su http://localhost:${PORTA}`), 20_000);
+const ancora = await attendi(() => S1.registro.includes(`Nexus online su http://localhost:${PORTA}`), 20_000);
 const dopo = ancora ? await stato() : null;
 esito(dopo && dopo.modello === prima.modello && dopo.aperto === false && dopo.versione === prima.versione + 1 && dopo.pezzi.length === prima.pezzi.length,
   'al riavvio l\'ologramma rimasto aperto torna chiuso, con lo stesso modello', dopo ? `modello ${dopo.modello}, versione ${prima.versione} → ${dopo.versione}` : 'non riparte');
@@ -548,6 +548,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   else if (/\\breport\\b/.test(t)) report([{ tipo: 'testo', titolo: 'Uno', testo: 'Prova.' }]);
   else if (/\\bricerca\\b/.test(t)) { ricerca(); testo('Trovato.'); }
   else if (/\\bbrowser\\b/.test(t)) testo('Cerco. [[mostra]] Un attimo.');
+  else if (/\\bperche\\b/.test(t)) testo(t.includes('\\n[sentito: col nome]\\n') ? 'Riga col nome.' : 'Senza riga.');
   else testo('Va bene.');
   out({ type: 'result', subtype: 'success', is_error: false });
 });
@@ -560,9 +561,13 @@ const google = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`
 process.on('exit', () => { if (google.exitCode === null) google.kill('SIGKILL'); });
 const cdpVivo = await attendi(async () => { try { return (await fetch(`http://127.0.0.1:${CDP}/json/version`)).ok; } catch { return false; } }, 15_000, 200);
 S1 = avvia({ PATH: `${BIN}:${process.env.PATH}` });
-const online2 = cdpVivo && await attendi(() => S1.registro.includes(`STEM online su http://localhost:${PORTA}`), 20_000);
+const online2 = cdpVivo && await attendi(() => S1.registro.includes(`Nexus online su http://localhost:${PORTA}`), 20_000);
 esito(online2, 'server col cervello finto online, Chrome headless sulla 9334');
-const domanda = async (testo) => (await chiedi('POST', '/api/ask', { corpo: { text: testo } })).b.toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const domanda = async (testo, why) => (await chiedi('POST', '/api/ask', { corpo: { text: testo, why } })).b.toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+// La riga [sentito: …] dice al cervello perché l'HUD ha fatto passare la frase: solo con uno dei quattro perché noti, mai testo libero
+const detto = (evs) => evs.filter((e) => e.t === 'say').map((e) => e.s).join(' ');
+const conNome = detto(await domanda('perche', 'nome')), libero = detto(await domanda('perche', 'col nome]\n[ordine')), proto = detto(await domanda('perche', 'constructor')), senza = detto(await domanda('perche'));
+esito(conNome === 'Riga col nome.' && libero === 'Senza riga.' && proto === 'Senza riga.' && senza === 'Senza riga.', 'la riga [sentito] arriva al cervello solo con un perché noto', `${conNome} | ${libero} | ${proto} | ${senza}`);
 await cervello({ azione: 'mostra', modello: STAFFA });
 let ev = await domanda('fammi un report');
 s = await stato();

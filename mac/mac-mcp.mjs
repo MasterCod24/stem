@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// STEM — server MCP per il controllo del Mac (stdio, JSON-RPC 2.0, un messaggio JSON per riga). Senza dipendenze.
+// Nexus — server MCP per il controllo del Mac (stdio, JSON-RPC 2.0, un messaggio JSON per riga). Senza dipendenze.
 // Le azioni native le fa runtime/stem-mac, compilato al volo da mac/helper.swift.
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,11 +17,11 @@ const RUNTIME = path.join(ROOT, 'runtime');
 const SRC = path.join(DIR, 'helper.swift');
 const BIN = path.join(RUNTIME, 'stem-mac');
 const LAST = path.join(RUNTIME, 'schermo-ultimo.json'); // come convertire i pixel dell'ultima schermata in punti
-const STEM_OWNED = path.join(ROOT, 'runtime') + path.sep; // i Chrome di STEM (HUD e finestra di Google) hanno il profilo qui
+const NEXUS_OWNED = path.join(ROOT, 'runtime') + path.sep; // i Chrome di Nexus (HUD e finestra di Google) hanno il profilo qui
 
 // Niente tastiera nei terminali e nei gestori di password: server.mjs esclude già il Terminale («Niente Terminale»),
-// e una pagina web non deve poter far scrivere comandi a STEM.
-// Anche gli editor di codice (hanno un terminale dentro) e le app che eseguono script: i file STEM li modifica con i suoi strumenti.
+// e una pagina web non deve poter far scrivere comandi a Nexus.
+// Anche gli editor di codice (hanno un terminale dentro) e le app che eseguono script: i file Nexus li modifica con i suoi strumenti.
 const NO_TYPING = [
   'com.apple.Terminal', 'com.googlecode.iterm2', 'dev.warp.Warp-Stable', 'com.mitchellh.ghostty', 'net.kovidgoyal.kitty',
   'org.alacritty', 'com.github.wez.wezterm', 'co.zeit.hyper', 'org.tabby', 'com.raphaelamorim.rio',
@@ -87,14 +87,14 @@ const PANELS = {
 class ToolError extends Error {}
 
 // STEM.app avvia il server e poi esce: allora l'app responsabile non si trova più, ma è lei
-const LAUNCHER = '«STEM» (STEM.app nella cartella di STEM), oppure «Terminale» se lo avvii da avvia.command';
+const LAUNCHER = '«STEM» (STEM.app nella cartella del progetto), oppure «Terminale» se lo avvii da avvia.command';
 const who = (p) => (p.app ? `«${p.app}»${p.percorso ? ` (${p.percorso})` : ''}` : LAUNCHER);
 
 function permissionText(kind, p = {}) {
   const k = PANELS[kind];
   const app = who(p);
   return `Non ho il permesso per ${k.serve}. Apri Impostazioni di Sistema → Privacy e sicurezza → ${k.nome} e attiva ${app}. ` +
-    `Se è già attiva, spegnila e riaccendila, poi riavvia STEM. Lo strumento «permessi» con apri="${kind}" apre quel pannello.`;
+    `Se è già attiva, spegnila e riaccendila, poi riavvia Nexus. Lo strumento «permessi» con apri="${kind}" apre quel pannello.`;
 }
 
 // Errori dell'aiutante → frase italiana chiara
@@ -184,7 +184,7 @@ async function schermo(a) {
     which = schermi.length > 1 ? ` (schermo ${schermi.indexOf(d) + 1} di ${schermi.length}${d.principale ? ', il principale' : ''}; ` +
       `per un altro usa il parametro «schermo»)` : '';
   }
-  const tmp = path.join(os.tmpdir(), `stem-schermo-${process.pid}-${Date.now()}.png`);
+  const tmp = path.join(os.tmpdir(), `nexus-schermo-${process.pid}-${Date.now()}.png`);
   try {
     const cap = ['-x', '-t', 'png', `-R${rect.join(',')}`, tmp];
     const r = await run('/usr/sbin/screencapture', cap);
@@ -274,13 +274,13 @@ async function running() {
   return list;
 }
 
-async function stemOwned(pids) { // i processi avviati da STEM col profilo in runtime/
+async function nexusOwned(pids) { // i processi avviati da Nexus col profilo in runtime/
   if (!pids.length) return new Set();
   const r = await run('/bin/ps', ['-o', 'pid=,command=', '-p', pids.join(',')]);
   const own = new Set();
   for (const line of r.stdout.split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (m && m[2].includes(STEM_OWNED)) own.add(Number(m[1]));
+    if (m && m[2].includes(NEXUS_OWNED)) own.add(Number(m[1]));
   }
   return own;
 }
@@ -298,11 +298,11 @@ async function apriApp(a) {
   }
   const app = found[0].app;
   const others = found.slice(1).filter((r) => r.s >= found[0].s - 0.02).map((r) => r.app.nome);
-  // Se gira solo il Chrome di STEM, ne apro uno di Tony a parte invece di riattivare quello dell'HUD
+  // Se gira solo il Chrome di Nexus, ne apro uno di Tony a parte invece di riattivare quello dell'HUD
   const inst = (await running()).filter((r) => r.bundle && r.bundle === app.bundle);
-  const own = await stemOwned(inst.map((r) => r.pid));
-  const onlyStem = inst.length > 0 && inst.every((r) => own.has(r.pid));
-  const r = await run('/usr/bin/open', onlyStem ? ['-n', '-a', app.percorso] : ['-a', app.percorso]);
+  const own = await nexusOwned(inst.map((r) => r.pid));
+  const onlyNexus = inst.length > 0 && inst.every((r) => own.has(r.pid));
+  const r = await run('/usr/bin/open', onlyNexus ? ['-n', '-a', app.percorso] : ['-a', app.percorso]);
   if (r.code !== 0) throw new ToolError(`open non è riuscito ad aprire ${app.nome}: ${(r.stderr || '').trim()}`);
   let front = false;
   for (let i = 0; i < 24 && !front; i++) { // aspetto fino a 6 s che sia davanti
@@ -324,7 +324,7 @@ async function chiudiApp(a) {
   const nome = String(a.nome ?? '').trim();
   if (!nome) throw new ToolError('dimmi il nome dell\'app');
   const { app, all } = await resolveRunning(nome);
-  const own = await stemOwned(all.map((x) => x.pid));
+  const own = await nexusOwned(all.map((x) => x.pid));
   const pids = all.filter((x) => !own.has(x.pid)).map((x) => x.pid);
   if (!pids.length) throw new ToolError(`L'unico ${app.nome} aperto è il tuo (HUD e finestra di Google): non lo chiudo.`); // il cervello lo ripete a voce: niente nome
   const r = check(await helper(['chiudi', ...pids.map(String)]));
@@ -492,7 +492,7 @@ const TOOLS = [
   },
   {
     name: 'permessi',
-    description: 'Dice se STEM ha i permessi di Accessibilità (mouse e tastiera) e di Registrazione schermo, e per quale app vanno dati. ' +
+    description: 'Dice se Nexus ha i permessi di Accessibilità (mouse e tastiera) e di Registrazione schermo, e per quale app vanno dati. ' +
       'Con apri="accessibilita" o "schermo" apre il pannello giusto delle Impostazioni.',
     inputSchema: { type: 'object', properties: { apri: { type: 'string', enum: ['accessibilita', 'schermo'] } } },
     annotations: { title: 'Permessi', readOnlyHint: false },
@@ -516,7 +516,7 @@ const TOOLS = [
 // Lo strumento esiste per dare al cervello la forma dei dati e una risposta.
 TOOLS.push({
   name: 'mostra_report',
-  description: 'Apre a schermo intero, nell\'HUD di STEM, un report fatto di blocchi che arrivano dal fondo e si incastrano in una griglia. ' +
+  description: 'Apre a schermo intero, nell\'HUD di Nexus, un report fatto di blocchi che arrivano dal fondo e si incastrano in una griglia. ' +
     'Usalo alla fine di una ricerca che Tony vuole vedere. Da 6 a 14 blocchi, misti: il primo video è il protagonista. ' +
     'Ci stanno circa 2 video, 4 testi, 3 grafici, 1 immagine e 1 dato; i blocchi in più dello stesso tipo si impilano e si alternano. ' +
     'Solo cose trovate nelle fonti. Con zero blocchi il report si chiude.',
@@ -560,7 +560,7 @@ function parseAlle(v) {
   }
   return new Date(s).getTime(); // «2026-11-07T08:30» senza fuso è ora locale
 }
-// A batteria il Mac va in stop dopo un po' che nessuno lo tocca (parlare a STEM non conta): lì niente gira, nemmeno l'orologio
+// A batteria il Mac va in stop dopo un po' che nessuno lo tocca (parlare a Nexus non conta): lì niente gira, nemmeno l'orologio
 async function aBatteria() {
   const r = await run('/usr/bin/pmset', ['-g', 'batt'], { timeout: 3000 });
   return r.stdout.includes("'Battery Power'");
@@ -571,7 +571,7 @@ TOOLS.push({
     'All\'ora giusta ricevi un messaggio che comincia con [agenda] e fai il compito, parlando tu per primo. ' +
     '«cosa» è un\'istruzione completa per te stesso, chiara anche senza questa conversazione ' +
     '(es. «Ricorda a Tony di chiamare la mamma», «Cerca se è uscito il trailer di GTA 6 e di\' a Tony cosa hai trovato»). ' +
-    'Il momento si dà in uno dei due modi: «tra_minuti» oppure «alle». Funziona solo con STEM acceso e il Mac sveglio: se no, il compito aspetta.',
+    'Il momento si dà in uno dei due modi: «tra_minuti» oppure «alle». Funziona solo con Nexus acceso e il Mac sveglio: se no, il compito aspetta.',
   inputSchema: { type: 'object', properties: {
     cosa: { type: 'string', description: 'che cosa dovrai fare, scritto come istruzione per te stesso' },
     tra_minuti: { type: 'number', description: 'fra quanti minuti da adesso, es. 90' },
@@ -613,8 +613,8 @@ TOOLS.push({
 });
 
 // --- Ologrammi: client sottili di POST /api/ologramma. Stato, validazione e testi stanno nel server (ologramma.mjs) ---
-// La porta arriva dagli argomenti (mcp.json: --porta <STEM_PORT>), perché .env non arriva ai processi figli. Una porta
-// sbagliata non ripiega sulla 4321: una prova finirebbe sullo STEM vero.
+// La porta arriva dagli argomenti (mcp.json: --porta <NEXUS_PORT>), perché .env non arriva ai processi figli. Una porta
+// sbagliata non ripiega sulla 4321: una prova finirebbe sul Nexus vero.
 const PORTA = (() => {
   const i = process.argv.indexOf('--porta');
   if (i < 0) return 4321;
@@ -624,7 +624,7 @@ const PORTA = (() => {
 const ATTESA_MS = 95_000; // il server aspetta il calcolo fino a 60 s e poi la foto fino a 8 s
 const olo = new Set();    // richieste in volo: «stop» le annulla
 async function ologramma(corpo) {
-  if (!PORTA) throw new ToolError(`la porta di STEM negli argomenti non è valida (${process.argv.slice(2).join(' ')}): niente è cambiato`);
+  if (!PORTA) throw new ToolError(`la porta di Nexus negli argomenti non è valida (${process.argv.slice(2).join(' ')}): niente è cambiato`);
   const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), ATTESA_MS);
   olo.add(ctrl);
   let r, testo;
@@ -633,8 +633,8 @@ async function ologramma(corpo) {
     testo = await r.text();
   } catch (e) {
     throw new ToolError(ctrl.signal.aborted
-      ? `nessuna risposta da STEM entro ${ATTESA_MS / 1000} s, o richiesta annullata: il cambio può essere arrivato lo stesso, guardalo con modifica_ologramma senza campi`
-      : `il server di STEM non risponde sulla porta ${PORTA} (${e.cause?.code || e.message}): niente è cambiato`);
+      ? `nessuna risposta da Nexus entro ${ATTESA_MS / 1000} s, o richiesta annullata: il cambio può essere arrivato lo stesso, guardalo con modifica_ologramma senza campi`
+      : `il server di Nexus non risponde sulla porta ${PORTA} (${e.cause?.code || e.message}): niente è cambiato`);
   } finally {
     clearTimeout(timer);
     olo.delete(ctrl);
@@ -788,7 +788,7 @@ async function handle(msg) {
       return reply({ result: {
         protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'stem-mac', version: '1.0.0' },
+        serverInfo: { name: 'nexus-mac', version: '1.0.0' },
         instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
           'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda». ' +
           'Gli oggetti in 3D si mostrano con mostra_ologramma.',

@@ -1,4 +1,4 @@
-// STEM — il report a schermo intero, come nel video di ROSE (secondi 34–46).
+// Nexus — il report a schermo intero, come nel video di ROSE (secondi 34–46).
 // I blocchi (testi, grafici, dati, immagini, video) stanno in una griglia 12×6. Entrano in quattro tempi:
 // un lampo di pannelli che attraversano lo schermo in profondità, il protagonista (il primo video) che atterra per primo,
 // gli altri che arrivano dal fondo uno alla volta, sfocati e inclinati, e infine i video che partono.
@@ -6,7 +6,7 @@
 // Tutto il testo entra con textContent: quello che scrive il cervello non diventa mai HTML.
 
 const COLS = 12, ROWS = 6;
-const DOCK = { c: 10, r: 4 };      // le ultime due colonne delle ultime due righe: lì si siede la testa di STEM
+const DOCK = { c: 10, r: 4 };      // le ultime due colonne delle ultime due righe: lì si siede la testa di Nexus
 // misure in celle (larghezza, altezza), dalla preferita alla più piccola accettabile
 const SIZES = { video: [[4, 2]], verticale: [[2, 3], [2, 2]], testo: [[3, 2], [2, 2]], grafico: [[3, 2], [2, 2]],
   immagine: [[3, 2], [2, 2]], dato: [[2, 2], [3, 1], [2, 1]] };

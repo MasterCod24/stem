@@ -1,10 +1,10 @@
-// Caricato da Playwright in ogni pagina che STEM apre (--init-script).
+// Caricato da Playwright in ogni pagina che Nexus apre (--init-script).
 // 1) Tutto nella stessa scheda (il server chiude comunque ogni scheda nuova e la riapre nella principale).
-// 2) Mostra dove STEM clicca e scrive, con grafica olografica. Solo DOM + Web Animations:
+// 2) Mostra dove Nexus clicca e scrive, con grafica olografica. Solo DOM + Web Animations:
 //    niente innerHTML (Trusted Types) né <style> (CSP), così funziona anche su Google.
 (() => {
-  if (window.top !== window || window.__stemFx) return;
-  window.__stemFx = true;
+  if (window.top !== window || window.__nexusFx) return;
+  window.__nexusFx = true;
 
   // --- Una sola pagina: link e moduli restano nella scheda, anche dentro gli shadow root ---
   const keepHere = (e) => {
@@ -21,13 +21,13 @@
   const el = (tag, css, parent) => { const n = document.createElement(tag); Object.assign(n.style, css); if (parent) parent.appendChild(n); return n; };
   let host = null, root = null, cursor = null, label = null, spinner = null, visible = false;
   // Il mirino riparte da dove era nella pagina precedente, così lo vedi volare verso il nuovo bersaglio
-  const saved = (() => { try { return JSON.parse(sessionStorage.getItem('stemFxPos')); } catch { return null; } })();
+  const saved = (() => { try { return JSON.parse(sessionStorage.getItem('nexusFxPos')); } catch { return null; } })();
   const pos = saved || { x: innerWidth / 2, y: innerHeight / 2 }, target = { x: pos.x, y: pos.y };
 
   function mount() {
     if (!document.documentElement) return false;
     if (host) { if (!host.isConnected) document.documentElement.appendChild(host); return true; } // pagina riscritta: lo riattacco
-    host = document.createElement('stem-fx');
+    host = document.createElement('nexus-fx');
     host.setAttribute('aria-hidden', 'true');
     Object.assign(host.style, { position: 'fixed', inset: '0', width: '100%', height: '100%', margin: '0', padding: '0', border: '0',
       background: 'transparent', overflow: 'visible', zIndex: '2147483647', pointerEvents: 'none', display: 'block' });
@@ -56,10 +56,10 @@
 
   // Sopra eventuali <dialog> o popup aperti dalla pagina (il top layer va in ordine di apertura)
   function raise() {
-    try { if (document.querySelector(':modal, :popover-open:not(stem-fx)')) { host.hidePopover(); host.showPopover(); } } catch {}
+    try { if (document.querySelector(':modal, :popover-open:not(nexus-fx)')) { host.hidePopover(); host.showPopover(); } } catch {}
   }
 
-  // Il mirino si vede solo mentre STEM agisce: poi sfuma e non fa più disegnare niente (niente fotogrammi inutili)
+  // Il mirino si vede solo mentre Nexus agisce: poi sfuma e non fa più disegnare niente (niente fotogrammi inutili)
   let idleTimer = 0, running = false, last = 0;
   function show() {
     if (!visible) { visible = true; cursor.style.opacity = '1'; cursor.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 }); }
@@ -92,7 +92,7 @@
     if (!mount()) return;
     raise();
     target.x = x; target.y = y;
-    try { sessionStorage.setItem('stemFxPos', JSON.stringify(target)); } catch {}
+    try { sessionStorage.setItem('nexusFxPos', JSON.stringify(target)); } catch {}
     label.textContent = `X ${Math.round(x)}  Y ${Math.round(y)}`;
     show();
   }
