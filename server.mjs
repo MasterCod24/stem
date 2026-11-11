@@ -243,7 +243,7 @@ function agendaText(due) {
   const now = Date.now();
   const righe = due.map((x) => {
     const tardi = now - x.quando > 2 * 60_000
-      ? `, in ritardo di ${traQuanto(x.quando - now).replace(/ fa$/, '')} perché STEM era spento o il Mac in stop` : '';
+      ? `, in ritardo di ${traQuanto(x.quando - now).replace(/ fa$/, '')} perché eri spento o il Mac era in stop` : ''; // al cervello, che lo può ripetere a voce: niente nome
     return `- per ${quandoIt(x.quando, now)}${tardi}: ${x.cosa}`;
   });
   const quali = due.length === 1 ? 'un compito che ti eri segnato' : 'alcuni compiti che ti eri segnato';

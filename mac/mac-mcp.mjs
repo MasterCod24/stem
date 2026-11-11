@@ -326,12 +326,12 @@ async function chiudiApp(a) {
   const { app, all } = await resolveRunning(nome);
   const own = await stemOwned(all.map((x) => x.pid));
   const pids = all.filter((x) => !own.has(x.pid)).map((x) => x.pid);
-  if (!pids.length) throw new ToolError(`L'unico ${app.nome} aperto è quello di STEM (HUD e finestra di Google): non lo chiudo.`);
+  if (!pids.length) throw new ToolError(`L'unico ${app.nome} aperto è il tuo (HUD e finestra di Google): non lo chiudo.`); // il cervello lo ripete a voce: niente nome
   const r = check(await helper(['chiudi', ...pids.map(String)]));
   if (r.ancora_aperte.length) {
     return `Ho chiesto a ${app.nome} di chiudersi, ma è ancora aperta: forse chiede di salvare qualcosa. Guarda lo schermo.`;
   }
-  return `Ho chiuso ${app.nome}.` + (own.size ? ' Il Chrome di STEM resta aperto.' : '');
+  return `Ho chiuso ${app.nome}.` + (own.size ? ' Il tuo Chrome resta aperto.' : '');
 }
 
 async function frontGuard(a) { // facoltativo: «app» = scrivi solo se davanti c'è lei

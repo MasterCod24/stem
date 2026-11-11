@@ -1,6 +1,6 @@
 # STEM: appunti per chi ci lavora
 
-STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto, parla con voce ElevenLabs o con quella del Mac, mostra un HUD a schermo intero e usa Google, le app e lo schermo al posto suo. Quello che fa, visto da Tony, sta in [LEGGIMI.md](LEGGIMI.md); qui c'è quello che serve per lavorarci.
+STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. Dall'11/11 l'assistente si chiama **Nexus**, sia come nome sia come parola di attivazione. STEM resta il nome del progetto, dell'app, delle cartelle, delle variabili e di questi appunti. È sempre in ascolto, parla con voce ElevenLabs o con quella del Mac, mostra un HUD a schermo intero e usa Google, le app e lo schermo al posto suo. Quello che fa, visto da Tony, sta in [LEGGIMI.md](LEGGIMI.md); qui c'è quello che serve per lavorarci.
 
 ## Ripartire da dove eravamo
 1. **Cosa è stato fatto:** `git log --oneline -10`. Ogni commit dice nel titolo cosa è cambiato per Tony e nel corpo il perché.
@@ -11,10 +11,18 @@ STEM è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in ascolto,
      - `browser` dice che Playwright è pronto, non che la finestra di Google sia aperta.
      - `agenda` conta i compiti arrivati all'ora e non ancora detti. Tutta l'agenda sta in `runtime/agenda.json`.
    - `tail -50 runtime/server.log` mostra server, cervello e voce. Le righe non hanno l'ora: gli avvii si separano dalle righe «STEM online». Il file si riempie solo se STEM è partito da `STEM.app`.
-   - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per STEM (nome, conversazione, comando, saluto), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «stem». Tiene le ultime 300 righe.
+   - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per STEM (nome, conversazione, comando, saluto), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «nexus» o a «stem». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 11/11/2026)
+- **Nome nuovo, Nexus: fatto l'11/11, mai provato con la voce vera dopo il cambio.** L'ha scelto Tony parlando con STEM: Vega era stato bocciato (4 trascrizioni giuste su 6), e Kairo resta di riserva. La richiesta sta nella nota «Cambio nome: da STEM a Nexus» in Note.
+  - **Cambiati:**
+    - la persona: «Sei Nexus», e non pronuncia né Nexus né STEM;
+    - la parola di attivazione: `NOMI` in `public/stem.js`, con «nexus» valido anche sbagliato di una lettera, tranne «lexus»;
+    - la scheda dell'ascolto («PER NEXUS · …»), la barra e il titolo dell'HUD;
+    - i testi per il cervello che nominavano STEM e che lui può ripetere a voce.
+  - **Il vecchio STEM sveglia ancora,** come Tony ha chiesto, per il periodo di prova. Quando Tony decide, si toglie «stem» da `NOMI`, insieme alle sue storpiature in `NAME_ALIASES`, `NAME_AT_START` e `NOT_NAME`. Il criterio della prova è di Tony: 9 trascrizioni giuste su 10 in momenti diversi, e nessuna attivazione con nesso, annessi o Lexus. Il cervello ne tiene il conto nella sua memoria (`nome-vega-prova.md`).
+  - **Non cambiati, apposta:** STEM.app, la cartella `~/STEM`, le variabili `STEM_*`, la cartella del cervello (la sua memoria è legata al percorso) e i nomi dei file. Rinominare l'app potrebbe costringere Tony a ridare i permessi di Accessibilità e Registrazione schermo: è da decidere con lui.
 - **Colore dei pezzi degli ologrammi: costruito e provato, mai usato da Tony** (11/11). Ogni pezzo può avere `colore` («#e53935» o «#e53»), in mostra e in cambia. Vale in ologramma e solido; raggi X, densità e sforzi restano come prima. Col cervello vero, «la molecola d'acqua con l'ossigeno rosso e gli idrogeni bianchi» è uscita al primo colpo, con la prima vista a 16 s.
   - **Limite del solido:** sotto la soglia del bagliore il colore più chiaro possibile è un grigio medio. Il bianco esce 100–106 su 255 e il giallo ocra; in ologramma il bianco si legge bianco. Il bianco vero chiederebbe di disegnare il solido dopo il bagliore: da decidere con Tony, non fatto.
   - Il tappo della sezione resta ciano anche sui pezzi colorati.
@@ -268,7 +276,8 @@ Restano decisioni di Tony, non lavoro sul codice:
 ## Lezioni da non ripetere
 - **Registri e crediti prima del codice.** La voce che saltava tra ElevenLabs e il Mac dipendeva dai crediti finiti: le frasi corte passavano, quelle lunghe no.
 - **Il riconoscitore locale storpia il nome.** «Stem» diventa "System", «Ciao STEM» diventa "Charge them", e c'è «Stemma».
-  - In `public/stem.js`, `isName` accetta già ogni parola che differisce da «stem» di una lettera. Gli alias veri stanno in `NAME_ALIASES`, quelli validi solo a inizio frase in `NAME_AT_START`. `NOT_NAME` elenca invece le parole da *escludere*.
+  - In `public/stem.js`, `isName` accetta ogni parola che differisce di una lettera da uno dei `NOMI` («nexus» dall'11/11, e «stem» per la prova). Gli alias veri stanno in `NAME_ALIASES`, quelli validi solo a inizio frase in `NAME_AT_START`, le esclusioni («lexus», «step»…) in `NOT_NAME`.
+  - Di «nexus» all'11/11 non c'è ancora nessuna storpiatura vista: «con Nexus» è uscito una volta come «connexus», che non sveglia (e non deve: Tony nominava il nome, non chiamava). `NOT_NAME` elenca invece le parole da *escludere*.
   - Prima di aggiungere un alias, cercalo in `ascolto.log`. Di una storpiatura di due parole il registro mostra una parola sola.
 - **Un Chrome dimenticato continua ad ascoltare.** Un HUD di prova lasciato aperto ascolta e scrive nel registro, quindi chiudi sempre i Chrome di prova.
 - **La cache di Chrome nasconde le modifiche** quando servi i file con `python3 -m http.server`. Disattivala con il comando CDP `Network.setCacheDisabled`.

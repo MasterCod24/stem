@@ -278,8 +278,16 @@ try {
   }
   await vai('?debug');
   await pausa(2500); await foto('casa');
-  await ev("stemParziale('stem dimmi che tempo fa domani a'); true"); await pausa(700); await foto('ascolto-parziale');
-  await ev("stemParziale(''); stemSente('stem dimmi che tempo fa domani a Torino'); true"); await pausa(1000); await foto('ascolto-esito');
+  // Il nome è Nexus dall'11/11; il vecchio «stem» sveglia ancora, per la prova chiesta da Tony. Le attivazioni per sbaglio
+  // da evitare, scritte nella sua prova: nesso, annessi, Lexus.
+  const SI = ['Nexus', 'nexus,', 'NEXUS.', 'nexis', 'stem', 'Stem,', 'system', 'charge'], NO = ['nesso', 'annessi', 'Lexus', 'next', 'nessuno', 'step', 'sesso', 'connessione'];
+  const nomi = await ev(`${JSON.stringify([...SI, ...NO])}.map((w) => window.stemNome(w))`);
+  controlla(Array.isArray(nomi) && nomi.slice(0, SI.length).every(Boolean) && nomi.slice(SI.length).every((x) => !x),
+    'il nome: Nexus (anche sbagliato di una lettera) e il vecchio STEM svegliano; nesso, annessi e Lexus no', JSON.stringify([...SI, ...NO].map((w, i) => `${w} ${nomi?.[i] ? 'sì' : 'no'}`)));
+  await ev("stemParziale('nexus dimmi che tempo fa domani a'); true"); await pausa(700); await foto('ascolto-parziale');
+  await ev("stemParziale(''); stemSente('nexus dimmi che tempo fa domani a Torino'); true"); await pausa(1000); await foto('ascolto-esito');
+  const esitoNome = await attendi(() => ev("document.getElementById('esito').textContent").then((t) => t === 'PER NEXUS · NOME' && t), 3000, 100);
+  controlla(esitoNome === 'PER NEXUS · NOME', 'chiamato «nexus», la scheda dell\'ascolto scrive PER NEXUS · NOME', esitoNome || await ev("document.getElementById('esito').textContent"));
   await pausa(900); await foto('pensiero');
   await attendi(async () => (await modo()) === 'speaking', 6000); await pausa(500); await foto('parla');
   await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);

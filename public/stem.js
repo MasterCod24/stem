@@ -504,12 +504,17 @@ function lev1(a, b) { // distanza di modifica ≤ 1?
   }
   return e + (a.length - i) + (b.length - j) <= 1;
 }
-const NOT_NAME = new Set(['item', 'step', 'stei', 'sto', 'tema', 'ste']); // "Ste" è un diminutivo di Stefano
+// Il nome è Nexus dall'11/11, scelta di Tony provata con STEM a voce (Vega era stato bocciato: 4 trascrizioni giuste su 6).
+// Il vecchio «stem», con le sue storpiature, sveglia ancora per un periodo di prova chiesto da Tony: si toglie quando lo decide.
+// Come «stem», «nexus» vale anche sbagliato di una lettera, tranne «lexus»: con «nesso» e «annessi» è una delle attivazioni
+// per sbaglio che la prova di Tony vuole evitare (le altre due distano più di una lettera).
+const NOMI = ['nexus', 'stem'];
+const NOT_NAME = new Set(['item', 'step', 'stei', 'sto', 'tema', 'ste', 'lexus']); // "Ste" è un diminutivo di Stefano
 // Storpiature reali del riconoscitore: "System" (locale it-IT), "Charge them" per "Ciao STEM" (memoria di STEM)
 const NAME_ALIASES = new Set(['system', 'sistem', 'sistemm', 'charge']);
 // "Stemma" (registro del 1/11: due richieste perse) è anche una parola vera: vale come nome solo a inizio frase o dopo un saluto
 const NAME_AT_START = new Set(['stemma']);
-const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && (lev1(n, 'stem') || NAME_ALIASES.has(n)); };
+const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && (NOMI.some((x) => lev1(n, x)) || NAME_ALIASES.has(n)); };
 const COMMANDS = /^(apri|chiudi|cerca|trova|dimmi|dammi|fammi|mostrami|fai|crea|scrivi|leggi|leggimi|metti|ricordami|calcola|traduci|spiegami|raccontami|avvia|controlla|prepara|manda|riassumi|aiutami|puoi|potresti|sai|mi\s+(dici|fai|trovi|apri|cerchi|spieghi|racconti))\b/i;
 const STOP = /^(stop|basta|zitto|fermati|aspetta|silenzio)\b/i;
 const GREETING = /^(buongiorno|buon\s?giorno|buonasera|buona\s?sera|buonanotte|ciao|ehi|ehy|hey|salve|eccomi|sono\s+tornato)\b/i;
@@ -518,7 +523,8 @@ const FOLLOW_UP_MS = 25000;
 // conversazione («esplodilo», «togli il coperchio», «chiudilo»). Un falso positivo costa al massimo un pezzo tolto, che si rimette.
 const COMANDI_OLO = /^(esplod|rimont|tagli|togli|rimett|chiud)/i;
 
-// Per il registro: la prima parola e quella più simile a "stem" (per scoprire come il riconoscitore storpia il nome), mai la frase
+// Per il registro: la prima parola e quella più simile a uno dei nomi (per scoprire come il riconoscitore storpia «nexus»,
+// di cui all'11/11 non c'è ancora nessuna storpiatura vista), mai la frase
 function editDistance(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
@@ -528,8 +534,8 @@ function editDistance(a, b) {
 }
 function clue(text) {
   const words = text.trim().split(/\s+/).map(norm).filter(Boolean);
-  const best = words.map((w) => [w, editDistance(w, 'stem')]).sort((x, y) => x[1] - y[1])[0];
-  return `${words.length} parole; prima: "${words[0] || ''}"` + (best && best[1] <= 3 ? `; più simile a stem: "${best[0]}" (distanza ${best[1]})` : '');
+  const best = words.flatMap((w) => NOMI.map((x) => [w, x, editDistance(w, x)])).sort((p, q) => p[2] - q[2])[0];
+  return `${words.length} parole; prima: "${words[0] || ''}"` + (best && best[2] <= 3 ? `; più simile a ${best[1]}: "${best[0]}" (distanza ${best[2]})` : '');
 }
 
 // È per STEM? Il nome (anche storpiato), la conversazione in corso, o un comando all'inizio della frase
@@ -648,7 +654,7 @@ function onInterim(text) {
   earlyTimer = setTimeout(() => {
     if (a.text.split(/\s+/).length < 3 || norm(a.text) === norm(earlySent)) return;
     earlySent = a.text; report(`parto in anticipo (${a.why})`); evento(`ASK · ${a.why.toUpperCase()} · IN ANTICIPO`);
-    ascolto.esito(`PER STEM · ${PERCHE[a.why]}`, true); ask(a.text);
+    ascolto.esito(`PER NEXUS · ${PERCHE[a.why]}`, true); ask(a.text);
   }, 800);
 }
 
@@ -661,7 +667,7 @@ function heard(text) {
     if (wantsStop(text)) {
       interrupt(); report('interrotto a voce');
       const a = addressed(text), riparte = a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1;
-      ascolto.fissa(text); ascolto.esito(riparte ? `PER STEM · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
+      ascolto.fissa(text); ascolto.esito(riparte ? `PER NEXUS · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
       if (riparte) ask(a.text);
       return;
     }
@@ -677,8 +683,8 @@ function heard(text) {
     const full = pending; pending = '';
     const a = addressed(full);
     dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per STEM');
-    if (!a) { report(`non per STEM; ${clue(full)}`); evento('INPUT · NON PER STEM'); ascolto.esito('NON PER STEM', false); if (S.mode === 'listening') setMode('idle'); return; }
-    ascolto.esito(`PER STEM · ${PERCHE[a.why]}`, true);
+    if (!a) { report(`non per STEM; ${clue(full)}`); evento('INPUT · NON PER NEXUS'); ascolto.esito('NON PER NEXUS', false); if (S.mode === 'listening') setMode('idle'); return; }
+    ascolto.esito(`PER NEXUS · ${PERCHE[a.why]}`, true);
     // già partito in anticipo con lo stesso identico testo: non ricomincio; se è cambiato anche di una parola, riparto
     const sameAsEarly = earlySent && norm(a.text) === norm(earlySent);
     earlySent = '';
@@ -793,7 +799,7 @@ function disegnaLivello() {
 // ---------- Avvio ----------
 // Prove senza microfono e senza ricerca: stemSente è una frase finita e stemParziale una parziale, come dal riconoscimento;
 // stemAllarme(causa, livello, testo, ms) accende un'anomalia finta
-if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; window.stemSente = heard; window.stemParziale = onInterim; window.stemAllarme = allarme; }
+if (DEBUG) { window.stemAsk = ask; window.stemReport = openReport; window.stemSente = heard; window.stemParziale = onInterim; window.stemAllarme = allarme; window.stemNome = isName; }
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
 const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./nucleo.js'),

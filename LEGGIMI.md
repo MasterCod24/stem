@@ -8,8 +8,9 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 - **App STEM:** doppio clic su `STEM.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: le particelle si raccolgono nella sfera, poi gli anelli si disegnano. Se STEM è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), STEM si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
 - **Da Terminale:** `./avvia.command`, utile anche la prima volta per inserire la chiave ElevenLabs. Ctrl-C o chiudere la finestra spegne tutto.
 
-## Parlare con STEM
-- **Sempre in ascolto**, senza tasti: STEM capisce da solo quando parli con lui. Una frase è per lui se:
+## Parlare con Nexus
+L'assistente si chiama Nexus dall'11/11/2026: «Ciao Nexus», «Nexus, …». Per un periodo di prova risponde anche al vecchio nome, STEM, che resta il nome dell'app e del progetto.
+- **Sempre in ascolto**, senza tasti: Nexus capisce da solo quando parli con lui. Una frase è per lui se:
   - contiene il suo nome (anche storpiato dal riconoscitore);
   - arriva entro 25 secondi dalla sua ultima risposta, cioè siete in conversazione;
   - comincia con un comando ("apri…", "cerca…", "dimmi…", "puoi…").
@@ -17,7 +18,7 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
   Se una frase non era per lui, il cervello risponde `[ignora]` e tace.
 - **Più rapido:** il cervello è un processo Claude Code sempre acceso, con Opus 5.5 a effort medio, quindi comincia a rispondere in circa 2 secondi (con Sonnet, `STEM_MODEL=sonnet` in `.env`, in meno di 1). Se fai una pausa a metà di una richiesta, STEM parte già e, se poi continui, riparte con la frase completa.
 - **Interromperlo:** mentre parla di' "stop", "basta" o "aspetta", oppure chiamalo per nome. `Esc` lo zittisce.
-- **La scheda dell'ascolto:** in basso, sotto la sfera, STEM scrive quello che dici mentre lo dici. A frase finita aggiunge cosa ne ha fatto: «PER STEM · NOME», «PER STEM · CONVERSAZIONE», «NON PER STEM». Così vedi subito perché non ti ha risposto.
+- **La scheda dell'ascolto:** in basso, sotto la sfera, STEM scrive quello che dici mentre lo dici. A frase finita aggiunge cosa ne ha fatto: «PER NEXUS · NOME», «PER NEXUS · CONVERSAZIONE», «NON PER NEXUS». Così vedi subito perché non ti ha risposto.
 - **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. Le frasi della scheda dell'ascolto restano sullo schermo e non finiscono in nessun registro. In `runtime/ascolto.log` STEM annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.
 
 ## Cosa vedi

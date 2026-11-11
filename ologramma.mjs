@@ -577,7 +577,7 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
       if (a.stato === 'errore' && typeof a.errore === 'string') S.analisi = analisiVuota('errore', intero(a.versione), { errore: a.errore.slice(0, 500) });
       else {
         S.versione++;
-        const perche = a.stato === 'in-corso' ? 'interrotta da un riavvio di STEM' : 'i dati del calcolo salvato non si leggono più';
+        const perche = a.stato === 'in-corso' ? 'interrotta da un tuo riavvio' : 'i dati del calcolo salvato non si leggono più';
         S.analisi = analisiVuota('errore', S.versione, { errore: `${perche}: chiedi di nuovo l'analisi` });
         salva(true);
       }

@@ -154,7 +154,7 @@ Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso. Una c
 - `GET /api/ologramma/campo?v=<versione>` restituisce un `Float32Array` di nx·ny·nz valori, in ordine `i + nx·(j + ny·k)`. Ogni valore è il fattore di sicurezza del voxel; −1 vuol dire vuoto, e 1e6 sicurezza enorme.
 - Il colore lo calcola l'HUD: `rischio = clamp(1/fs, 0, 1)`, cioè lo sforzo diviso lo snervamento: cresce in proporzione ed è rosso da fs 1 in giù. Con la scala di prima, `log(3/fs)/log(3)`, tutto quello che reggeva con fs ≥ 3 era blu e non si vedeva dove il pezzo lavora.
 - `ologramma.mjs` salva lo stato in `runtime/ologramma.json` con tmp+rename, e il campo in `runtime/ologramma-campo.bin`: un'intestazione Float64 [versione di base, n], poi vm (Float32) e voxel_pezzo (Uint16). fs non si salva: all'avvio si rifà uguale bit per bit. Il server è l'unico scrittore.
-- Dopo un riavvio, un'analisi rimasta 'in-corso' diventa 'errore' («interrotta da un riavvio di STEM: chiedi di nuovo l'analisi») e il calcolo non riparte da solo.
+- Dopo un riavvio, un'analisi rimasta 'in-corso' diventa 'errore' («interrotta da un tuo riavvio: chiedi di nuovo l'analisi», detto al cervello, che si chiama Nexus) e il calcolo non riparte da solo.
 
 ## Le azioni: `POST /api/ologramma` (JSON)
 Dal processo MCP, cioè dagli strumenti del cervello:
