@@ -15,6 +15,17 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 12/11/2026)
+- **Meteo a schermo intero: costruita e provata, mai usata da Tony** (12/11). «Che tempo fa?» fa chiamare `mostra_meteo`, che apre la vista: radar vero al centro, vento e pressione, profilo termico, avvisi, condizioni per spostarsi e timeline di 12 ore. Si comanda con mani, mouse e tasti.
+  - **Windy tolto, scelta mia sulla richiesta di Tony:** l'API di Windy costa 990 € l'anno, e la chiave gratuita restituisce dati mescolati apposta (la sua pagina dei prezzi, letta il 12/11). Al suo posto Open-Meteo, gratuito e senza chiave, coi quarti d'ora. «Al minuto» non lo dà gratis nessuno: il fondo è il quarto d'ora. Quella che Tony aveva incollato come chiave di RainViewer era l'elenco delle mappe: RainViewer non vuole chiavi.
+  - **RainViewer gratuito, misurato il 12/11:** solo le ultime 2 ore (13 mappe, una ogni 10 minuti), nessuna previsione del radar (il nowcast è vuoto), zoom fino a 7 (all'8 risponde «Zoom Level Not Supported»), un solo schema di colori. È riflettività, non Doppler: dove piove e quanto, non la velocità del vento.
+  - **Col cervello vero** (cartella vuota, tre domande, due giri): prima voce in 1,2–1,9 s, vista aperta in 1,5–1,7 s, fine in 4,5–5,8 s; Open-Meteo risponde in 0,15–0,2 s. Avevo previsto la vista a 2,5–4 s: lo strumento parte subito dopo le tre parole. Nel primo giro le risposte erano di 4–5 frasi, e alla terza domanda, senza città, lo strumento non veniva richiamato; con la persona ristretta, 3–4 frasi e lo strumento sempre.
+  - **Mani, mai provate da Tony:** pizzico e trascina sul radar sposta la mappa, altrove scorre il tempo; due pizzichi fanno lo zoom del radar; un pizzico breve, o una presa tenuta ferma e lasciata, sceglie l'ora sulla timeline, rimette il radar sul luogo o torna ad adesso; una presa lanciata chiude la vista. Headless, con le mani sulla foto di prova: p10 55–60 fps, minimo 38. Alla chiusura il registro riceve «[meteo] mani accese …», come per l'ologramma.
+  - **Senza città vale l'ultima chiesta** (`runtime/meteo.json`): Nexus non sa dove abita Tony, e la posizione del Mac vorrebbe ricompilare l'aiutante, che aspetta il trasloco.
+  - **Scelte mie, da guardare con Tony:**
+    - la scala delle condizioni: vale il fattore peggiore, con la visibilità sui 10 km del METAR, le raffiche da 20 a 62 km/h, la pioggia fino a 8 mm/h, il temporale al 10% e neve o gelo al 40%;
+    - le soglie degli avvisi: Met Office per pressione e pioggia, Beaufort per le raffiche, OMM per la nebbia;
+    - il raggio del radar alla partenza, 150 km.
+  - **Mai provati:** la vista sullo schermo di Tony e sul secondo monitor, un temporale vero (gli avvisi rossi si sono visti solo su dati costruiti) e i suoni dell'entrata, che sono quelli del report.
 - **Nome: solo Nexus dal 12/11, scelta di Tony** («dimentica il vecchio e sostituisci TUTTO»). «stem» non sveglia più: `NOMI` in `public/nexus.js` ha solo «nexus», valido anche sbagliato di una lettera tranne «lexus», e le storpiature di stem (system, charge, stemma) sono tolte. Mai provato con la voce vera. La prova del nome è chiusa, e la memoria del cervello lo sa (`nome-vega-prova.md`, aggiornata il 12/11).
   - **Rinominati il 12/11:** testi, commenti e appunti; le variabili (`NEXUS_*`: le `STEM_*` non valgono più); `nexus.js` e `nexus-persona.md`; le funzioni di prova (`nexusAsk`…); l'intestazione `x-nexus-voce`; la preferenza delle mani (`nexus-mani`: una scelta fatta prima col tasto M torna al predefinito, accese); la cartella del cervello, spostata a mano con la sua memoria di Claude Code.
   - **Restano STEM, per il trasloco:** `STEM.app`, `runtime/stem-mac`, la cartella `~/STEM` e la repository `MasterCod24/stem`. I permessi di macOS sono legati al percorso (TCC.db di sistema, letto il 12/11): Accessibilità per `~/STEM/STEM.app/Contents/MacOS/applet` e per `~/STEM/runtime/stem-mac`, Registrazione schermo per l'applet. Rinominare l'app costa ridare i permessi, e spostare la cartella li cambia tutti: si fa tutto insieme, una volta sola, e non da una sessione che lavora dentro `~/STEM`, a cui il trasloco sposterebbe la cartella da sotto. I passi:
@@ -161,6 +172,11 @@ Restano decisioni di Tony, non lavoro sul codice:
   - **L'ora:** il server mette `[adesso: giorno, ora (fuso, UTC±n)]` davanti a ogni messaggio per il cervello, perché Claude Code gli dà solo la data. Davanti alle frasi sentite aggiunge `[sentito: …]`, il perché dell'HUD, solo da `SENTITO` in `server.mjs`.
   - **L'agenda** è `runtime/agenda.json`. La scrivono gli strumenti `ricorda` e `agenda` di `mac/mac-mcp.mjs`, durante un turno del cervello, e il server, che toglie i compiti quando li consegna. I numeri dei compiti non si riusano mai.
   - **La consegna:** l'HUD chiede `/api/status` ogni 5 s. Se `agenda` è più di zero e Nexus è fermo, senza nessuno che parla, manda `/api/ask` con `{"agenda":true}`. Il server toglie i compiti scaduti e passa al cervello un messaggio `[agenda]` che contiene tutto il compito: serve perché, dopo un riavvio, il cervello non ricorda di averlo segnato. I compiti scaduti mentre Nexus era spento arrivano appena si riaccende, detti come in ritardo.
+- **`meteo.mjs`** scarica le previsioni di Open-Meteo per un luogo e scrive il riassunto per il cervello.
+  - Una richiesta sola: adesso, 19 ore (da −6 a +12), 57 quarti d'ora (da −2 h a +12 h) e 3 giorni, con `timeformat=unixtime`. Il luogo dal nome con la geocodifica di Open-Meteo; l'ultimo resta in `runtime/meteo.json`.
+  - `POST /api/meteo` solo dallo strumento `mostra_meteo` di `mac/mac-mcp.mjs`, che è un client sottile fuori dalle code di mouse e ologrammi; con `origin` risponde 403. Il server manda i dati all'HUD dentro il turno del cervello (`brain.notify`, evento `meteo`) e chiude l'ologramma.
+  - `GET /api/meteo` dà all'HUD aperto gli ultimi dati, riscaricati se hanno più di 10 minuti.
+  - I conti (eventi di pioggia, tendenza della pressione, avvisi, condizioni) stanno in `public/meteo/dati.js`, uguali nel server e nell'HUD.
 - **`ologramma.mjs`** è lo stato unico degli ologrammi, e il server è l'unico che lo scrive. Valida i modelli del cervello, tiene modello e versione, scrive i testi per il cervello e salva in `runtime/ologramma.json` e `runtime/ologramma-campo.bin`. All'avvio del server un ologramma rimasto aperto si chiude. Il contratto fra i pezzi è `public/ologramma/LEGGIMI-ologramma.md`.
   - **Gli strumenti** `mostra_ologramma`, `modifica_ologramma` (anche titolo e descrizione) e `analizza_struttura` stanno in `mac/mac-mcp.mjs`. Sono client sottili: chiamano `POST /api/ologramma` sulla porta che `mcp.json` passa con `--porta`, perché le variabili di `.env` non arrivano ai processi figli.
   - **La foto:** gli strumenti restituiscono il testo più la foto PNG che l'HUD manda dopo ogni versione nuova, così Nexus vede quello che ha fatto. Il server la aspetta fino a 8 s dopo `mostra` (o con pezzi da file) e 4 s dopo una modifica.
@@ -200,6 +216,11 @@ Restano decisioni di Tony, non lavoro sul codice:
     - tasti: E esplodi; X raggi X, D densità, F sforzi (premuti di nuovo tornano all'ologramma); O ologramma, L solido; S sezione lungo x, y, z o niente, con le frecce che la spostano; R ritorna alla vista di partenza; Z rimette l'ultimo pezzo tolto; M accende o spegne le mani (la scelta resta in `localStorage` `nexus-mani`); Esc chiude tutto;
     - mouse: trascinare ruota, la rotella fa lo zoom, il clic sceglie un pezzo e il doppio clic lo isola;
     - mani: un pizzico con una mano ruota, con due fa lo zoom, due palmi aperti esplodono, e un pezzo afferrato e lanciato si toglie;
+  - `meteo/`: la vista meteo, caricata alla prima apertura.
+    - `vista.js`: moduli, timeline, mouse, tasti e gesti. Una linea del tempo comanda tutto, da −2 h a +12 h: i moduli mostrano il tempo a quell'ora, il radar la mappa di allora.
+    - `radar.js`: le mattonelle di RainViewer, ricolorate a fasce di 5 dBZ col bordo acceso, sopra `mappa.json`. Dice anche l'eco sopra il luogo e la più vicina. Le chiede direttamente a RainViewer (`api.` e `tilecache.rainviewer.com`): con le immagini del report sono le sole richieste dell'HUD fuori da Nexus.
+    - `mappa.json` (349 KB): coste, confini e laghi di Natural Earth 1:50 milioni e 6.025 città coi nomi italiani, di pubblico dominio. Si rifà con `prove/meteo-mappa.mjs`.
+    - Tasti: frecce il tempo (con Maiusc un'ora), 0 adesso, + e − lo zoom del radar, R ricomincia, M le mani, Esc chiude. Mouse: trascina e rotella sul radar, doppio clic lo rimette sul luogo; clic e trascina sulla timeline.
   - `sfx.js`: suoni sintetizzati, anche quelli dell'ologramma.
   - `lab-sfx.html` prova i suoni, anche quelli del report. `lab.html` prova la grafica, ma funziona solo servendo la radice della repository (per esempio `python3 -m http.server` in `~/STEM`, poi `/public/lab.html`), non da `localhost:4321`. `lab-ologramma.html?demo=turbofan|staffa` e `lab-mani.html` provano ologramma e mani da soli.
 - **`mac/`** controlla il Mac: un server MCP su stdio senza pacchetti, più un aiutante Swift che si compila da solo in `runtime/stem-mac` quando `helper.swift` cambia. I dettagli stanno in `mac/LEGGIMI-mac.md`.
@@ -266,6 +287,10 @@ Restano decisioni di Tony, non lavoro sul codice:
     - `__misure`, con gli fps per secondo e le misure delle mani;
     - `?debug&mani=immagine`, che usa la foto di prova al posto della fotocamera.
   - Uno Nexus di prova completo: `NEXUS_CERVELLO=<cartella> NEXUS_PORT=… NEXUS_BROWSER_PORT=… NEXUS_CDP_PORT=… NEXUS_NO_OPEN=1 node server.mjs`. Gli strumenti si chiamano senza cervello con `node mac/mac-mcp.mjs --porta <porta>`. Senza un turno del cervello l'HUD vede le versioni nuove solo col giro di `/api/status`, ogni 5 s, e la foto può non arrivare in tempo.
+- **Meteo:**
+  - `node prove/meteo.mjs`: i conti su dati costruiti, senza rete, in un secondo. Con `--rete` anche Open-Meteo e RainViewer veri e il server vero sulla porta 4423, con lo strumento e un cervello e un Playwright finti.
+  - `node prove/meteo-hud.mjs [cartella-foto]`: l'HUD vero headless sulla GPU, porte 4432 e 9563, circa 2 minuti, con la rete. Fa le foto, prova mouse, tasti e gesti e misura gli fps con le mani.
+  - Con `?debug`: `nexusMeteo()` apre la vista con gli ultimi dati del server (prima serve una `POST /api/meteo` senza origin, per esempio con `curl`), `nexusVistaMeteo()` dà `info()` e `gesto()`.
 - **Voce:**
   ```bash
   curl -s -X POST localhost:4321/api/tts -H 'content-type: application/json' -d '{"text":"prova","answer":"prova-1"}' -o /tmp/prova.audio -D -
@@ -283,6 +308,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - ciano dominante;
   - arancione e rosso solo per le anomalie (`S.allarme`, `.attenzione`, `.cede`, la scala degli sforzi), mai per decorare.
   - Eccezione (scelta di Tony dell'11/11): il `colore` di un pezzo dell'ologramma è il colore dell'oggetto, anche rosso o arancione, e vale solo nei modi ologramma e solido.
+  - Eccezione della meteo (12/11): nel radar l'arancione parte da 38 dBZ (circa 8 mm/h con Marshall-Palmer, il «very heavy» del Met Office) e il rosso da 50 dBZ (circa 50 mm/h, «violent»), le stesse soglie degli avvisi, che sono riquadri arancioni o rossi. Il verde acqua (`--acqua`) segna il luogo e l'ora attuale.
   - Un colore nuovo con un significato va scritto qui.
 
 ## Lezioni da non ripetere
@@ -320,4 +346,5 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
 - **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore.
 - **Un agente fermato dal limite di utilizzo lascia accesi i suoi Nexus di prova**, con i loro Chrome e Playwright. È successo due volte, per tre ore e per tre ore e mezza. Alla ripresa si cercano con `lsof` sulle porte di prova e con `ps` sui profili della scratchpad.
+- **In Chrome headless `--window-size` non è la pagina.** Con 1470×956 la pagina è alta 813 punti: il 12/11 una prova delle mani convertiva le coordinate con 956 e il pizzico sulla timeline finiva sopra. Lo schermo di Tony si impone con `Emulation.setDeviceMetricsOverride` (`prove/meteo-hud.mjs`) o ridimensionando la finestra (`prove/ologramma-hud.mjs`), e si controlla `innerHeight`.
 - **In Chrome `gl.finish()` non aspetta la GPU.** Il 10/11 dava 0,1 ms a fotogramma per l'umanoide col bagliore a 2205×1434. Il costo vero si misura con n fotogrammi di fila e un solo `readPixels` alla fine, che deve restituire pixel veri: 4,15 ms, con tre giri uguali entro l'1%.

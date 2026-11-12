@@ -169,7 +169,8 @@ function showAction(name, detail) {
 const SMALL_VERBS = { Read: 'Leggo', Write: 'Creo', Edit: 'Modifico', Glob: 'Cerco file', Grep: 'Cerco nei file',
   schermo: 'Guardo lo schermo', clic: 'Clicco', scrivi: 'Scrivo', tasti: 'Tasti', apri_app: 'Apro', chiudi_app: 'Chiudo', scorri: 'Scorro', trascina: 'Trascino',
   ricorda: 'Segno in agenda', agenda: 'Guardo l\'agenda',
-  mostra_ologramma: 'Costruisco l\'ologramma', modifica_ologramma: 'Modifico l\'ologramma', analizza_struttura: 'Calcolo gli sforzi' };
+  mostra_ologramma: 'Costruisco l\'ologramma', modifica_ologramma: 'Modifico l\'ologramma', analizza_struttura: 'Calcolo gli sforzi',
+  mostra_meteo: 'Guardo il cielo' };
 let smallTimer = 0;
 function showSmall(name, detail) {
   $('small').textContent = `${SMALL_VERBS[name] || name.replace(/_/g, ' ')}${detail ? ' · ' + detail : ''}`.toUpperCase();
@@ -183,14 +184,44 @@ function openReport(r) {
   const plan = showReport(r);
   if (!plan) return closeReport(); // zero blocchi: Nexus lo sta chiudendo
   chiudiOlo(); // anche l'ologramma: un report del cervello lo chiude anche nel server (server.mjs), così il cervello lo sa
+  chiudiMeteo();
   sfx?.report(plan);
   clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0; // il report prende il posto del browser
   document.body.classList.add('report'); // micro-dati e raggiera si spengono, l'ascolto diventa una riga in basso
   evento(`REPORT · ${Array.isArray(r?.blocchi) ? r.blocchi.length : 0} BLOCCHI`);
   Object.assign(S, reportDock()); S.dockTarget = 1;
 }
-function closeReport() { hideReport(); document.body.classList.remove('report'); if (!holo?.aperto) S.dockTarget = 0; } // con l'ologramma il nucleo resta nell'angolo
-addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, holo?.aperto ? dockOlo() : reportDock()); });
+function closeReport() { hideReport(); document.body.classList.remove('report'); if (!holo?.aperto && !meteo?.aperto) S.dockTarget = 0; } // con l'ologramma o la meteo il nucleo resta nell'angolo
+addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, holo?.aperto ? dockOlo() : meteo?.aperto ? meteo.dock() : reportDock()); });
+
+// ---------- Meteo a schermo intero (meteo/vista.js): i dati dal server con l'evento 'meteo', il radar da RainViewer ----------
+// Come il report e l'ologramma: una vista grande alla volta, il nucleo nell'angolo, e le mani accese come con l'ologramma.
+let meteo = null, meteoPronto = null;
+function creaMeteo() { // il modulo si carica alla prima apertura: l'avvio dell'HUD non lo paga
+  meteoPronto ||= import('./meteo/vista.js')
+    .then(({ createVistaMeteo }) => (meteo = createVistaMeteo({ contenitore: $('holo'), prima: $('dita'), sfx: sfxOlo, onChiudi: () => chiudiMeteo() })))
+    .catch((e) => { meteoPronto = null; throw e; });
+  return meteoPronto;
+}
+async function apriMeteo(dati) {
+  let m;
+  try { m = await creaMeteo(); } catch (e) { warn('Meteo non disponibile', 'attenzione'); console.warn(e); return; }
+  chiudiOlo(); hideReport(); document.body.classList.remove('report'); clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0;
+  const plan = m.apri(dati);
+  if (!m.aperto) return;
+  if (!document.body.classList.contains('meteo')) { maniDa = Math.floor(performance.now() / 1000); mani?.azzeraMisure(); }
+  document.body.classList.add('meteo'); // micro-dati e raggiera si spengono, l'ascolto diventa una riga in basso
+  Object.assign(S, m.dock()); S.dockTarget = 1;
+  if (plan) sfx?.report(plan);
+  evento(`METEO · ${String(dati?.luogo?.nome || '').toUpperCase().slice(0, 24)}`);
+  avviaMani();
+}
+function chiudiMeteo() {
+  if (!meteo?.aperto) return;
+  misuraMani('meteo'); meteo.chiudi(); document.body.classList.remove('meteo');
+  if (!holo?.aperto && !document.body.classList.contains('report')) S.dockTarget = 0;
+  if (!holo?.aperto) fermaMani();
+}
 
 // ---------- Ologramma (scena.js): lo stato è del server, qui si mostra. Dall'HUD tornano solo togli, rimetti e chiudi ----------
 // Modi, esploso, sezione e camera cambiano solo qui, con tastiera, mouse e mani: non tornano al server (contratto).
@@ -223,24 +254,25 @@ function applicaOlogramma(st) {
   allarmeOlogramma(holoStato);
 }
 // Aperto: il nucleo va nell'angolo come col report, report e browser lasciano il posto, le mani si accendono
-let oloDa = 0; // il secondo in cui si è aperto: la misura delle mani conta da lì
+let maniDa = 0; // il secondo in cui si è aperto l'ologramma o la meteo: la misura delle mani conta da lì
 function apriOlo() {
+  chiudiMeteo();
   hideReport(); document.body.classList.remove('report'); clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0;
   Object.assign(S, dockOlo()); S.dockTarget = 1;
   document.body.classList.add('olo');
-  oloDa = Math.floor(performance.now() / 1000); mani?.azzeraMisure();
+  maniDa = Math.floor(performance.now() / 1000); mani?.azzeraMisure();
   avviaMani();
 }
-function chiusoOlo() { misuraMani(); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); allarme('calcolo', 0); }
+function chiusoOlo() { misuraMani('ologramma'); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); allarme('calcolo', 0); }
 // La regola di Tony: mani solo sopra 45 fps sul suo M2. Alla chiusura, se le mani sono state accese almeno 10 secondi interi,
 // i fotogrammi di quei secondi e il tempo di MediaPipe vanno al registro del server: solo numeri, la riga la scrive lui.
 // Con loro vanno le misure d'uso vero dei gesti (gesti.js, misure()): solo i numeri finiti, quelli senza campioni restano fuori.
-function misuraMani() {
-  const s = SECONDI.filter((x) => x.s >= oloDa && x.mani);
+function misuraMani(vista) {
+  const s = SECONDI.filter((x) => x.s >= maniDa && x.mani);
   if (s.length < 10 || !mani) return;
   const m = mani.misure, f = statFps(s), d = m.detect_ms.mediana;
   const gesti = Object.fromEntries(Object.entries(m.gesti || {}).filter(([k, v]) => k !== 'tremolio' && Number.isFinite(v)));
-  post('/api/ologramma', { azione: 'misura', secondi: s.length, fps: { mediana: f.mediana, p10: f.p10, minimo: f.minimo }, detect_ms: d, prova: maniProva, gesti }).catch(() => {});
+  post('/api/ologramma', { azione: 'misura', secondi: s.length, fps: { mediana: f.mediana, p10: f.p10, minimo: f.minimo }, detect_ms: d, prova: maniProva, gesti, ...(vista === 'meteo' && { vista }) }).catch(() => {});
 }
 // Chiuso dall'HUD. Solo Esc lo dice al server, che al cervello scrive «Tony ha chiuso l'ologramma»: report e browser lo nascondono e basta
 // La risposta porta la versione nuova; un 409 (il cervello ha già fatto un modello nuovo) porta lo stato: si rilegge e si mostra quello
@@ -281,13 +313,21 @@ function tastoOlo(e) {
     const L = asseOlo(v.sezione.asse), d = k === 'ArrowUp' || k === 'ArrowRight' ? 1 : -1;
     holo.comando('sezione', { ...v.sezione, posizione: Math.min(L.hi, Math.max(L.lo, v.sezione.posizione + d * L.passo)) });
   } else if (k === 'r') holo.comando('reset');
-  else if (k === 'm') { const on = !maniVolute(); vogliMani(on); warn(on ? 'Mani accese' : 'Mani spente'); evento(on ? 'HANDS · ON' : 'HANDS · OFF'); if (on) avviaMani(); else fermaMani(); }
+  else if (k === 'm') cambiaMani();
   else if (k === 'z') { const t = holoStato?.tolti; if (t?.length) azioneOlo('rimetti', t[t.length - 1]); }
   else return false;
   return true;
 }
+function cambiaMani() { const on = !maniVolute(); vogliMani(on); warn(on ? 'Mani accese' : 'Mani spente'); evento(on ? 'HANDS · ON' : 'HANDS · OFF'); if (on) avviaMani(); else fermaMani(); }
+// Con la meteo aperta: M per le mani come con l'ologramma, il resto lo decide la vista (frecce, + e −, R, 0)
+function tastoMeteo(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  if (e.key.toLowerCase() === 'm') { if (!e.repeat) cambiaMani(); return true; }
+  return meteo.tasto(e);
+}
 
-// ---------- Mani: MediaPipe in locale, accese solo con l'ologramma aperto. La scelta del tasto M resta fra un avvio e l'altro ----------
+// ---------- Mani: MediaPipe in locale, accese solo con l'ologramma o la meteo aperti. La scelta del tasto M resta fra un avvio e l'altro ----------
+const vistaMani = () => Boolean(holo?.aperto || meteo?.aperto);
 let mani = null, maniPronte = null, mappaMani = null; // mappaMani: la mappa a S di gesti.js, la stessa del cursore
 const maniProva = DEBUG && params.get('mani') === 'immagine'; // la foto di prova al posto della fotocamera
 const maniVolute = () => { try { return localStorage.getItem('nexus-mani') !== '0'; } catch { return true; } };
@@ -303,12 +343,12 @@ function creaMani() { // una volta sola, anche con due aperture di fila
   return maniPronte;
 }
 async function avviaMani() {
-  if (!maniVolute() || !holo?.aperto) return;
+  if (!maniVolute() || !vistaMani()) return;
   try {
     const m = await creaMani();
-    if (!holo.aperto || !maniVolute()) return;
-    await m.avvia(); // se MediaPipe o la fotocamera non partono: un avviso, e l'ologramma resta col mouse
-    if (!holo.aperto || !maniVolute()) fermaMani(); // chiuso, o spente col tasto M, mentre partivano
+    if (!vistaMani() || !maniVolute()) return;
+    await m.avvia(); // se MediaPipe o la fotocamera non partono: un avviso, e ologramma e meteo restano col mouse
+    if (!vistaMani() || !maniVolute()) fermaMani(); // chiusi, o spente col tasto M, mentre partivano
   } catch (e) { warn(String(e?.message || e), 'attenzione'); console.warn(e); }
 }
 function fermaMani() { mani?.ferma(); disegnaDita([]); faseMani('spente'); }
@@ -317,8 +357,9 @@ function fermaMani() { mani?.ferma(); disegnaDita([]); faseMani('spente'); }
 function faseMani(fase) {
   $('dita').classList.toggle('riposo', fase === 'riposo');
   holo?.gesto({ tipo: 'stato', fase });
+  meteo?.gesto({ tipo: 'stato', fase });
 }
-function gestoMani(g) { if (g.tipo === 'stato') faseMani(g.fase); else holo.gesto(g); }
+function gestoMani(g) { if (g.tipo === 'stato') faseMani(g.fase); else if (meteo?.aperto) meteo.gesto(g); else holo?.gesto(g); }
 async function telaProva() { // come la fotocamera: 640×480, la foto di prova intera su fondo bianco (come lab-mani.html)
   const img = new Image();
   img.src = '/modelli/prova-mani.jpg';
@@ -463,8 +504,9 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
           if (primaFrase) { primaFrase = false; latenza = (performance.now() - chiesto) / 1000; evento(`VOICE OUT · ${latenza.toFixed(1)} S`); allarme('cervello', 0); }
           speak(ev.s);
         }
-        else if (ev.t === 'show') { evento('BROWSER · SHOW'); chiudiOlo(); closeReport(); showScreen(true); } // ricerca nuova: report e ologramma lasciano il posto al browser
+        else if (ev.t === 'show') { evento('BROWSER · SHOW'); chiudiOlo(); chiudiMeteo(); closeReport(); showScreen(true); } // ricerca nuova: report, ologramma e meteo lasciano il posto al browser
         else if (ev.t === 'report') openReport(ev);
+        else if (ev.t === 'meteo') { if (ev.chiudi) chiudiMeteo(); else apriMeteo(ev.dati); }
         else if (ev.t === 'holo') { evento(`HOLO · V${Number(ev.v) || 0}`); rileggiOlogramma(Number(ev.v)); }
         else if (ev.t === 'tool') { evento(`TOOL · ${String(ev.name).slice(0, 24)}`); showAction(ev.name, ev.detail); if (!playing) setMode('thinking'); }
         else if (ev.t === 'page') $('p-host').textContent = '· ' + ev.detail;
@@ -717,8 +759,9 @@ const ascolto = (() => {
 
 // ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce e chiude, un clic sblocca l'audio se Chrome lo blocca ----------
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); }
+  if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); chiudiMeteo(); }
   else if (holo?.aperto && tastoOlo(e)) e.preventDefault();
+  else if (meteo?.aperto && tastoMeteo(e)) e.preventDefault();
 });
 addEventListener('pointerdown', () => { ensureAudio(); if (ear !== 'on' && ear !== 'install') prepareEar(); });
 // Mouse sull'ologramma, solo quando è aperto: trascina per ruotare, rotella per lo zoom, clic per scegliere, doppio clic per
@@ -758,7 +801,7 @@ function aggiornaBordi() {
   const hx = (n) => n.toString(16).padStart(2, '0').toUpperCase();
   RIGHE_ESA.push(`${hx(indirizzo >> 8)}${hx(indirizzo & 255)}  ${hx(b[0])}${hx(b[1])} ${hx(b[2])}${hx(b[3])} ${hx(b[4])}${hx(b[5])} ${hx(b[6])}${hx(b[7])}`);
   if (RIGHE_ESA.length > 60) RIGHE_ESA.shift();
-  if (document.body.classList.contains('olo') || document.body.classList.contains('report')) return; // spenti: niente da scrivere
+  if (document.body.classList.contains('olo') || document.body.classList.contains('report') || document.body.classList.contains('meteo')) return; // spenti: niente da scrivere
   scrivi($('esa'), RIGHE_ESA.join('\n'));
   if (eventiNuovi) { eventiNuovi = false; scrivi($('eventi'), EVENTI.join('\n')); }
   if (giro % 2) return; // il resto 4 volte al secondo
@@ -785,7 +828,7 @@ function aggiornaBordi() {
 const TRATTI = Array.from({ length: 24 }, () => $('livello').appendChild(document.createElement('i')));
 const bande = new Uint8Array(512);
 function disegnaLivello() {
-  if (!micAnalyser || document.body.classList.contains('olo') || document.body.classList.contains('report')) return;
+  if (!micAnalyser || document.body.classList.contains('olo') || document.body.classList.contains('report') || document.body.classList.contains('meteo')) return;
   micAnalyser.getByteFrequencyData(bande);
   for (let k = 0; k < 24; k++) {
     const i0 = 2 + Math.round(k * k * 0.42), i1 = 3 + Math.round((k + 1) * (k + 1) * 0.42);
@@ -800,6 +843,8 @@ function disegnaLivello() {
 // Prove senza microfono e senza ricerca: nexusSente è una frase finita e nexusParziale una parziale, come dal riconoscimento;
 // nexusAllarme(causa, livello, testo, ms) accende un'anomalia finta
 if (DEBUG) { window.nexusAsk = ask; window.nexusReport = openReport; window.nexusSente = heard; window.nexusParziale = onInterim; window.nexusAllarme = allarme; window.nexusNome = isName; }
+// nexusMeteo(dati): apre la meteo senza cervello, con i dati dati o con gli ultimi del server (GET /api/meteo); nexusVistaMeteo() per info() e gesto()
+if (DEBUG) { window.nexusMeteo = async (dati) => apriMeteo(dati || await (await fetch('/api/meteo', { cache: 'no-store' })).json()); window.nexusVistaMeteo = () => meteo; }
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
 const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./nucleo.js'),
@@ -862,8 +907,8 @@ let lastActive = 0, skip = false;
 function loop(now) {
   requestAnimationFrame(loop);
   // In attesa e senza nessuno che parla da 20 s: 20 fotogrammi al secondo bastano, la GPU (e la batteria) ringraziano.
-  // L'ologramma aperto conta come attività: a metà frequenza mani, rotazione e foto andrebbero a scatti.
-  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on') || holo?.aperto) lastActive = now;
+  // L'ologramma e la meteo aperti contano come attività: a metà frequenza mani, rotazione e foto andrebbero a scatti.
+  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on') || holo?.aperto || meteo?.aperto) lastActive = now;
   if (now - lastActive > 20000) { skip = !skip; if (skip || now - last < 45) return; }
   contaQuadro(now);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;

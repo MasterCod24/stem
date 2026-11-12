@@ -134,7 +134,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
     } else if (c.name === 'mcp__mac__mostra_report') { // il report va all'HUD così com'è: lo strumento serve solo a dargli una forma
       T.emit({ t: 'report', titolo: c.input?.titolo, blocchi: c.input?.blocchi });
     } else if (c.name.startsWith('mcp__mac__')) {
-      T.emit({ t: 'mac', name: c.name.replace('mcp__mac__', ''), detail: String(c.input?.nome || '').slice(0, 40) });
+      T.emit({ t: 'mac', name: c.name.replace('mcp__mac__', ''), detail: String(c.input?.nome || c.input?.luogo || '').slice(0, 40) });
     } else if (c.name === 'WebSearch' || c.name === 'WebFetch') {
       // Ricerche senza browser: non contano come azioni del browser, quindi non aprono il pannello e non chiudono
       // l'ologramma. Nell'HUD e nei registri solo il nome del sito di una pagina, mai le parole cercate.

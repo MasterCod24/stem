@@ -11,6 +11,7 @@ import { createVoice } from './voice.mjs';
 import { createMedia } from './media.mjs';
 import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
+import { createMeteo } from './meteo.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
 import { testoMisure } from './public/ologramma/gesti.js';
@@ -306,6 +307,10 @@ holoOra = riassunto(holo.stato());
 // Un ologramma rimasto aperto quando Nexus si è spento non riappare da solo all'avvio dopo: resta, chiuso, e si riapre a voce
 if (holoOra.aperto) holo.esegui({ azione: 'chiudi' });
 
+// --- Meteo (meteo.mjs): lo strumento mostra_meteo chiede qui le previsioni di un luogo; i dati vanno all'HUD dentro il turno
+// del cervello (evento 'meteo') e il riassunto torna al cervello. L'HUD aperto li rilegge con GET /api/meteo ogni 5 minuti.
+const meteo = createMeteo({ cartella: STATO, onLog: (l) => console.error(l) });
+
 let holoFoto = null;          // l'ultima foto dell'HUD: { modello, versione, png } in base64
 const fotoAttese = new Set(); // gli strumenti che aspettano la foto di una versione
 function aspettaFoto(modello, versione, ms) {
@@ -337,7 +342,7 @@ function pngValido(b) {
 }
 
 // La misura delle mani nelle condizioni vere (la regola di Tony: mani solo sopra 45 fps sul suo M2), che l'HUD manda alla
-// chiusura dell'ologramma se le mani sono state accese almeno 10 s: la prossima sessione la legge nel registro, senza
+// chiusura dell'ologramma o della meteo (vista: 'meteo') se le mani sono state accese almeno 10 s: la prossima sessione la legge nel registro, senza
 // chiedere a Tony. Dall'HUD arrivano solo numeri, controllati qui; il testo della riga è del server.
 // gesti, facoltativo (un HUD vecchio non lo manda): le misure d'uso vero di gesti.js, che servono a tarare sulle mani di
 // Tony le soglie oggi non misurate. testoMisure le controlla (solo numeri finiti nei loro limiti) e ne fa il resto della riga.
@@ -348,9 +353,9 @@ function rigaMani(b) {
   const f = b.fps, gesti = testoMisure(b.gesti);
   if (!n(b.secondi, 86400) || b.secondi < 10 || !Number.isInteger(b.secondi) || f === null || typeof f !== 'object' ||
     !['mediana', 'p10', 'minimo'].every((k) => n(f[k], 1000)) || !(b.detect_ms === null || n(b.detect_ms, 1e4)) ||
-    (b.prova !== undefined && typeof b.prova !== 'boolean')) return null;
+    (b.prova !== undefined && typeof b.prova !== 'boolean') || (b.vista !== undefined && b.vista !== 'meteo')) return null;
   const r = Math.round; // fotogrammi contati e millisecondi interi: niente virgole che si confondono con quelle della riga
-  return `[ologramma] mani accese ${b.secondi} s${b.prova ? ' (foto di prova al posto della fotocamera)' : ''}: ` +
+  return `[${b.vista === 'meteo' ? 'meteo' : 'ologramma'}] mani accese ${b.secondi} s${b.prova ? ' (foto di prova al posto della fotocamera)' : ''}: ` +
     `fps mediana ${r(f.mediana)}, p10 ${r(f.p10)}, minimo ${r(f.minimo)}, detect ${b.detect_ms === null ? '—' : `${r(b.detect_ms)} ms`}` +
     (gesti ?? '; misure dei gesti scartate (storte)');
 }
@@ -550,6 +555,22 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && p.startsWith('/api/ologramma/file/')) return serviFile3D(res, p);
+
+  if (req.method === 'GET' && p === '/api/meteo') { // l'HUD aperto: gli ultimi dati, riscaricati se hanno più di 10 minuti
+    const d = await meteo.attuale();
+    return d ? json(res, 200, d) : res.writeHead(404, { 'cache-control': 'no-store' }).end();
+  }
+
+  if (req.method === 'POST' && p === '/api/meteo') { // solo dallo strumento del cervello: l'HUD non sceglie luoghi
+    if (req.headers.origin || req.headers['sec-fetch-site']) return res.writeHead(403).end();
+    if (body.chiudi === true) { brain.notify({ t: 'meteo', chiudi: true }); return json(res, 200, { ok: true, testo: 'Vista meteo chiusa.' }); }
+    const r = await meteo.mostra({ luogo: body.luogo, paese: body.paese });
+    if (!r.ok) return json(res, r.codice, { ok: false, errori: r.errori });
+    if (holoOra.aperto) holo.esegui({ azione: 'chiudi' }); // una vista grande alla volta: come il report, la meteo chiude l'ologramma
+    brain.notify({ t: 'meteo', dati: r.dati });
+    const spento = Date.now() - hudSeen > 15_000 ? "\nL'HUD non è acceso: Tony non vede la vista, digli i numeri a voce." : '';
+    return json(res, 200, { ok: true, testo: r.testo + spento });
+  }
 
   if (req.method === 'POST' && p === '/api/ask') {
     let text = String(body.text || '').trim();

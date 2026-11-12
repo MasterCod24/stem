@@ -757,6 +757,34 @@ TOOLS.push({
   annotations: { title: 'Analizza gli sforzi' },
   run: (a) => ologramma({ ...a, azione: 'analizza' }),
 });
+
+// --- Meteo: client sottile di POST /api/meteo. Previsioni, conti e testo stanno nel server (meteo.mjs), il radar nell'HUD ---
+TOOLS.push({
+  name: 'mostra_meteo',
+  description: 'Apre nell\'HUD la vista meteo di un luogo: radar delle piogge vero (ultime 2 ore), vento e pressione, profilo termico, ' +
+    'timeline di 12 ore con inizio e fine delle precipitazioni, avvisi e condizioni per spostarsi; chiude le altre viste grandi. ' +
+    'Risponde con i numeri da dire: adesso, precipitazioni, avvisi, prossime ore e tre giorni (Open-Meteo, orari del posto). ' +
+    'Senza «luogo» usa l\'ultimo chiesto. chiudi true la chiude.',
+  inputSchema: { type: 'object', properties: {
+    luogo: { type: 'string', description: 'nome della città o del comune, solo il nome: «Milano»' },
+    paese: { type: 'string', description: 'codice ISO di due lettere, se il nome è di più posti: «IT»' },
+    chiudi: { type: 'boolean', description: 'true chiude la vista; va mandato da solo' },
+  } },
+  annotations: { title: 'Meteo', readOnlyHint: true },
+  run: async (a) => {
+    if (!PORTA) throw new ToolError(`la porta di Nexus negli argomenti non è valida (${process.argv.slice(2).join(' ')})`);
+    let r, d = null;
+    try {
+      r = await fetch(`http://127.0.0.1:${PORTA}/api/meteo`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(a.chiudi === true ? { chiudi: true } : { luogo: a.luogo, paese: a.paese }), signal: AbortSignal.timeout(30_000) });
+      d = await r.json().catch(() => null);
+    } catch (e) {
+      throw new ToolError(`il server di Nexus non risponde sulla porta ${PORTA} (${e.cause?.code || e.message})`);
+    }
+    if (!r.ok || d?.ok !== true) throw new ToolError(`Niente meteo (il server ha risposto ${r.status})${Array.isArray(d?.errori) ? `: ${d.errori.join('; ')}` : '.'}`);
+    return String(d.testo ?? '');
+  },
+});
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // --- JSON-RPC su stdio ---
@@ -791,7 +819,7 @@ async function handle(msg) {
         serverInfo: { name: 'nexus-mac', version: '1.0.0' },
         instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
           'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda». ' +
-          'Gli oggetti in 3D si mostrano con mostra_ologramma.',
+          'Gli oggetti in 3D si mostrano con mostra_ologramma, il meteo con mostra_meteo.',
       } });
     case 'ping':
       return reply({ result: {} });
@@ -799,6 +827,7 @@ async function handle(msg) {
       return reply({ result: { tools: TOOLS.map(({ run: _, ...t }) => t) } });
     case 'tools/call': {
       const run = async () => reply(await callTool(params));
+      if (params?.name === 'mostra_meteo') return run(); // solo rete: non aspetta mouse e tastiera, e non li ferma
       if (OLOGRAMMI.has(params?.name)) return (codaOlo = codaOlo.then(run).catch((e) => log(e.message)));
       queue = queue.then(run).catch((e) => log(e.message));
       return queue;

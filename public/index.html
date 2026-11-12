@@ -76,7 +76,7 @@
   @keyframes spazza { from { transform: translateX(-100%); } to { transform: translateX(720%); } }
   /* Spenti col report e l'ologramma (hanno le loro barre), e col browser le colonne che finirebbero sotto nucleo e pagina.
      !important: le opacità sopra sono per ID e vincerebbero */
-  body.olo .bordo, body.report .bordo, body.olo #fili, body.report #fili, body.olo .dato, body.report .dato,
+  body.olo .bordo, body.report .bordo, body.meteo .bordo, body.olo #fili, body.report #fili, body.meteo #fili, body.olo .dato, body.report .dato, body.meteo .dato,
   body.browsing #colonna-sx, body.browsing #colonna-dx, body.browsing .dato { opacity: 0 !important; }
   /* All'avvio si vede solo la sfera che si forma con ASSEMBLING: dati, fili e bordi arrivano quando gli anelli ci sono (ready) */
   body:not(.ready) .bordo, body:not(.ready) #fili, body:not(.ready) .dato { opacity: 0 !important; }
@@ -99,11 +99,12 @@
   #livello { display: flex; gap: 5px; height: 9px; margin-top: 10px; align-items: flex-end; }
   #livello i { flex: 1; height: 100%; background: var(--ciano); opacity: .75; transform-origin: 50% 100%; transform: scaleY(.12); box-shadow: 0 0 4px var(--ciano); }
   body.browsing #ascolto { width: min(30vw, 440px); }
-  /* Col report o l'ologramma: una riga sola nella fascia in basso, sotto le schede, e solo quando c'è una frase */
-  body.olo #ascolto, body.report #ascolto { bottom: 2px; width: min(70vw, 1000px); padding: 3px 0 4px; background: none; opacity: 0; }
-  body.olo #ascolto.on, body.report #ascolto.on { opacity: 1; }
-  body.olo #ascolto header, body.report #ascolto header, body.olo #livello, body.report #livello, body.olo #ascolto::before, body.report #ascolto::before { display: none; }
-  body.olo #frase, body.report #frase { margin: 0; min-height: 0; font-size: 12px; line-height: 16px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Col report, l'ologramma o la meteo: una riga sola nella fascia in basso, sotto le schede, e solo quando c'è una frase */
+  body.olo #ascolto, body.report #ascolto, body.meteo #ascolto { bottom: 2px; width: min(70vw, 1000px); padding: 3px 0 4px; background: none; opacity: 0; }
+  body.olo #ascolto.on, body.report #ascolto.on, body.meteo #ascolto.on { opacity: 1; }
+  body.olo #ascolto header, body.report #ascolto header, body.meteo #ascolto header, body.olo #livello, body.report #livello, body.meteo #livello,
+  body.olo #ascolto::before, body.report #ascolto::before, body.meteo #ascolto::before { display: none; }
+  body.olo #frase, body.report #frase, body.meteo #frase { margin: 0; min-height: 0; font-size: 12px; line-height: 16px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* GIF ed esempi: modulo fluttuante con gli angoli a staffa */
   #media { position: fixed; left: 0; top: 0; width: 300px; opacity: 0; transition: opacity .5s ease; pointer-events: none; }
