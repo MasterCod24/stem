@@ -9,13 +9,18 @@ import path from 'node:path';
 //   [ignora]        la frase non era per lui: nessuna risposta
 //   [[mostra]]      compito complesso: apri il pannello del browser nell'HUD
 //   [gif: parole]   GIF simpatica (GIPHY)      [anim: words]   animazione che spiega (Wikimedia Commons)
+//   [[pensa]]       compito complesso: il server lo rilancia subito con l'effort alto (server.mjs, /api/ask)
 const TAG = /\[\[?\s*([a-zà-ù]+)\s*(?::\s*([^\]]*?))?\s*\]\]?/gi;
 
 // Dopo un riavvio di Nexus riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
 // riaprendo l'HUD poco dopo, "e il secondo film che mi hai detto?" ha ancora senso. Più in là vale la memoria.
 const RESUME_MS = 2 * 3600_000;
 
-export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
+// effort: quello di --effort negli args. Ogni domanda può chiederne un altro: lo cambio prima del turno con
+// apply_flag_settings, che non costa la cache (misurato il 12/11). Dentro un turno già partito invece non vale:
+// l'effort si fissa all'inizio del turno, e un cambio a metà conta solo dal turno dopo.
+export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () => {} }) {
+  let effortOra = effort;
   let child = null, buf = '', stderr = '';
   let turn = null;          // turno in corso
   let waiting = null;       // domanda da mandare appena il turno interrotto si chiude
@@ -28,6 +33,7 @@ export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
   function start() {
     if (child) return;
     bornAt = Date.now();
+    effortOra = effort; // un processo nuovo riparte da quello di --effort
     const extra = resume && sessionId ? ['--resume', sessionId] : [];
     if (extra.length) onLog('[cervello] riprendo la conversazione di prima');
     const c = spawn('claude', ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
@@ -93,6 +99,7 @@ export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
       const n = name.toLowerCase();
       if (n === 'ignora' && !T.spoke) { T.ignored = true; T.emit({ t: 'ignore' }); }
       else if (n === 'mostra') T.emit({ t: 'show' });
+      else if (n === 'pensa') T.emit({ t: 'pensa' });
       else if ((n === 'gif' || n === 'anim') && arg) T.emit({ t: 'media', kind: n, q: arg.trim() });
       return ' ';
     }).replace(/[*_#`>\[\]]/g, '');
@@ -147,21 +154,26 @@ export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
     if (error && !T.interrupted) T.emit({ t: 'error', s: error });
     if (sessionFile && sessionId) saveSession(); // anche l'ora dell'ultima risposta: dice se dopo un riavvio vale la pena riprenderla
     turn = null;
-    T.resolve();
+    T.resolve({ interrotto: T.interrupted || Boolean(error) });
     if (waiting) { const w = waiting; waiting = null; begin(w); }
   }
 
   function begin(w) {
     start();
+    if (w.effort && w.effort !== effortOra) {
+      send({ type: 'control_request', request_id: `effort-${Date.now()}`, request: { subtype: 'apply_flag_settings', settings: { effortLevel: w.effort } } });
+      effortOra = w.effort;
+    }
     turn = { emit: w.onEvent, resolve: w.resolve, text: '', used: 0, speech: '', spoke: false, ignored: false, interrupted: false, browserActions: 0 };
     send({ type: 'user', message: { role: 'user', content: w.text } });
   }
 
   // Una domanda nuova: se ce n'è una in corso la interrompo, poi parto appena il processo ha chiuso il turno
-  function ask(text, onEvent) {
+  // Si risolve con { interrotto }: vero anche se la domanda non è mai partita perché ne è arrivata un'altra.
+  function ask(text, onEvent, { effort: chiesto } = {}) {
     return new Promise((resolve) => {
-      const w = { text, onEvent, resolve };
-      if (waiting) { waiting.resolve(); waiting = w; return; }
+      const w = { text, onEvent, resolve, effort: chiesto };
+      if (waiting) { waiting.resolve({ interrotto: true }); waiting = w; return; }
       if (!turn) return begin(w);
       waiting = w;
       interrupt();
@@ -176,7 +188,7 @@ export function createBrain({ cwd, args, sessionFile, onLog = () => {} }) {
     setTimeout(() => { if (turn === T) { onLog('[cervello] interruzione lenta: riavvio'); child?.kill('SIGTERM'); } }, 4000);
   }
 
-  function stop() { if (waiting) { waiting.resolve(); waiting = null; } interrupt(); }
+  function stop() { if (waiting) { waiting.resolve({ interrotto: true }); waiting = null; } interrupt(); }
   function kill(reset = false) {
     if (reset) { resume = false; sessionId = null; try { fs.unlinkSync(sessionFile); } catch {} }
     child?.kill('SIGTERM');

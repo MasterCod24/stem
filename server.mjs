@@ -41,12 +41,18 @@ const PW_PORT = Number(env.NEXUS_BROWSER_PORT || 8931);
 const ELEVEN_KEY = env.ELEVENLABS_API_KEY || '';
 let VOICE_ID = env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'; // George, finché non trovo una voce italiana
 const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_v4_turbo'; // il più veloce ed emotivo, mezzo credito a carattere
-// Sonnet 5.5 a effort max, scelta di Tony del 12/11. L'effort va scelto qui: se no il cervello eredita quello di Claude Code
-// di Tony (per programmare). Le misure di prove/latenza.mjs stanno nel CLAUDE.md, alla voce del modello.
+// Sonnet 5.5, scelta di Tony del 12/11. Due effort, chiesti da Tony lo stesso giorno: low per la voce (prima parola in
+// 0,6–0,7 s di mediana), high per i compiti che il cervello annuncia con [[pensa]]: ologrammi, ricerche a più passaggi,
+// report, sforzi. Le misure di prove/latenza.mjs stanno nel CLAUDE.md. L'effort va scelto qui: se no il cervello eredita
+// quello di Claude Code di Tony (per programmare).
 const MODEL = env.NEXUS_MODEL || 'claude-sonnet-5-5';
-const EFFORT = env.NEXUS_EFFORT || 'max';
+const EFFORT = env.NEXUS_EFFORT || 'low';
+const EFFORT_PENSA = env.NEXUS_EFFORT_PENSA || 'high';
+const effortDi = (e) => (e === 'default' ? undefined : e);
 // La riga [sentito: …] che precede ogni frase di Tony: perché l'HUD l'ha fatta passare (nexus.js, addressed)
-const SENTITO = { nome: 'col nome', conversazione: 'senza nome, mentre parlavate', comando: 'senza nome, comincia come un comando', saluto: 'senza nome, è un saluto' };
+const SENTITO = { nome: 'col nome', conversazione: 'senza nome, cominciata nei 15 secondi dopo che hai finito di parlare' };
+// Il secondo tempo di un compito annunciato con [[pensa]]: lo stesso turno di Tony, con l'effort alto
+const PENSA_TEXT = '[pensa] Adesso hai più tempo per ragionare: fai il compito che hai appena annunciato, senza ripetere la frase che hai già detto.';
 const PERSONA = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
 
 // File del Mac: Nexus legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
@@ -173,6 +179,7 @@ browser.on('exit', (code) => { browserReady = false; console.error(`[browser] us
 // --- Cervello: un processo sempre acceso (brain.mjs) ---
 const brain = createBrain({
   cwd: BRAIN,
+  effort: effortDi(EFFORT),
   sessionFile: path.join(STATO, 'cervello.json'), // quale conversazione riprendere dopo un riavvio
   onLog: (l) => { console.error(l); },
   args: [
@@ -268,7 +275,8 @@ async function rememberNow() {
   if (!memoryDue || memoryBusy || brain.busy) return; // se sta lavorando, la fine di quel turno riarma l'attesa
   memoryDue = false; memoryBusy = true;
   console.error('[memoria] rileggo la conversazione');
-  await brain.ask(`[adesso: ${adesso()}]\n${MEMORY_TEXT}`, () => {}); // nessuno ascolta: niente voce. Una domanda di Tony la interrompe
+  // nessuno ascolta: niente voce, e niente fretta, quindi l'effort alto. Una domanda di Tony la interrompe
+  await brain.ask(`[adesso: ${adesso()}]\n${MEMORY_TEXT}`, () => {}, { effort: effortDi(EFFORT_PENSA) });
   memoryBusy = false;
 }
 
@@ -554,7 +562,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (!text) return res.writeHead(400).end();
     // Perché la frase è passata dal filtro dell'HUD: senza nome può essere la TV o Tony che parla con altri, e la persona
-    // decide [ignora] su questa riga. Solo i quattro valori noti: dall'HUD non entra testo libero.
+    // decide [ignora] su questa riga. Solo i valori noti: dall'HUD non entra testo libero.
     const sentito = !body.agenda && Object.hasOwn(SENTITO, body.why) && SENTITO[body.why]; // hasOwn: «constructor» non passa
     text = `[adesso: ${adesso()}]\n${sentito ? `[sentito: ${sentito}]\n` : ''}${text}`; // l'ora a ogni domanda: Claude Code gli dà solo la data
     res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' });
@@ -563,9 +571,10 @@ const server = http.createServer(async (req, res) => {
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
     ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
-    let ignored = false;
-    await brain.ask(text, (ev) => {
+    let ignored = false, pensa = false;
+    const onEvent = (ev) => {
       if (ev.t === 'ignore') ignored = true;
+      if (ev.t === 'pensa') { pensa = true; return; }
       if (ev.t !== 'media') {
         write(ev);
         // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
@@ -575,7 +584,14 @@ const server = http.createServer(async (req, res) => {
       }
       pending++; // GIF e animazioni: le cerco mentre Nexus parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
-    });
+    };
+    const primo = await brain.ask(text, onEvent, { effort: effortDi(EFFORT) });
+    // [[pensa]]: il cervello ha detto la frase breve a effort basso e ha chiuso il turno. Il lavoro vero parte subito, con
+    // l'effort alto, nella stessa risposta all'HUD. Una volta sola, e mai se nel frattempo Tony ha chiesto altro.
+    if (pensa && !ignored && !primo.interrotto) {
+      console.error('[cervello] ci penso a fondo');
+      await brain.ask(`[adesso: ${adesso()}]\n${PENSA_TEXT}`, onEvent, { effort: effortDi(EFFORT_PENSA) });
+    }
     finished = true; close();
     if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
     return;

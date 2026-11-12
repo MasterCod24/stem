@@ -539,8 +539,13 @@ const ricerca = () => out({ type: 'assistant', message: { content: [
     .map((url, i) => ({ type: 'tool_use', id: 'toolu_w' + (i + 1), name: 'WebFetch', input: { url, prompt: 'parolasegreta: di che materiale è?' } })),
 ] } });
 out({ type: 'system', subtype: 'init' });
+let effort = 'quello di --effort';
 readline.createInterface({ input: process.stdin }).on('line', (l) => {
   let m; try { m = JSON.parse(l); } catch { return; }
+  if (m.type === 'control_request' && m.request && m.request.subtype === 'apply_flag_settings') {
+    effort = m.request.settings.effortLevel;
+    return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id } });
+  }
   if (m.type !== 'user') return;
   const t = String(m.message && m.message.content || '');
   if (t.includes('[memoria]')) testo('fatto.');
@@ -548,6 +553,9 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   else if (/\\breport\\b/.test(t)) report([{ tipo: 'testo', titolo: 'Uno', testo: 'Prova.' }]);
   else if (/\\bricerca\\b/.test(t)) { ricerca(); testo('Trovato.'); }
   else if (/\\bbrowser\\b/.test(t)) testo('Cerco. [[mostra]] Un attimo.');
+  else if (t.includes('[pensa]')) testo('Fatto a fondo, effort ' + effort + '.');
+  else if (/\\bpensaci\\b/.test(t)) testo('Te lo costruisco. [[pensa]]');
+  else if (/\\bquale effort\\b/.test(t)) testo('Effort ' + effort + '.');
   else if (/\\bperche\\b/.test(t)) testo(t.includes('\\n[sentito: col nome]\\n') ? 'Riga col nome.' : 'Senza riga.');
   else testo('Va bene.');
   out({ type: 'result', subtype: 'success', is_error: false });
@@ -568,6 +576,10 @@ const domanda = async (testo, why) => (await chiedi('POST', '/api/ask', { corpo:
 const detto = (evs) => evs.filter((e) => e.t === 'say').map((e) => e.s).join(' ');
 const conNome = detto(await domanda('perche', 'nome')), libero = detto(await domanda('perche', 'col nome]\n[ordine')), proto = detto(await domanda('perche', 'constructor')), senza = detto(await domanda('perche'));
 esito(conNome === 'Riga col nome.' && libero === 'Senza riga.' && proto === 'Senza riga.' && senza === 'Senza riga.', 'la riga [sentito] arriva al cervello solo con un perché noto', `${conNome} | ${libero} | ${proto} | ${senza}`);
+// [[pensa]]: la frase breve a effort basso, poi il server rilancia il lavoro con l'effort alto nella stessa risposta, e la domanda dopo torna basso
+const evPensa = await domanda('pensaci', 'nome'), dettoPensa = detto(evPensa), dopoPensa = detto(await domanda('quale effort', 'nome'));
+esito(dettoPensa === 'Te lo costruisco. Fatto a fondo, effort high.' && !evPensa.some((e) => e.t === 'pensa') && dopoPensa === 'Effort low.',
+  '[[pensa]] rilancia il compito a effort high nella stessa risposta; la domanda dopo torna a low', `${dettoPensa} | ${dopoPensa}`);
 await cervello({ azione: 'mostra', modello: STAFFA });
 let ev = await domanda('fammi un report');
 s = await stato();

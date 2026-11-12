@@ -285,6 +285,16 @@ try {
   const nomi = await ev(`${JSON.stringify([...SI, ...NO])}.map((w) => window.nexusNome(w))`);
   controlla(Array.isArray(nomi) && nomi.slice(0, SI.length).every(Boolean) && nomi.slice(SI.length).every((x) => !x),
     'il nome: Nexus sveglia, anche sbagliato di una lettera; nesso, annessi, Lexus e il vecchio stem no', JSON.stringify([...SI, ...NO].map((w, i) => `${w} ${nomi?.[i] ? 'sì' : 'no'}`)));
+  // Il filtro dal 12/11: senza nome passa solo una frase cominciata nei 15 s dopo che Nexus ha parlato. Qui Nexus non ha
+  // ancora parlato, quindi comandi, saluti e verbi dell'ologramma da soli non arrivano al cervello.
+  const senzaNome = [];
+  for (const f of ['dimmi che ore sono', 'ciao', 'puoi aprire il browser', 'esplodilo', 'boh']) {
+    const prima = ultimoPerche;
+    await ev(`nexusSente(${JSON.stringify(f)}); true`); await pausa(1100);
+    senzaNome.push(`${f}: ${await ev("document.getElementById('esito').textContent")}${ultimoPerche !== prima ? ' (CHIESTA)' : ''}`);
+  }
+  await foto('non-per-nexus');
+  controlla(senzaNome.every((x) => x.endsWith('NON PER NEXUS')), 'senza nome e fuori dalla finestra non passa niente: comandi, saluti, verbi dell\'ologramma', senzaNome.join(' | '));
   await ev("nexusParziale('nexus dimmi che tempo fa domani a'); true"); await pausa(700); await foto('ascolto-parziale');
   await ev("nexusParziale(''); nexusSente('nexus dimmi che tempo fa domani a Torino'); true"); await pausa(1000); await foto('ascolto-esito');
   const esitoNome = await attendi(() => ev("document.getElementById('esito').textContent").then((t) => t === 'PER NEXUS · NOME' && t), 3000, 100);
@@ -293,8 +303,14 @@ try {
   controlla(ultimoPerche === 'nome', 'la domanda arriva al server col suo perché (nome)', String(ultimoPerche));
   await pausa(900); await foto('pensiero');
   await attendi(async () => (await modo()) === 'speaking', 6000); await pausa(500); await foto('parla');
-  await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
-  await ev("nexusSente('boh'); true"); await pausa(1200); await foto('non-per-nexus');
+  // 1,5 s: una frase senza parole di almeno tre lettere entro 1,2 s dalla fine della voce è presa per eco (isEcho)
+  await attendi(async () => (await modo()) === 'idle', 12000); await pausa(1500);
+  ultimoPerche = undefined;
+  await ev("nexusSente('sì'); true");
+  await attendi(() => ultimoPerche === 'conversazione', 3000, 100);
+  const esitoSi = await ev("document.getElementById('esito').textContent");
+  controlla(ultimoPerche === 'conversazione' && esitoSi === 'PER NEXUS · CONVERSAZIONE', 'subito dopo la risposta un «sì» da solo passa, come conversazione', `${esitoSi}; perché ${ultimoPerche}`);
+  await attendi(async () => (await modo()) === 'speaking', 6000); await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
   await ev("nexusAllarme('prova', 1, 'CALCOLO DEGLI SFORZI FALLITO'); true"); await pausa(1500); await foto('allarme-1');
   await ev("nexusAllarme('prova', 2, 'SERVER NON RAGGIUNGIBILE'); true"); await pausa(1500); await foto('allarme-2');
   await ev("nexusAllarme('prova', 0); true"); await pausa(600);

@@ -464,14 +464,16 @@ try {
   const FRASI = ['esplodilo', 'rimontalo', 'togli il coperchio', 'rimettilo', 'taglialo a metà', 'chiudilo'];
   const chiusi = [];
   for (const f of FRASI) chiusi.push(await sente(f));
-  esito(!(await ev('nexusOlo.info().aperto')) && chiusi.every((x) => !x.chiesto && x.riga.startsWith('non per Nexus')), "a ologramma chiuso il filtro è quello di prima: nessuna di queste è per Nexus", chiusi.map((x) => x.riga.split(';')[0]).join(', '));
+  esito(!(await ev('nexusOlo.info().aperto')) && chiusi.every((x) => !x.chiesto && x.riga.startsWith('non per Nexus')), "a ologramma chiuso nessuna di queste è per Nexus", chiusi.map((x) => x.riga.split(';')[0]).join(', '));
   holo.esegui({ azione: 'modifica', vista: { modo: 'ologramma' } });
   await attendi(() => ev('nexusOlo.info().aperto'), 7000);
+  // Dal 12/11 (scelta di Tony) anche a ologramma aperto serve il nome, fuori dalla finestra di continuità dopo una risposta
   const aperti = [];
   for (const f of FRASI) aperti.push(await sente(f));
-  esito(aperti.every((x) => x.chiesto && x.riga === 'domanda (comando)'), "a ologramma aperto un verbo dell'ologramma basta, anche da solo e dopo 25 s: va al cervello come comando", aperti.map((x) => `${x.chiesto ? 'chiesta' : 'NO'} (${x.riga})`).join(', '));
-  const altro = await sente('sì');
-  esito(!altro.chiesto && altro.riga.startsWith('non per Nexus'), "anche a ologramma aperto un «sì» da solo resta non per Nexus", altro.riga);
+  esito(aperti.every((x) => !x.chiesto && x.riga.startsWith('non per Nexus')), "a ologramma aperto un verbo da solo non basta più", aperti.map((x) => `${x.chiesto ? 'CHIESTA' : 'no'} (${x.riga.split(';')[0]})`).join(', '));
+  const colNome = { ...(await sente('nexus esplodilo')) };
+  colNome.chiesto = registro.some((r) => r.via === 'ask' && r.testo === 'esplodilo');
+  esito(colNome.chiesto && colNome.riga === 'domanda (nome)', "col nome il verbo arriva al cervello, senza il nome", colNome.riga);
   await tasto('Escape');
 
   titolo("Un pezzo da file grande (300.000 triangoli): il cursore delle mani non lo scorre triangolo per triangolo");

@@ -11,12 +11,11 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 ## Parlare con Nexus
 L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il vecchio nome non lo sveglia più.
 - **Sempre in ascolto**, senza tasti: Nexus capisce da solo quando parli con lui. Una frase è per lui se:
-  - contiene il suo nome (anche storpiato dal riconoscitore);
-  - arriva entro 25 secondi dalla sua ultima risposta, cioè siete in conversazione;
-  - comincia con un comando ("apri…", "cerca…", "dimmi…", "puoi…").
+  - contiene il suo nome (anche sbagliato di una lettera dal riconoscitore);
+  - la cominci entro 15 secondi da quando ha finito di parlare: così puoi continuare il discorso senza ripetere il nome, anche solo con un «sì».
 
-  Il cervello sa quale delle tre è: senza il nome, nel dubbio tace (`[ignora]`), perché può essere la TV o una persona che parla con te.
-- **Il cervello** è un processo Claude Code sempre acceso, con Sonnet 5.5 a effort max. A max pensa molto anche sulle domande facili: nelle prove del 12/11 la prima parola arrivava in 8 secondi di mediana, contro meno di 1 a effort high (`NEXUS_EFFORT=high` in `.env`). Se fai una pausa a metà di una richiesta, Nexus parte già e, se poi continui, riparte con la frase completa.
+  Nient'altro passa: né la TV, né un «dimmi» detto a qualcun altro. Il cervello sa anche quale delle due è: senza il nome, nel dubbio tace (`[ignora]`). Con l'ologramma aperto vale lo stesso: «Nexus, esplodilo».
+- **Il cervello** è un processo Claude Code sempre acceso, con Sonnet 5.5. Risponde a effort basso, con la prima parola in meno di un secondo. Per un ologramma, una ricerca con un report o un calcolo, dice prima una frase breve («Te lo costruisco.») e poi lavora a effort alto. Si cambiano in `.env` con `NEXUS_EFFORT` e `NEXUS_EFFORT_PENSA`. Se fai una pausa a metà di una richiesta, Nexus parte già e, se poi continui, riparte con la frase completa.
 - **Interromperlo:** mentre parla di' "stop", "basta" o "aspetta", oppure chiamalo per nome. `Esc` lo zittisce.
 - **La scheda dell'ascolto:** in basso, sotto la sfera, Nexus scrive quello che dici mentre lo dici. A frase finita aggiunge cosa ne ha fatto: «PER NEXUS · NOME», «PER NEXUS · CONVERSAZIONE», «NON PER NEXUS». Così vedi subito perché non ti ha risposto.
 - **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. Le frasi della scheda dell'ascolto restano sullo schermo e non finiscono in nessun registro. In `runtime/ascolto.log` Nexus annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.

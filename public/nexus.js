@@ -511,13 +511,14 @@ function lev1(a, b) { // distanza di modifica ≤ 1?
 const NOMI = ['nexus'];
 const NOT_NAME = new Set(['lexus']);
 const isName = (w) => { const n = norm(w); return n.length >= 3 && !NOT_NAME.has(n) && NOMI.some((x) => lev1(n, x)); };
-const COMMANDS = /^(apri|chiudi|cerca|trova|dimmi|dammi|fammi|mostrami|fai|crea|scrivi|leggi|leggimi|metti|ricordami|calcola|traduci|spiegami|raccontami|avvia|controlla|prepara|manda|riassumi|aiutami|puoi|potresti|sai|mi\s+(dici|fai|trovi|apri|cerchi|spieghi|racconti))\b/i;
 const STOP = /^(stop|basta|zitto|fermati|aspetta|silenzio)\b/i;
-const GREETING = /^(buongiorno|buon\s?giorno|buonasera|buona\s?sera|buonanotte|ciao|ehi|ehy|hey|salve|eccomi|sono\s+tornato)\b/i;
-const FOLLOW_UP_MS = 25000;
-// Con l'ologramma aperto Tony parla all'ologramma: un suo verbo all'inizio basta, anche da solo e anche fuori dalla
-// conversazione («esplodilo», «togli il coperchio», «chiudilo»). Un falso positivo costa al massimo un pezzo tolto, che si rimette.
-const COMANDI_OLO = /^(esplod|rimont|tagli|togli|rimett|chiud)/i;
+// La finestra di continuità, scelta di Tony del 12/11: una frase cominciata entro 15 s dalla fine della voce di Nexus passa
+// anche senza nome, così le domande di seguito vengono naturali. Si conta dall'inizio della frase, non dalla fine: chi
+// comincia a parlare al dodicesimo secondo non deve perdere la risposta perché la frase finisce al sedicesimo.
+// Nel registro, 20 domande in conversazione su 26 erano arrivate entro 9 s dalla fine della voce, 6 tra 15 e 20 s
+// (misura dell'11/11, grossolana: lo stato arriva al registro ogni 5 s).
+const FINESTRA_MS = 15000;
+let fraseDa = 0; // quando è cominciata la frase in corso
 
 // Per il registro: la prima parola e quella più simile a uno dei nomi (per scoprire come il riconoscitore storpia «nexus»,
 // di cui all'11/11 non c'è ancora nessuna storpiatura vista), mai la frase
@@ -534,16 +535,15 @@ function clue(text) {
   return `${words.length} parole; prima: "${words[0] || ''}"` + (best && best[2] <= 3 ? `; più simile a ${best[1]}: "${best[0]}" (distanza ${best[2]})` : '');
 }
 
-// È per Nexus? Il nome (anche storpiato), la conversazione in corso, o un comando all'inizio della frase
+// È per Nexus? Solo due vie, scelta di Tony del 12/11: il nome (anche storpiato), oppure una frase cominciata nella
+// finestra di continuità. Le parole comuni all'inizio («dimmi», «fammi», «puoi», un saluto, un verbo dell'ologramma) non
+// bastano più: facevano passare la TV e i discorsi con altri. Nella finestra passa anche un «sì» da solo, la risposta a «Vado?».
 function addressed(text) {
   const words = text.trim().split(/\s+/);
   const nameAt = words.findIndex(isName);
   if (nameAt >= 0) return { why: 'nome', text: [...words.slice(0, nameAt), ...words.slice(nameAt + 1)].join(' ').replace(/^[\s,.:;!?]+/, '').trim() || 'Ciao!' };
-  if (holo?.aperto && COMANDI_OLO.test(text.trim())) return { why: 'comando', text };
-  if (words.length < 2) return GREETING.test(text.trim()) ? { why: 'saluto', text } : null; // un "sì" isolato è quasi sempre per altri, un "ciao" no
-  if (performance.now() - lastReplyAt < FOLLOW_UP_MS && S.mode !== 'thinking') return { why: 'conversazione', text };
-  if (COMMANDS.test(text.trim())) return { why: 'comando', text };
-  if (GREETING.test(text.trim()) && words.length <= 5) return { why: 'saluto', text }; // "Buongiorno!": se poi non era per lui, il cervello risponde [ignora]
+  const da = fraseDa || performance.now();
+  if (da - lastReplyAt < FINESTRA_MS && S.mode !== 'thinking') return { why: 'conversazione', text };
   return null;
 }
 
@@ -626,7 +626,7 @@ function startEar() {
       if (++earFails === 5) report(`ascolto in errore: ${e.error}`);
     }
   };
-  r.onend = () => { if (rec === r) { rec = null; S.hearing = false; scheduleEar(earBackoff); } }; // Chrome chiude dopo un po' di silenzio: riparto
+  r.onend = () => { if (rec === r) { rec = null; S.hearing = false; if (!pending) fraseDa = 0; scheduleEar(earBackoff); } }; // Chrome chiude dopo un po' di silenzio: riparto
   try { if (debugTrack) r.start(debugTrack); else r.start(); } catch { rec = null; scheduleEar(1000); }
 }
 
@@ -641,6 +641,7 @@ function onInterim(text) {
     interrupt(); report('fermato a voce'); ascolto.esito('STOP', true); return; // "stop" funziona anche mentre clicca e scrive, senza aspettare la fine della frase
   }
   if (S.mode === 'speaking' || isEcho(text)) return; // mentre parla, e subito dopo, ignora l'eco della sua voce (e non la scrive)
+  if (!fraseDa) fraseDa = performance.now();
   ascolto.viva(text);
   if (pending) clearTimeout(joinTimer); // stai ancora parlando: la frase non è finita
   clearTimeout(earlyTimer);
@@ -665,11 +666,13 @@ function heard(text) {
       const a = addressed(text), riparte = a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1;
       ascolto.fissa(text); ascolto.esito(riparte ? `PER NEXUS · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
       if (riparte) ask(a.text, { why: a.why });
+      fraseDa = 0;
       return;
     }
     if (S.mode === 'speaking') return;
   }
-  if (isEcho(text)) { report('scartata: eco della voce di Nexus'); evento('INPUT · ECO'); ascolto.viva(''); return; }
+  if (isEcho(text)) { report('scartata: eco della voce di Nexus'); evento('INPUT · ECO'); ascolto.viva(''); if (!pending) fraseDa = 0; return; }
+  if (!fraseDa) fraseDa = performance.now(); // frase finita senza parole parziali prima
   pending = pending ? `${pending} ${text}` : text;
   ascolto.fissa(pending);
   clearTimeout(joinTimer);
@@ -678,6 +681,7 @@ function heard(text) {
   joinTimer = setTimeout(() => {
     const full = pending; pending = '';
     const a = addressed(full);
+    fraseDa = 0;
     dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per Nexus');
     if (!a) { report(`non per Nexus; ${clue(full)}`); evento('INPUT · NON PER NEXUS'); ascolto.esito('NON PER NEXUS', false); if (S.mode === 'listening') setMode('idle'); return; }
     ascolto.esito(`PER NEXUS · ${PERCHE[a.why]}`, true);
@@ -691,7 +695,7 @@ function heard(text) {
 }
 
 // ---------- La scheda dell'ascolto: le parole mentre arrivano, poi cosa ne ha fatto Nexus. Solo sullo schermo: mai nei registri ----------
-const PERCHE = { nome: 'NOME', conversazione: 'CONVERSAZIONE', comando: 'COMANDO', saluto: 'SALUTO' };
+const PERCHE = { nome: 'NOME', conversazione: 'CONVERSAZIONE' };
 const ascolto = (() => {
   const box = $('ascolto'), elFissa = $('frase-fissa'), elViva = $('frase-viva'), elEsito = $('esito');
   let fissa = '', viva = '', timer = 0;

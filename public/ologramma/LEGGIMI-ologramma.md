@@ -323,7 +323,7 @@ Servono a tarare sulle mani di Tony le soglie di oggi; `mani.js` le passa a `nex
 
 ## Nell'HUD (`nexus.js`)
 - Report e browser chiudono l'ologramma nell'HUD subito; nel server lo chiude il server (vedi sopra). Solo Esc lo dice al server come «chiuso da Tony».
-- Con l'ologramma aperto, una frase che comincia con esplod…, rimont…, tagli…, togli…, rimett… o chiud… è per Nexus anche se è di una parola e anche dopo i 25 s di conversazione; in `ascolto.log` è «domanda (comando)». Con l'ologramma chiuso il filtro è quello di prima.
+- Con l'ologramma aperto vale il filtro di sempre (dal 12/11, scelta di Tony): il nome («Nexus, esplodilo»), oppure una frase cominciata nei 15 s dopo che Nexus ha parlato. I verbi dell'ologramma da soli non bastano più.
 - `window.__misure.fps`: mediana, p10 e minimo dei fotogrammi contati in ognuno degli ultimi 20 secondi interi, più i conti uno per uno. Gli intervalli di requestAnimationFrame davano 59,9 fps contro i 55 della traccia.
 - Con `?debug`: `nexusAsk`, `nexusReport`, `nexusSente(frase)` (una frase finita, come dal riconoscimento), `nexusOlo`, `nexusOlogramma(stato)` e `nexusOlogrammaDemo(nome)`.
 
