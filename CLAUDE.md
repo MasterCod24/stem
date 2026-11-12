@@ -64,7 +64,7 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
   - **Quanto copre sul banco:** in ogni corsa tutti i pezzi hanno `materiale_vero`; la fattura c'è su 11–17 pezzi, su 30–122 pezzi in tutto. Il cervello cambia molto da una corsa all'altra: 47 pezzi e il giro mirato, oppure 122 pezzi senza giro mirato.
   - **Uso vero** (11/11, 15:46, Burj Khalifa, Torre Eiffel e Mole Antonelliana): due WebSearch insieme, prima vista 49 s dopo la domanda, nessun errore del nome nudo. Ma solo 7 pezzi su 24 con `materiale_vero` e 1 con la fattura, e nessun giro mirato, anche se la risposta dello strumento elencava i pezzi senza. Il giro mirato è saltato in 2 corse su 5: la regola della persona non basta. La proposta di farglielo chiedere dal server, come per la memoria, Tony l'ha rimandata («no, per ora», 11/11).
   - **La fonte per pezzo è stata tolta** (11/11, scelta di Tony): controllate a mano, ne reggevano 2 su 5 (una pagina sull'M2 usata per l'M4), e una fonte sbagliata fa fidare di un dato non controllato. Il prezzo: la scheda non distingue più un dato cercato da uno indovinato. Se Tony chiede da dove viene un dato, la persona dice di nominare la pagina vera o di dire che è una stima. Un `fonte` che arriva ancora si ignora.
-- **Mani con le regole di Tony: costruite e provate, usate da Tony una volta** (11/11). Delle 12 regole scritte da Nexus il 10/11, nessuna misurata, cinque c'erano già (1U, filtro, isteresi del pizzico, buco breve, niente doppi lanci). Le altre sono in `gesti.js`: il contratto dice come, e perché alcune sono cambiate o non fatte.
+- **Mani con le regole di Tony: costruite e provate, usate da Tony quattro volte** (11/11). Delle 12 regole scritte da Nexus il 10/11, nessuna misurata, cinque c'erano già (1U, filtro, isteresi del pizzico, buco breve, niente doppi lanci). Le altre sono in `gesti.js`: il contratto dice come, e perché alcune sono cambiate o non fatte.
   - **Fasi:** le mani partono a riposo e si accendono mostrando il palmo aperto per 0,3 s nel 70% centrale dell'immagine. La barra dice «mani: mostra il palmo», poi «mani pronte». Tornano a riposo dopo 4 s senza gesti né palmo. Se a Tony non piace: `innesco_ms: 0` in `PREDEFINITI` di `public/ologramma/gesti.js`.
   - **Soglie nuove, mai provate sulle sue mani:**
     - mappa a S: al centro metà velocità, ai bordi il doppio;
@@ -73,14 +73,15 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
     - profilo oltre 75°: niente innesco né esplodi, il pizzico resta;
     - un buco fino a 170 ms non interrompe il gesto.
   - **Non fatte:** pizzico al 10–15% di 1U, scheletro ricostruito, previsione dalla velocità. Al loro posto si conta: la riga «mani accese» porta anche tremolio in px, inneschi, pizzichi con la distanza minima pollice-indice in U, buchi, salti e profilo (`grep 'mani accese' runtime/server.log`).
-  - **Il primo uso vero** (11/11, una sessione sola, 358 s accese e 252 s con le mani in vista):
-    - fps mediana 54, p10 50, minimo 33: sopra i 45;
-    - tremolio grezzo 3,2 px, quanto la zona morta;
-    - 69 pizzichi, nessuno di profilo, con il minimo pollice-indice mediano a 0,09 U: il 10% di 1U di Tony sarebbe stato a filo;
-    - 8 inneschi, di cui 7 scaduti: non si sa se le mani erano ancora in vista o se Tony le aveva abbassate;
-    - 34 buchi, 7 gesti persi per un buco più lungo di 170 ms, 147 salti (non si sa quanti fossero dita veloci e quanti errori), 0 lanci, profilo 7%.
+  - **L'uso vero** (registro al 12/11): quattro sessioni da 342 a 390 s con le mani accese e da 119 a 303 s con le mani in vista. La prima è quella da 358 s dell'11/11.
+    - fps: p10 da 50 a 62, minimo da 33 a 46, quindi sopra i 45;
+    - tremolio grezzo da 3,2 a 6,6 px. La zona morta (3 px) lavora sul punto filtrato, mentre il tremolio confronta il grezzo col filtrato: i due numeri non si confrontano direttamente, e se il cursore trema lo si vede guardandolo;
+    - 267 pizzichi, uno solo di profilo, con il minimo pollice-indice mediano fra 0,07 e 0,09 U: un pizzico al 10% di 1U sarebbe a filo in tutte e quattro;
+    - 30 inneschi, 28 scaduti dopo 4 s senza gesti né palmo: non si sa se Tony le stava ancora usando;
+    - un lancio solo in 267 pizzichi, e nessuna presa sparita mentre la mano correva. O Tony non lancia, o non tiene fermo il pizzico per i 350 ms della presa, o 1 m/s è troppo per lui. La meteo si chiude lanciandola: è la prova;
+    - salti: 147 nella prima sessione, da 41 a 50 nelle altre. Gesti persi: da 6 a 17 a sessione, circa 2,5 al minuto di mani in vista.
 
-    Un campione solo: per decidere su riposo, assente_ms e salti ne servono altri.
+    Per alzare `assente_ms` servirebbe la durata dei buchi, che la riga non conta. Per `riposo_ms` serve sapere da Tony se le mani si spengono mentre le sta ancora usando.
   - **Banco su foto vere** (`prove/mani-foto.mjs`): due pizzichi veri a 0,08 e 0,10 U. Il pugno ha rapporto 0,27 contro la soglia 0,25: un falso pizzico è possibile.
   - HUD headless con due mani, due giri: p10 59 e 58 fps.
 - **HUD in stile JARVIS: costruito e fotografato, mai visto da Tony** (10/11). Al posto dell'umanoide c'è la sfera-cervello di `public/nucleo.js` dentro gli anelli. Le montagne sono state tolte e lo sfondo è nero.
@@ -95,13 +96,13 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
     - l'HUD sul suo schermo, che ha accanto un secondo monitor 1920×1080;
     - i colori delle anomalie in un caso vero.
 - **Ologrammi: usati da Tony per la prima volta il 10/11** (AirPods Pro e MacBook Air, stilizzati). Cosa è vero e cosa no, e come si parlano i pezzi, sta nel contratto `public/ologramma/LEGGIMI-ologramma.md`. Tony non ha file CAD: i suoi oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello di Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
-  - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Tony le ha usate con la fotocamera vera tre volte (registro al 10/11: 324, 47 e 233 s): p10 54, 48 e 55, minimo 43, 18 e 46. La regola regge; il minimo di 18 non è spiegato.
+  - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Registro al 12/11: otto sessioni con la fotocamera vera, 2.187 s di mani accese in tutto, con il p10 sempre fra 48 e 62: la regola regge. I minimi stanno fra 43 e 47, tranne 18 (la sessione da 47 s, al 10/11) e 33 (quella da 358 s, l'11/11), mai spiegati. Una sessione da 342 s ha la mediana a 85, oltre i 60 Hz dello schermo del Mac: forse l'HUD era sul monitor esterno, non verificato.
     - La misura vera arriva da sola. Quando l'ologramma si chiude, dopo almeno 10 s di mani accese, `runtime/server.log` riceve una riga «[ologramma] mani accese N s: fps mediana …, p10 …, minimo …, detect … ms» (`grep 'mani accese' runtime/server.log`).
     - Se il p10 vero sta sotto 45, le mani si spengono di base cambiando `maniVolute` in `public/nexus.js`.
     - La riga non arriva se Tony chiude la finestra dell'HUD con l'ologramma aperto.
   - **A batteria sotto il 20%** il Risparmio energetico di Chrome limita ogni pagina a 30 fps, HUD compreso (misurato l'8/11). Una riga «mani accese» con mediana 30 viene da lì. Spegnerlo nel profilo dell'HUD costa batteria: lo decide Tony.
   - **Mai provati:**
-    - i gesti su Tony: le soglie sono da rifare con lui (filtro con beta 5, palmo 90 mm, presa 350 ms, lancio da circa 1 m/s);
+    - le soglie dei gesti sulle mani di Tony: le ha usate, ma nessuna è stata rifatta con lui (filtro con beta 5, palmo 90 mm, presa 350 ms, lancio da circa 1 m/s);
     - i suoni nuovi, che nessuno ha ascoltato;
     - la frase breve («Te lo costruisco.») che la persona chiede prima di un modello nuovo.
   - **Tempi col cervello vero** (7/11, tre domande):
