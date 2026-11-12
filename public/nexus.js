@@ -196,10 +196,13 @@ addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, holo?.aper
 
 // ---------- Meteo a schermo intero (meteo/vista.js): i dati dal server con l'evento 'meteo', il radar da RainViewer ----------
 // Come il report e l'ologramma: una vista grande alla volta, il nucleo nell'angolo, e le mani accese come con l'ologramma.
-let meteo = null, meteoPronto = null;
+// Il globo disegna nel renderer del nucleo (strato, come l'ologramma): la vista aspetta che la scena esista.
+let meteo = null, meteoPronto = null, scenaPronta = null;
+const scenaAttesa = new Promise((ok) => { scenaPronta = ok; });
 function creaMeteo() { // il modulo si carica alla prima apertura: l'avvio dell'HUD non lo paga
-  meteoPronto ||= import('./meteo/vista.js')
-    .then(({ createVistaMeteo }) => (meteo = createVistaMeteo({ contenitore: $('holo'), prima: $('dita'), sfx: sfxOlo, onChiudi: () => chiudiMeteo() })))
+  meteoPronto ||= Promise.all([import('./meteo/vista.js'), scenaAttesa])
+    .then(([{ createVistaMeteo }, sc]) => (meteo = createVistaMeteo({ contenitore: $('holo'), prima: $('dita'), renderer: sc.renderer, strato: sc.strato,
+      sfx: sfxOlo, onChiudi: () => chiudiMeteo() })))
     .catch((e) => { meteoPronto = null; throw e; });
   return meteoPronto;
 }
@@ -850,6 +853,7 @@ prepareEar();
 const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./nucleo.js'),
   import('./ologramma/scena.js').catch((e) => { console.warn('ologramma non disponibile', e); return null; })]);
 const scene = await createScene($('gl'), S);
+scenaPronta(scene);
 // Se il Mac fa perdere il contesto grafico (sospensione, GPU riavviata) i campi precalcolati vanno rifatti: ricarico l'HUD
 $('gl').addEventListener('webglcontextlost', (e) => e.preventDefault());
 $('gl').addEventListener('webglcontextrestored', () => location.reload());
@@ -925,6 +929,7 @@ function loop(now) {
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
   S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 6); // nell'angolo in mezzo secondo: prima che atterri il protagonista
   holo?.fotogramma(t, dt);
+  meteo?.fotogramma(t, dt); // il globo: camera, anelli, vento e scritte, prima del render
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
   holo?.dopoRender(); // nello stesso fotogramma: la foto legge il canvas prima che il buffer si svuoti
   disegnaAttorno(t, scene.anchor());

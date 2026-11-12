@@ -121,7 +121,7 @@ export function testoMeteo(d, adesso) {
   if (tappe.length) righe.push(`Prossime ore: ${tappe.join('; ')}.`);
   if (d.giorni.length) righe.push(`Giorni: ${d.giorni.map((g, i) => `${i === 0 ? 'oggi' : i === 1 ? 'domani' : giornoDi(g.t, l.offset)} da ${num(g.min)} a ${num(g.max)} °C` +
     `${g.codice !== null ? `, ${CODICI[g.codice] || ''}` : ''}${g.mm !== null ? `, ${num(g.mm, 1)} mm` : ''}${g.prob !== null ? ` (${num(g.prob)}%)` : ''}`).join('; ')}.`);
-  righe.push("Nell'HUD c'è la vista meteo: radar delle piogge vero delle ultime 2 ore, vento e pressione, profilo termico, timeline di 12 ore e avvisi. " +
-    'Tony la muove con le mani o col mouse e la chiude con Esc o lanciandola via.');
+  righe.push("Nell'HUD c'è la vista meteo: un globo che scende sul luogo, col radar delle piogge vero delle ultime 2 ore, il vento del luogo e le città vicine; " +
+    'attorno vento e pressione, profilo termico, timeline di 12 ore e avvisi. Tony gira il globo con le mani o col mouse e chiude la vista con Esc o lanciandola via.');
   return righe.join('\n');
 }

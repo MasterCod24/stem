@@ -1,12 +1,14 @@
-// Nexus — la vista meteo a schermo intero: radar al centro, vento e pressione a sinistra, profilo termico a destra, avvisi e
-// condizioni per spostarsi sotto, timeline in basso. I dati arrivano dal server (meteo.mjs, evento 'meteo'), il radar da
-// RainViewer (radar.js). Una linea del tempo sola comanda tutto: scorrendola (mani, mouse, frecce) i moduli mostrano il tempo a
-// quell'ora e il radar la mappa di quell'ora, se è nelle ultime due. Ad «adesso» il radar gira sulle ultime due ore.
-// Le mani: pizzico e trascina sul radar per spostarlo, altrove per scorrere il tempo; due pizzichi per lo zoom del radar;
-// un pizzico breve sceglie l'ora sulla timeline, rimette il radar al centro o torna ad adesso; prendi e lancia per chiudere.
+// Nexus — la vista meteo a schermo intero: il globo col radar al centro, vento e pressione a sinistra, profilo termico a destra,
+// avvisi e condizioni per spostarsi sotto, timeline in basso. I dati arrivano dal server (meteo.mjs, evento 'meteo'), il radar da
+// RainViewer (radar.js), il globo lo disegna globo.js nel renderer dell'HUD. Una linea del tempo sola comanda tutto: scorrendola
+// (mani, mouse, frecce) i moduli mostrano il tempo a quell'ora, il globo la mappa del radar di quell'ora (se è nelle ultime due)
+// e il vento di quell'ora. Ad «adesso» il radar gira sulle ultime due ore.
+// Le mani: pizzico e trascina sul globo per girarlo, altrove per scorrere il tempo; due pizzichi per lo zoom del globo;
+// un pizzico breve sceglie l'ora sulla timeline, rimette il globo sul luogo o torna ad adesso; prendi e lancia per chiudere.
 // Tutto il testo entra con textContent: nomi dei luoghi e numeri arrivano da fuori.
 import { analizza, valoriA, condizioniA, beaufort, bussola, num, oraDi, durata, CODICI, SOGLIE, H, Q } from './dati.js';
-import { createRadar, BANDE } from './radar.js';
+import { BANDE } from './radar.js';
+import { createGlobo } from './globo.js';
 
 const PRIMA_MS = 2 * H, DOPO_MS = 12 * H; // la timeline: due ore indietro (le mappe del radar), dodici avanti (il modello)
 const T_MIN = -10, T_MAX = 40;            // la scala delle temperature, la stessa per aria, percepita e rugiada
@@ -43,21 +45,13 @@ const CSS = `
 #meteo .m-riga b { font: 300 13px/1 var(--sottile); letter-spacing: .06em; color: #fff; text-shadow: 0 0 10px rgba(160, 240, 255, .35); }
 #meteo .m-nota { font: 400 7.5px/1.45 var(--mono); letter-spacing: .1em; color: var(--testo-2); opacity: .8; text-transform: uppercase; }
 
-/* radar: un cerchio con la scansione che gira (solo trasformazioni, la fa il compositore) */
+/* il globo: lo disegna il renderer dell'HUD dietro questo riquadro trasparente, che prende mouse e misure; sopra, le scritte */
 #meteo .m-radar { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 6px; padding: 0; overflow: visible;
   background: none; box-shadow: none; }
 #meteo .m-radar header { width: 100%; }
-#meteo .m-cerchio { position: relative; flex: none; border-radius: 50%; overflow: hidden; pointer-events: auto; cursor: grab; touch-action: none;
-  background: radial-gradient(circle, rgba(0, 30, 40, .5), rgba(0, 12, 18, .72) 70%, rgba(0, 6, 10, .85));
-  box-shadow: 0 0 0 1px rgba(62, 230, 255, .35), 0 0 46px rgba(62, 230, 255, .13), inset 0 0 60px rgba(62, 230, 255, .08); }
-#meteo .m-cerchio:active { cursor: grabbing; }
-#meteo .m-cerchio canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-#meteo .m-scan { position: absolute; inset: 0; border-radius: 50%; mix-blend-mode: screen; pointer-events: none;
-  background: conic-gradient(from 0deg, rgba(62, 230, 255, 0) 0deg 285deg, rgba(62, 230, 255, .07) 325deg, rgba(62, 230, 255, .3) 357deg,
-    rgba(215, 252, 255, .95) 359.3deg, rgba(62, 230, 255, 0) 360deg);
-  animation: m-giro 4s linear infinite; }
-#meteo .m-cerchio.fermo .m-scan { animation-play-state: paused; opacity: .35; }
-@keyframes m-giro { to { transform: rotate(1turn); } }
+#meteo .m-globo { position: relative; flex: 1; width: 100%; min-height: 0; pointer-events: auto; cursor: grab; touch-action: none; }
+#meteo .m-globo:active { cursor: grabbing; }
+#meteo .m-globo canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #meteo .m-legenda { display: flex; gap: 2px; align-items: center; }
 #meteo .m-legenda i { width: 16px; height: 5px; }
 #meteo .m-r-piede { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -125,7 +119,7 @@ const SCHELETRO = `
 <div class="m-griglia">
   <section class="m-mod m-radar" style="--d:.05s">
     <header><span>RADAR // <b>RIFLETTIVITÀ · RAINVIEWER</b></span><span class="m-r-ora"></span></header>
-    <div class="m-cerchio"><canvas class="m-eco"></canvas><canvas class="m-base"></canvas><div class="m-scan"></div></div>
+    <div class="m-globo"><canvas class="m-etichette"></canvas></div>
     <div class="m-r-piede"><span class="m-riga m-r-eco"></span><span class="m-riga"><span>10</span><span class="m-legenda"></span><span>50+ DBZ</span></span></div>
   </section>
   <section class="m-mod m-vento staffe" style="--d:.15s">
@@ -192,7 +186,8 @@ function tessera(kmh) {
   return c.toDataURL();
 }
 
-export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiudi = () => {} }) {
+// renderer e strato: quelli di nucleo.js (createScene), dove disegna il globo
+export function createVistaMeteo({ contenitore, prima = null, renderer, strato, sfx = null, onChiudi = () => {} }) {
   if (!document.getElementById('meteo-css')) document.head.append(Object.assign(document.createElement('style'), { id: 'meteo-css', textContent: CSS }));
   const root = document.createElement('div');
   root.id = 'meteo';
@@ -213,14 +208,14 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
     return { k, u, b, barra: barra(e, SEG), n: -1 };
   });
   const BARRA_COND = { barra: barra($('.m-o-bcond'), SEG_O), n: -1 }, FATTORI = new Map(); // fattore → { b, barra, n }
-  const cerchio = $('.m-cerchio'), area = $('.m-l-area'), tela = area.querySelector('canvas'), curL = $('.m-l-cur'), cur = $('.m-cur');
+  const riquadro = $('.m-globo'), area = $('.m-l-area'), tela = area.querySelector('canvas'), curL = $('.m-l-cur'), cur = $('.m-cur');
   const scrivi = (el, t) => { if (el.textContent !== t) el.textContent = t; };
   const SU = (s) => String(s).toUpperCase();
 
   let d = null, a = null, aperto = false, tCur = null, timerOra = 0, timerDati = 0, presa = null, trascina = null, sotto = null, ultimoCur = 0;
   let angoloAgo = null, angoloFlusso = null, kmhTessera = -1;
   const off = () => d?.luogo?.offset ?? 0, ora = (t) => oraDi(t, off());
-  const radar = createRadar({ eco: $('.m-eco'), base: $('.m-base'), onInfo: infoRadar });
+  const globo = createGlobo({ renderer, strato, el: riquadro, tela: $('.m-etichette'), onInfo: infoRadar });
 
   // ---------------------------------------------------------------- i moduli all'ora scelta
   function segmenti(b, n, quanti) {
@@ -241,6 +236,7 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
     scrivi($('.m-v-kmh'), num(v.vento));
     scrivi($('.m-v-raff'), v.raffiche === null ? '—' : `${num(v.raffiche)} KM/H`);
     scrivi($('.m-v-gradi'), Number.isFinite(dir) ? `${num(dir)}°` : '—');
+    globo.vento(v.vento, dir); // le linee del vento sul globo, all'ora scelta
     if (Number.isFinite(dir)) {
       angoloAgo = gira(angoloAgo, dir + 180);
       $('.m-ago').style.transform = `rotate(${angoloAgo}deg)`;
@@ -401,7 +397,6 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
 
   function infoRadar(i) {
     const adesso = Date.now();
-    cerchio.classList.toggle('fermo', !i.live);
     scrivi($('.m-r-ora'), i.errore ? SU(i.errore) : i.t === null ? 'CARICO…' :
       `${ora(i.t)} · ${durata(adesso - i.t).toUpperCase()} FA${i.scaricate < i.totali ? ` · CARICO ${i.scaricate}/${i.totali}` : ''}${tCur !== null && tCur > (i.ultima ?? 0) + 10 * 60_000 ? ' · ULTIMO DATO' : ''}`);
     const an = i.analisi;
@@ -418,18 +413,18 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
     t = t === null ? null : Math.max(adesso - PRIMA_MS, Math.min(adesso + DOPO_MS, t));
     if (t !== null && Math.abs(t - adesso) < 4 * 60_000) t = null; // vicino ad adesso: si torna al vivo
     tCur = t;
-    radar.tempo(t);
+    globo.tempo(t);
     scriviModuli(); posizionaCursore();
   }
   const tempoA = (clientX) => { const r = area.getBoundingClientRect(); return Date.now() - PRIMA_MS + ((clientX - r.left) / r.width) * (PRIMA_MS + DOPO_MS); };
 
   // ---------------------------------------------------------------- mouse
   let tira = null;
-  cerchio.addEventListener('pointerdown', (e) => { tira = { x: e.clientX, y: e.clientY }; try { cerchio.setPointerCapture(e.pointerId); } catch {} });
-  cerchio.addEventListener('pointermove', (e) => { if (!tira) return; radar.sposta(e.clientX - tira.x, e.clientY - tira.y); tira = { x: e.clientX, y: e.clientY }; });
-  for (const t of ['pointerup', 'pointercancel']) cerchio.addEventListener(t, () => { tira = null; });
-  cerchio.addEventListener('wheel', (e) => { e.preventDefault(); radar.zoom(Math.exp(-Math.max(-300, Math.min(300, e.deltaY)) * 0.0015)); }, { passive: false });
-  cerchio.addEventListener('dblclick', () => radar.reimposta());
+  riquadro.addEventListener('pointerdown', (e) => { tira = { x: e.clientX, y: e.clientY }; try { riquadro.setPointerCapture(e.pointerId); } catch {} });
+  riquadro.addEventListener('pointermove', (e) => { if (!tira) return; globo.sposta(e.clientX - tira.x, e.clientY - tira.y); tira = { x: e.clientX, y: e.clientY }; });
+  for (const t of ['pointerup', 'pointercancel']) riquadro.addEventListener(t, () => { tira = null; });
+  riquadro.addEventListener('wheel', (e) => { e.preventDefault(); globo.zoom(Math.exp(-Math.max(-300, Math.min(300, e.deltaY)) * 0.0015)); }, { passive: false });
+  riquadro.addEventListener('dblclick', () => globo.reimposta());
   let scorre = false;
   area.addEventListener('pointerdown', (e) => { scorre = true; try { area.setPointerCapture(e.pointerId); } catch {} scegli(tempoA(e.clientX)); });
   area.addEventListener('pointermove', (e) => { if (scorre) scegli(tempoA(e.clientX)); });
@@ -437,10 +432,9 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
   area.addEventListener('dblclick', () => scegli(null));
 
   // ---------------------------------------------------------------- mani (gesti.js, via nexus.js)
-  const dentroCerchio = (x, y) => { const r = cerchio.getBoundingClientRect(); return Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) <= r.width / 2; };
   const dentro = (el, x, y) => { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
   function sottoA(x, y) {
-    if (dentroCerchio(x, y)) return 'radar';
+    if (dentro(riquadro, x, y)) return 'radar';
     if (dentro($('.m-linea'), x, y)) return 'linea';
     return [...root.querySelectorAll('.m-mod')].find((m) => dentro(m, x, y))?.classList[1] || null;
   }
@@ -449,7 +443,7 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
     sotto = dove;
     root.querySelectorAll('.m-mod.mira').forEach((m) => m.classList.remove('mira'));
     if (dove && dove !== 'radar') root.querySelector(`.m-mod.${dove === 'linea' ? 'm-linea' : dove}`)?.classList.add('mira');
-    cerchio.style.boxShadow = dove === 'radar' ? '0 0 0 1px rgba(182, 248, 255, .8), 0 0 56px rgba(62, 230, 255, .3), inset 0 0 70px rgba(62, 230, 255, .14)' : '';
+    globo.mira(dove === 'radar'); // l'atmosfera si accende sotto la mano
   }
   let curXY = [0, 0];
   function gesto(g) {
@@ -470,21 +464,21 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
         cur.classList.add('on'); cur.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
         if (!trascina) mira(sottoA(x, y));
         break;
-      case 'ruota': case 'sposta': { // sul radar sposta la mappa, altrove scorre il tempo
+      case 'ruota': case 'sposta': { // sul globo lo gira, altrove scorre il tempo
         const dx = Number(g.dx), dy = Number(g.dy);
         if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
         if (presa) presa.mosso = true;
         trascina ||= { su: sotto === 'radar' ? 'radar' : 'tempo' };
-        if (trascina.su === 'radar') radar.sposta(dx * innerWidth, dy * innerHeight);
+        if (trascina.su === 'radar') globo.sposta(dx * innerWidth, dy * innerHeight);
         else scegli((tCur ?? Date.now()) + ((dx * innerWidth) / Math.max(200, area.clientWidth)) * (PRIMA_MS + DOPO_MS));
         break;
       }
-      case 'zoom': radar.zoom(Number(g.fattore)); break;
+      case 'zoom': globo.zoom(Number(g.fattore)); break;
       case 'afferra': presa = { x, y, mosso: false }; cur.classList.add('presa'); sfx?.afferra?.(); break;
       case 'lascia': // senza 'sposta' in mezzo è un clic: il pizzico breve, o una presa tenuta ferma e lasciata
         if (presa && !presa.mosso) {
           const dove = sottoA(presa.x, presa.y);
-          if (dove === 'linea') scegli(tempoA(presa.x)); else if (dove === 'radar') radar.reimposta(); else scegli(null);
+          if (dove === 'linea') scegli(tempoA(presa.x)); else if (dove === 'radar') globo.reimposta(); else scegli(null);
         }
         presa = null; trascina = null; cur.classList.remove('presa');
         break;
@@ -500,9 +494,9 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
     const k = e.key;
     if (k === 'ArrowLeft' || k === 'ArrowRight') scegli((tCur ?? Date.now()) + (k === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? H : Q));
     else if (k === 'Home' || k === '0') scegli(null);
-    else if (k === '+' || k === '=') radar.zoom(1.25);
-    else if (k === '-') radar.zoom(0.8);
-    else if (k === 'r' || k === 'R') { if (e.repeat) return true; radar.reimposta(); scegli(null); }
+    else if (k === '+' || k === '=') globo.zoom(1.25);
+    else if (k === '-') globo.zoom(0.8);
+    else if (k === 'r' || k === 'R') { if (e.repeat) return true; globo.reimposta(); scegli(null); }
     else return false;
     return true;
   }
@@ -510,10 +504,7 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
   // ---------------------------------------------------------------- misure, apri, chiudi
   function ridimensiona() {
     if (!aperto) return;
-    const cella = $('.m-radar').getBoundingClientRect(), alto = $('.m-radar header').offsetHeight + $('.m-r-piede').offsetHeight + 12;
-    const lato = Math.max(120, Math.floor(Math.min(cella.width, cella.height - alto)));
-    cerchio.style.width = cerchio.style.height = `${lato}px`;
-    radar.ridimensiona(); disegnaLinea();
+    globo.ridimensiona(); disegnaLinea();
   }
   addEventListener('resize', ridimensiona);
 
@@ -534,10 +525,10 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
       root.classList.add('on');
       if (primo) root.querySelectorAll('.m-mod, .m-top').forEach((m) => { m.style.animation = 'none'; void m.offsetWidth; m.style.animation = ''; }); // l'entrata riparte
       aperto = true;
+      globo.avvia(d.luogo);
       ridimensiona();
       scriviTutto();
-      radar.avvia(d.luogo);
-      radar.tempo(null);
+      globo.tempo(null);
       clearInterval(timerOra); timerOra = setInterval(() => { if (aperto) scriviTutto(); }, 30_000); // «tra 42 min» scende, «ora» si sposta
       clearInterval(timerDati); timerDati = setInterval(rileggi, 5 * 60_000);
       return primo ? { hero: 0.65, lands: [0.75, 0.85, 0.95, 1.05, 1.15] } : null;
@@ -546,15 +537,16 @@ export function createVistaMeteo({ contenitore, prima = null, sfx = null, onChiu
       if (!aperto) return;
       aperto = false; presa = null; trascina = null;
       clearInterval(timerOra); clearInterval(timerDati);
-      radar.ferma();
+      globo.ferma();
       cur.classList.remove('on', 'presa'); mira(null);
       root.classList.add('via');
       setTimeout(() => { if (!aperto) root.classList.remove('on', 'via'); }, 460);
     },
     gesto, tasto,
+    fotogramma: (t, dt) => globo.fotogramma(t, dt), // dal giro dell'HUD, prima del render
     dock() { const r = $('.m-dock').getBoundingClientRect(); return { dockX: r.x + r.width / 2, dockY: r.y + r.height * 0.6 }; },
     get aperto() { return aperto; },
-    info() { return { aperto, tCur, luogo: d?.luogo?.nome ?? null, frase: a?.frase ?? null, avvisi: a?.avvisi?.length ?? 0, radar: radar.stato, cursore: curXY }; },
+    info() { return { aperto, tCur, luogo: d?.luogo?.nome ?? null, frase: a?.frase ?? null, avvisi: a?.avvisi?.length ?? 0, radar: globo.stato, cursore: curXY }; },
     distruggi() { clearInterval(spegniCursore); },
   };
 }

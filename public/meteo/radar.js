@@ -1,15 +1,17 @@
 // Il radar della vista meteo: le piogge vere di RainViewer (ultime 2 ore, una mappa ogni 10 minuti) ricolorate coi colori
-// dell'HUD a fasce di 5 dBZ con il bordo acceso, come curve di livello, sopra la mappa di Natural Earth (mappa.json), in un
-// cerchio centrato sul luogo. È riflettività (dove piove e quanto), non Doppler: RainViewer non dà la velocità del vento.
-// Le mattonelle arrivano dirette da RainViewer (CORS aperto, cache di 2 giorni): l'unica cosa che la vista chiede fuori da Nexus.
-// Due canvas: eco (le piogge, ridisegnato a ogni cambio di mappa o di vista) e base (mappa, anelli, città, sopra le piogge).
+// dell'HUD a fasce di 5 dBZ con il bordo acceso, come curve di livello. È riflettività (dove piove e quanto), non Doppler:
+// RainViewer non dà la velocità del vento. Le mattonelle arrivano dirette da RainViewer (CORS aperto, cache di 2 giorni):
+// l'unica cosa che la vista chiede fuori da Nexus.
+// Qui solo i dati: quali mattonelle servono alla vista del globo, scaricarle, ricolorarle, l'eco attorno al luogo e il giro
+// delle ultime 2 ore. Ogni mappa pronta è un canvas in Mercatore (fr.tela) con il suo riquadro (fr.s): globo.js la proietta
+// sulla sfera. Fino al 12/11 qui c'era anche il disegno del radar piatto.
 
 const MAPPE = 'https://api.rainviewer.com/public/weather-maps.json';
 const Z_MAX = 7;          // misurato il 12/11: dallo zoom 8 RainViewer risponde con «Zoom Level Not Supported»
 const LATO = 256;
 const KM_TERRA = 40075.016686;
 const PARALLELI = 8;      // mattonelle scaricate insieme
-export const RAGGIO = Object.freeze({ base: 150, min: 25, max: 1500 }); // km dal centro al bordo del cerchio
+const ECO_MAX_KM = 1500;  // l'eco più vicina si cerca entro il raggio della vista, al massimo questo
 
 // Lo schema Universal Blue, l'unico che RainViewer serve (misurato il 12/11: gli schemi 0, 2 e 4 danno gli stessi byte).
 // Dal CSV ufficiale: un colore pieno per dBZ da 15 a 65; da −10 a 14 cambia solo la trasparenza.
@@ -48,28 +50,6 @@ export const merc = (lon, lat) => {
   const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
   return [(lon + 180) / 360, 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)];
 };
-const latDi = (y) => (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
-
-// La mappa: ogni linea in Float32Array di punti del mercatore, col suo riquadro per saltare quelle fuori vista
-let mappa = null;
-function caricaMappa() {
-  return (mappa ||= fetch('/meteo/mappa.json').then((r) => r.json()).then((m) => {
-    const linee = {};
-    for (const [tipo, ls] of Object.entries(m.linee)) linee[tipo] = ls.map((a) => {
-      const p = new Float32Array(a.length);
-      let lon = 0, lat = 0, x0 = 1, y0 = 1, x1 = 0, y1 = 0;
-      for (let i = 0; i < a.length; i += 2) {
-        lon += a[i]; lat += a[i + 1];
-        const [x, y] = merc(lon / 100, lat / 100);
-        p[i] = x; p[i + 1] = y;
-        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
-      }
-      return { p, x0, y0, x1, y1 };
-    });
-    const citta = m.citta.map(([nome, lon, lat, k]) => { const [x, y] = merc(lon / 100, lat / 100); return { nome: nome.toUpperCase(), x, y, k }; });
-    return { linee, citta };
-  }).catch((e) => { mappa = null; throw e; }));
-}
 
 // Le mattonelle già scaricate, per non rifarle tornando indietro con la vista
 const immagini = new Map();
@@ -84,27 +64,31 @@ function mattonella(url) {
   return p;
 }
 
-// onInfo(info) quando cambia la mappa mostrata o lo stato dello scaricamento
-export function createRadar({ eco, base, onInfo = () => {} }) {
-  const ce = eco.getContext('2d'), cb = base.getContext('2d');
+// onInfo(info) quando cambia la mappa mostrata o lo stato dello scaricamento; onMappa(fr) quando cambia la mappa da mostrare
+// (fr.tela, il canvas ricolorato, e fr.s, le sue mattonelle), o null se non ce n'è una pronta
+export function createRadar({ onInfo = () => {}, onMappa = () => {} }) {
   let luogo = null, u = [0, 0];                        // il luogo e il suo punto nel mercatore
-  let centro = [0, 0], raggio = RAGGIO.base;           // la vista
+  // la vista del globo: il punto guardato, i km da lì al bordo alto del riquadro, larghezza su altezza, i pixel del canvas
+  // da lì al bordo, e quanto è inclinata (0 dall'alto, 1 la massima: si vede lontano verso nord)
+  let vista = { lon: 0, lat: 0, raggio: 150, aspetto: 1, pxMezzo: 600, inclina: 0 };
   let lista = [], host = '', mostrata = -1, tempoScelto = null, errore = '';
-  let set = null, gen = 0, giro = 0, aggiornaTimer = 0, scaricate = 0, totali = 0, attivo = false, analisi = null, carta = null;
-  let W = 1, Hh = 1, dpr = 1;
+  let set = null, gen = 0, giro = 0, aggiornaTimer = 0, scaricate = 0, totali = 0, attivo = false, analisi = null;
+  const raggioEco = () => Math.min(ECO_MAX_KM, vista.raggio);
 
-  const kmPerNorm = () => KM_TERRA * Math.cos((latDi(centro[1]) * Math.PI) / 180);
-  const pxPerNorm = () => (Math.min(W, Hh) / 2 / raggio) * kmPerNorm(); // pixel del canvas per unità del mercatore
-  const schermo = (x, y, k = pxPerNorm()) => [(x - centro[0]) * k + W / 2, (y - centro[1]) * k + Hh / 2];
-
-  // Le mattonelle che servono alla vista: zoom e riquadro, con un margine del 30% per spostarsi senza riscaricare.
-  // Al massimo 4×4 per mappa: oltre, lo zoom scende di uno (13 mappe da 1024×1024 px sono già 54 MB).
+  // Le mattonelle che servono alla vista: zoom e riquadro, con un margine per spostarsi senza riscaricare. Inclinata, la
+  // camera vede fino a circa 2,2 volte il raggio verso nord e più larga in alto. Al massimo 4×4 per mappa: oltre, lo zoom
+  // scende di uno (13 mappe da 1024×1024 px sono già 54 MB). Da lontano il mondo intero allo zoom 2, 16 mattonelle.
   function serve() {
-    const k = pxPerNorm(), mezzo = (Math.min(W, Hh) / 2) * 1.3 / k, ampio = Math.max(W, Hh) / Math.min(W, Hh);
-    const span = 2 * mezzo * ampio;
-    const z = Math.max(1, Math.min(Z_MAX, Math.floor(Math.log2(3 / span)), Math.round(Math.log2(k / LATO))));
-    const n = 2 ** z, a = Math.floor((centro[0] - mezzo * ampio) * n), b = Math.floor((centro[0] + mezzo * ampio) * n);
-    const c = Math.max(0, Math.floor((centro[1] - mezzo * ampio) * n)), d = Math.min(n - 1, Math.floor((centro[1] + mezzo * ampio) * n));
+    const { lon, lat, raggio, aspetto, pxMezzo, inclina } = vista;
+    const kmNorm = KM_TERRA * Math.cos((lat * Math.PI) / 180);        // km per unità del mercatore a quella latitudine
+    const mezzoKm = raggio * Math.max(1, aspetto) * (1.3 + 1.1 * inclina);
+    const span = (2 * mezzoKm) / kmNorm;
+    if (span >= 0.75 || raggio > 3000) return { z: 2, x0: 0, nx: 4, y0: 0, ny: 4, chiave: 'mondo' };
+    const [cx, cy] = merc(lon, Math.min(85, lat + (raggio * 0.5 * inclina) / 111.195));
+    const pxNorm = (pxMezzo / raggio) * kmNorm;                       // pixel del canvas per unità del mercatore
+    const z = Math.max(2, Math.min(Z_MAX, Math.floor(Math.log2(3 / span)), Math.round(Math.log2(pxNorm / LATO))));
+    const n = 2 ** z, mezzo = span / 2, a = Math.floor((cx - mezzo) * n), b = Math.floor((cx + mezzo) * n);
+    const c = Math.max(0, Math.floor((cy - mezzo) * n)), d = Math.min(n - 1, Math.floor((cy + mezzo) * n));
     return { z, x0: a, nx: b - a + 1, y0: c, ny: d - c + 1, chiave: `${z}/${a}/${b}/${c}/${d}` };
   }
 
@@ -175,94 +159,12 @@ export function createRadar({ eco, base, onInfo = () => {} }) {
     }
   }
 
-  // ---------------------------------------------------------------- disegno
-  function disegnaEco() {
-    ce.setTransform(1, 0, 0, 1, 0, 0);
-    ce.clearRect(0, 0, W, Hh);
-    const fr = lista[mostrata];
-    if (!fr?.pronta) return;
-    const k = pxPerNorm(), n = 2 ** fr.s.z, [x, y] = schermo(fr.s.x0 / n, fr.s.y0 / n, k);
-    ce.imageSmoothingEnabled = true;
-    ce.drawImage(fr.tela, x, y, (fr.w / LATO / n) * k, (fr.h / LATO / n) * k);
-  }
-
-  function scritta(t, x, y, colore) { // con un alone scuro sotto: sopra le piogge si legge
-    cb.lineWidth = 3 * dpr; cb.strokeStyle = 'rgba(0, 8, 12, .8)'; cb.lineJoin = 'round';
-    cb.strokeText(t, x, y); cb.fillStyle = colore; cb.fillText(t, x, y);
-  }
-  // Mappa, anelli e città: si rifà solo quando cambia la vista
-  function disegnaBase() {
-    cb.setTransform(1, 0, 0, 1, 0, 0);
-    cb.clearRect(0, 0, W, Hh);
-    const k = pxPerNorm(), R = Math.min(W, Hh) / 2, cx = W / 2, cy = Hh / 2, s = dpr;
-    if (carta) disegnaMappa(carta, k);
-    // anelli a un quarto, metà, tre quarti e bordo, con i km
-    cb.lineWidth = 1 * s;
-    for (let i = 1; i <= 4; i++) {
-      cb.strokeStyle = `rgba(62, 230, 255, ${i === 4 ? 0.55 : 0.16})`;
-      cb.setLineDash(i === 4 ? [] : [2 * s, 5 * s]);
-      cb.beginPath(); cb.arc(cx, cy, (R - 1 * s) * i / 4, 0, 2 * Math.PI); cb.stroke();
-    }
-    cb.setLineDash([]);
-    cb.font = `400 ${8.5 * s}px Menlo, monospace`;
-    cb.fillStyle = 'rgba(150, 222, 238, .75)';
-    cb.textAlign = 'left'; cb.textBaseline = 'bottom';
-    for (let i = 1; i <= 4; i++) { const km = (raggio * i) / 4; scritta(`${km >= 100 ? Math.round(km) : km.toFixed(km < 10 ? 1 : 0).replace('.', ',')} KM`, cx + 4 * s, cy - (R * i) / 4 + 12 * s, 'rgba(150, 222, 238, .8)'); }
-    // tacche ogni 10°, lunghe ai punti cardinali
-    for (let g = 0; g < 360; g += 10) {
-      const a = (g * Math.PI) / 180, l = g % 90 ? 5 * s : 11 * s, c = Math.sin(a), d = -Math.cos(a);
-      cb.strokeStyle = g % 90 ? 'rgba(62, 230, 255, .35)' : 'rgba(182, 248, 255, .9)';
-      cb.beginPath(); cb.moveTo(cx + c * (R - 1 * s), cy + d * (R - 1 * s)); cb.lineTo(cx + c * (R - l), cy + d * (R - l)); cb.stroke();
-    }
-    cb.font = `400 ${10 * s}px Menlo, monospace`; cb.fillStyle = 'rgba(182, 248, 255, .95)'; cb.textAlign = 'center'; cb.textBaseline = 'middle';
-    [['N', 0, -1], ['E', 1, 0], ['S', 0, 1], ['O', -1, 0]].forEach(([t, a, b]) => cb.fillText(t, cx + a * (R - 22 * s), cy + b * (R - 22 * s)));
-    // il luogo: un mirino dove sta, anche se la vista si è spostata
-    const [ux, uy] = schermo(u[0], u[1], k);
-    if (Math.hypot(ux - cx, uy - cy) < R) {
-      cb.strokeStyle = 'rgba(61, 255, 208, .95)'; cb.lineWidth = 1.5 * s;
-      cb.beginPath(); cb.arc(ux, uy, 6 * s, 0, 2 * Math.PI); cb.stroke();
-      cb.beginPath(); cb.moveTo(ux - 13 * s, uy); cb.lineTo(ux - 8 * s, uy); cb.moveTo(ux + 8 * s, uy); cb.lineTo(ux + 13 * s, uy);
-      cb.moveTo(ux, uy - 13 * s); cb.lineTo(ux, uy - 8 * s); cb.moveTo(ux, uy + 8 * s); cb.lineTo(ux, uy + 13 * s); cb.stroke();
-      cb.font = `400 ${9 * s}px Menlo, monospace`; cb.fillStyle = 'rgba(61, 255, 208, .95)'; cb.textAlign = 'left'; cb.textBaseline = 'middle';
-      scritta((luogo?.nome || '').toUpperCase(), ux + 16 * s, uy - 9 * s, 'rgba(61, 255, 208, .95)');
-    }
-  }
-  function disegnaMappa(m, k) {
-    const s = dpr, mx = W / 2 / k, my = Hh / 2 / k, x0 = centro[0] - mx, x1 = centro[0] + mx, y0 = centro[1] - my, y1 = centro[1] + my;
-    const tratti = [['laghi', 'rgba(62, 230, 255, .32)', []], ['confini', 'rgba(62, 230, 255, .3)', [3 * s, 4 * s]], ['coste', 'rgba(62, 230, 255, .6)', []]];
-    for (const [tipo, colore, trat] of tratti) {
-      cb.strokeStyle = colore; cb.lineWidth = 1.1 * s; cb.setLineDash(trat); cb.beginPath();
-      for (const l of m.linee[tipo]) {
-        if (l.x1 < x0 || l.x0 > x1 || l.y1 < y0 || l.y0 > y1) continue;
-        const p = l.p;
-        cb.moveTo((p[0] - centro[0]) * k + W / 2, (p[1] - centro[1]) * k + Hh / 2);
-        for (let i = 2; i < p.length; i += 2) cb.lineTo((p[i] - centro[0]) * k + W / 2, (p[i + 1] - centro[1]) * k + Hh / 2);
-      }
-      cb.stroke();
-    }
-    cb.setLineDash([]);
-    // al massimo 14 città, le più grandi, senza scritte una sopra l'altra
-    cb.font = `400 ${8.5 * s}px Menlo, monospace`; cb.textAlign = 'left'; cb.textBaseline = 'middle';
-    const prese = [], R = Math.min(W, Hh) / 2;
-    for (const c of m.citta) {
-      if (prese.length >= 14) break;
-      if (c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1) continue;
-      const x = (c.x - centro[0]) * k + W / 2, y = (c.y - centro[1]) * k + Hh / 2;
-      if (Math.hypot(x - W / 2, y - Hh / 2) > R - 30 * s || (luogo && c.nome === luogo.nome.toUpperCase())) continue;
-      const w = cb.measureText(c.nome).width + 10 * s, r = [x - 4 * s, y - 7 * s, x + w, y + 7 * s];
-      if (prese.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1])) continue;
-      prese.push(r);
-      cb.fillStyle = 'rgba(210, 251, 255, .9)'; cb.fillRect(x - 1.5 * s, y - 1.5 * s, 3 * s, 3 * s);
-      scritta(c.nome, x + 5 * s, y, 'rgba(210, 251, 255, .88)');
-    }
-  }
-
   // ---------------------------------------------------------------- cosa dice la mappa mostrata, attorno al luogo
   // L'eco sopra il luogo e la più vicina (almeno 15 dBZ, pioggia debole) dentro il cerchio, con distanza e direzione
   function analizza(fr) {
     if (!fr?.pronta) return null;
     const n = 2 ** fr.s.z, px = u[0] * n * LATO - fr.s.x0 * LATO, py = u[1] * n * LATO - fr.s.y0 * LATO;
-    const kmPx = (KM_TERRA * Math.cos((luogo.lat * Math.PI) / 180)) / (n * LATO), rPx = raggio / kmPx;
+    const kmPx = (KM_TERRA * Math.cos((luogo.lat * Math.PI) / 180)) / (n * LATO), raggio = raggioEco(), rPx = raggio / kmPx;
     const ix = Math.round(px), iy = Math.round(py);
     const dentro = ix >= 0 && iy >= 0 && ix < fr.w && iy < fr.h;
     const sopra = dentro && fr.dbz[iy * fr.w + ix] ? fr.dbz[iy * fr.w + ix] - 32 : null;
@@ -285,13 +187,13 @@ export function createRadar({ eco, base, onInfo = () => {} }) {
   function mostra(i, forza = false) {
     if (i < 0 || i >= lista.length || (i === mostrata && !forza)) return;
     mostrata = i;
-    disegnaEco();
+    onMappa(lista[i]?.pronta ? lista[i] : null);
     analisi = analizza(lista[i]);
     informa();
   }
   function informa() {
     const fr = lista[mostrata];
-    onInfo({ t: fr?.t ?? null, indice: mostrata, n: lista.length, ultima: lista[lista.length - 1]?.t ?? null, scaricate, totali, errore, analisi, raggio, live: tempoScelto === null });
+    onInfo({ t: fr?.t ?? null, indice: mostrata, n: lista.length, ultima: lista[lista.length - 1]?.t ?? null, scaricate, totali, errore, analisi, raggio: raggioEco(), live: tempoScelto === null });
   }
 
   // Il giro delle ultime 2 ore: mezzo secondo per mappa, un secondo e mezzo fermo sull'ultima. Solo con le mappe pronte.
@@ -306,32 +208,28 @@ export function createRadar({ eco, base, onInfo = () => {} }) {
     giro = setTimeout(anima, mostrata === lista.length - 1 ? 1500 : 500);
   }
 
-  function ridimensiona() {
-    dpr = Math.min(2, devicePixelRatio || 1);
-    const r = eco.getBoundingClientRect();
-    W = Math.max(1, Math.round(r.width * dpr)); Hh = Math.max(1, Math.round(r.height * dpr));
-    for (const c of [eco, base]) { if (c.width !== W) c.width = W; if (c.height !== Hh) c.height = Hh; }
-    disegnaEco(); disegnaBase();
-  }
-
   let ritardo = 0;
-  const dopoVista = () => { disegnaEco(); disegnaBase(); clearTimeout(ritardo); ritardo = setTimeout(() => carica(), 300); };
 
   return {
-    async avvia(l) {
+    // v: la vista da cui partire (la stessa forma di vista()), già quella d'arrivo se il globo ci sta volando
+    async avvia(l, v) {
       const nuovo = !luogo || l.lat !== luogo.lat || l.lon !== luogo.lon;
       luogo = l; u = merc(l.lon, l.lat);
-      if (nuovo || !attivo) { centro = [...u]; raggio = RAGGIO.base; }
+      if (v) vista = { ...vista, ...v };
       attivo = true;
-      ridimensiona();
-      caricaMappa().then((m) => { carta = m; disegnaBase(); }, (e) => console.warn('[meteo] mappa', e));
       if (await leggiMappe()) { if (mostrata < 0 || mostrata >= lista.length) mostrata = lista.length - 1; carica(nuovo); }
       anima(); // gira sulle mappe già pronte, che arrivano dall'ultima alla prima
       clearInterval(aggiornaTimer);
       aggiornaTimer = setInterval(async () => { if (await leggiMappe()) { mostrata = Math.min(mostrata, lista.length - 1); carica(true); } }, 5 * 60_000);
     },
     ferma() { attivo = false; gen++; clearTimeout(giro); clearInterval(aggiornaTimer); clearTimeout(ritardo); },
-    ridimensiona,
+    // La vista del globo è cambiata: le mattonelle si riscaricano 300 ms dopo l'ultimo cambio, e solo se servono altre
+    vista(v) {
+      const r0 = raggioEco();
+      vista = { ...vista, ...v };
+      clearTimeout(ritardo); ritardo = setTimeout(() => carica(), 300);
+      if (raggioEco() !== r0) { analisi = analizza(lista[mostrata]); informa(); }
+    },
     // null: il giro delle ultime 2 ore. Un istante: la mappa più vicina prima di lui (o la prima)
     tempo(t) {
       tempoScelto = t;
@@ -342,17 +240,6 @@ export function createRadar({ eco, base, onInfo = () => {} }) {
       mostra(i);
       informa();
     },
-    sposta(dx, dy) { // in pixel CSS: la mappa segue la mano o il mouse
-      const k = pxPerNorm() / dpr;
-      centro = [centro[0] - dx / k, Math.max(0.02, Math.min(0.98, centro[1] - dy / k))];
-      dopoVista();
-    },
-    zoom(f) {
-      if (!(f > 0) || !Number.isFinite(f)) return;
-      raggio = Math.max(RAGGIO.min, Math.min(RAGGIO.max, raggio / f));
-      dopoVista(); analisi = analizza(lista[mostrata]); informa();
-    },
-    reimposta() { centro = [...u]; raggio = RAGGIO.base; dopoVista(); analisi = analizza(lista[mostrata]); informa(); },
-    get stato() { return { raggio, centro: [...centro], mostrata, n: lista.length, scaricate, set: set?.chiave ?? null, errore }; },
+    get stato() { return { mostrata, n: lista.length, scaricate, set: set?.chiave ?? null, errore }; },
   };
 }

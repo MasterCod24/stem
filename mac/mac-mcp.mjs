@@ -761,7 +761,7 @@ TOOLS.push({
 // --- Meteo: client sottile di POST /api/meteo. Previsioni, conti e testo stanno nel server (meteo.mjs), il radar nell'HUD ---
 TOOLS.push({
   name: 'mostra_meteo',
-  description: 'Apre nell\'HUD la vista meteo di un luogo: radar delle piogge vero (ultime 2 ore), vento e pressione, profilo termico, ' +
+  description: 'Apre nell\'HUD la vista meteo di un luogo: un globo che scende sul luogo col radar delle piogge vero (ultime 2 ore), vento e pressione, profilo termico, ' +
     'timeline di 12 ore con inizio e fine delle precipitazioni, avvisi e condizioni per spostarsi; chiude le altre viste grandi. ' +
     'Risponde con i numeri da dire: adesso, precipitazioni, avvisi, prossime ore e tre giorni (Open-Meteo, orari del posto). ' +
     'Senza «luogo» usa l\'ultimo chiesto. chiudi true la chiude.',

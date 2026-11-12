@@ -1,8 +1,9 @@
-// meteo-hud.mjs — prova la vista meteo nell'HUD vero (index.html, nexus.js, meteo/vista.js), in un Chrome headless sulla GPU.
-// Il server finto qui dentro serve i file come server.mjs e dà a GET /api/meteo le previsioni vere di Open-Meteo (Milano), poi
-// le stesse con tre avvisi aggiunti a mano. Il radar è quello vero di RainViewer: la prova vuole la rete.
-// Fa le foto, prova mouse, tastiera e gesti (gesti finti mandati alla vista, come li manda gesti.js) e misura gli fps con le
-// mani accese sulla foto di prova (?debug&mani=immagine), la regola di Tony: sopra 45.
+// meteo-hud.mjs — prova la vista meteo nell'HUD vero (index.html, nexus.js, meteo/vista.js e globo.js), in un Chrome headless
+// sulla GPU. Il server finto qui dentro serve i file come server.mjs e dà a GET /api/meteo le previsioni vere di Open-Meteo
+// (Milano), poi le stesse con tre avvisi aggiunti a mano. Il radar è quello vero di RainViewer: la prova vuole la rete.
+// Fa le foto, prova il globo (giro e discesa sul luogo, città vicine, il mondo intero, texture che non crescono), mouse,
+// tastiera e gesti (gesti finti mandati alla vista, come li manda gesti.js) e misura gli fps con le mani accese sulla foto di
+// prova (?debug&mani=immagine), la regola di Tony: sopra 45.
 //   node prove/meteo-hud.mjs [cartella delle foto] → PASS o FAIL per caso; esce con 0 solo se passa tutto. Porte 4432 e 9563.
 // Gli fps sono fotogrammi di requestAnimationFrame contati in ogni secondo intero (window.__misure): il caso migliore, col
 // riconoscimento vocale spento e la foto al posto della fotocamera.
@@ -37,9 +38,10 @@ const m = createMeteo({ cartella: LAVORO });
 const vero = await m.mostra({ luogo: 'Milano' });
 if (!vero.ok) { console.log(`FAIL  Open-Meteo: ${vero.errori.join('; ')}`); process.exit(1); }
 const conAvvisi = structuredClone(vero.dati), adesso = Date.now();
-conAvvisi.ora.pressione = 1000; conAvvisi.ora.raffiche = 95;
+conAvvisi.ora.pressione = 1000; conAvvisi.ora.raffiche = 95; conAvvisi.ora.vis = 20000;
 for (const o of conAvvisi.ore) {
   o.pressione = 1000 - ((o.t - adesso) / H) * 1.4; // −4,2 hPa in 3 ore
+  o.vis = 20000; // niente nebbia vera: il 12/11 a Milano c'era, e il suo avviso spingeva il temporale fuori dai tre mostrati
   if (o.t > adesso + 2 * H && o.t <= adesso + 4 * H) { o.codice = 95; o.prob = 85; }
 }
 let DATI = vero.dati, misura = null; // misura: l'ultima POST «misura» delle mani
@@ -143,10 +145,20 @@ try {
   await ev('nexusMeteo()');
   await pausa(1300);
   await foto('meteo-1-entrata');
+  const atterrato = await attendi(async () => { const i = await info(); const c = i?.radar?.camera; return c && !c.volo && Math.abs(c.raggio - 150) < 1 && i; }, 9000, 100);
+  const cam = atterrato?.radar?.camera;
+  esito(Boolean(atterrato) && cam.inclinazione > 45 && Math.abs(cam.lat - 45.46) < 0.05 && Math.abs(cam.lon - 9.19) < 0.05,
+    'il globo gira, scende su Milano e si inclina', cam ? `in ${((Date.now() - t0) / 1000).toFixed(1)} s, ${cam.lat.toFixed(2)}° N ${cam.lon.toFixed(2)}° E, raggio ${cam.raggio.toFixed(0)} km, inclinata ${cam.inclinazione.toFixed(0)}°` : JSON.stringify((await info())?.radar));
   const pronta = await attendi(async () => { const i = await info(); return i?.radar?.n > 0 && i.radar.scaricate >= i.radar.n && i; }, 25000, 250);
   esito(Boolean(pronta), 'le 13 mappe del radar scaricate e ricolorate', pronta ? `${pronta.radar.n} mappe in ${((Date.now() - t0) / 1000).toFixed(1)} s, mattonelle ${pronta.radar.set}` : JSON.stringify((await info())?.radar));
   await pausa(1500);
   await foto('meteo-2-vero');
+  const et = (await info()).radar.etichette;
+  esito(et[0] === 'MILANO' && et.length >= 5, 'da vicino: il luogo e le città attorno, ancorate al globo', et.join(', '));
+  const mem0 = (await info()).radar.memoria;
+  await pausa(8000); // il radar gira: una mappa nuova ogni mezzo secondo, sempre nella stessa texture
+  const mem1 = (await info()).radar.memoria;
+  esito(mem1.textures === mem0.textures && mem1.geometries === mem0.geometries, 'texture e geometrie ferme mentre il radar gira', `${JSON.stringify(mem0)} → ${JSON.stringify(mem1)}`);
   const dom = await ev(`({ classe: document.body.classList.contains('meteo'), titolo: document.querySelector('.m-titolo').textContent, frase: document.querySelector('.m-l-frase').textContent,
     vento: document.querySelector('.m-v-kmh').textContent, segmenti: document.querySelectorAll('.m-t-righe .m-barra i.on').length, eco: document.querySelector('.m-r-eco').textContent,
     radarOra: document.querySelector('.m-r-ora').textContent, bordi: getComputedStyle(document.getElementById('colonna-dx')).opacity })`);
@@ -158,7 +170,7 @@ try {
   esito(fuori.every((h) => /^(api|tilecache)\.rainviewer\.com$/.test(h)), "fuori da Nexus l'HUD chiede solo a RainViewer", fuori.map((h) => `${h} ×${host.get(h)}`).join(', '));
 
   titolo('Mouse e tastiera');
-  const [rx, ry] = await centro('.m-cerchio'), prima = (await info()).radar;
+  const [rx, ry] = await centro('.m-globo'), prima = (await info()).radar;
   await trascina(rx, ry, rx + 120, ry + 60);
   const dopo = (await info()).radar;
   esito(dopo.centro[0] < prima.centro[0] && dopo.centro[1] < prima.centro[1], 'trascinare il radar sposta la mappa con la mano', `${prima.centro.map((x) => x.toFixed(5))} → ${dopo.centro.map((x) => x.toFixed(5))}`);
@@ -197,6 +209,11 @@ try {
   esito(tg !== null && Math.abs(tg - Date.now() - 3.5 * H) < 5 * 60_000, 'pizzico e trascina sulla timeline: un quarto della sua larghezza sono 3,5 ore', tg ? `+${((tg - Date.now()) / H).toFixed(2)} h` : 'null');
   await gesto({ tipo: 'zoom', fattore: 2 });
   esito(Math.abs((await info()).radar.raggio - 75) < 0.01, 'due pizzichi che si allargano del doppio: radar da 150 a 75 km');
+  await gesto({ tipo: 'zoom', fattore: 0.001 });
+  const mondo = await attendi(async () => { const i = await info(); return i.radar.set === 'mondo' && i.radar.scaricate >= i.radar.n && !i.radar.camera.volo && Math.abs(i.radar.camera.raggio - 12000) < 50 && i; }, 25000, 250);
+  esito(Boolean(mondo), 'due pizzichi che si stringono: il globo intero, col radar del mondo (zoom 2, 16 mattonelle)', mondo ? `raggio ${mondo.radar.raggio} km, inclinata ${mondo.radar.camera.inclinazione.toFixed(1)}°` : JSON.stringify((await info()).radar));
+  await pausa(600);
+  await foto('meteo-2b-mondo');
   await pizzico((ll + lw * 0.5) / W, ly / Hh);
   const tc = (await info()).tCur;
   esito(tc !== null && Math.abs(tc - (Date.now() + 5 * H)) < 5 * 60_000, 'pizzico breve sulla timeline: quell\'ora (metà: +5 h)', tc ? `+${((tc - Date.now()) / H).toFixed(2)} h` : 'null');
@@ -221,6 +238,8 @@ try {
   const av = await ev("[...document.querySelectorAll('.m-avviso')].map((e) => ({ classe: e.className, testo: e.querySelector('p').textContent, colore: getComputedStyle(e).color }))");
   esito(av.length === 3 && av[0].classe.includes('l2') && av[0].classe.includes('primo'), 'tre avvisi, il rosso (raffiche 95 km/h) per primo e lampeggiante', av.map((x) => `${x.classe.replace('m-avviso ', '')}: ${x.testo}`).join(' | '));
   esito(av.some((x) => /CALO BAROMETRICO RAPIDO: −4,2 HPA/.test(x.testo)) && av.some((x) => /TEMPORALE/.test(x.testo)), 'calo barometrico −4,2 hPa e temporale');
+  const mem2 = (await info()).radar.memoria;
+  esito(mem2.textures === mem1.textures && mem2.geometries === mem1.geometries, 'riaperta, il globo non ha texture né geometrie in più', `${JSON.stringify(mem1)} → ${JSON.stringify(mem2)}`);
   await tasto('Escape'); await pausa(600);
   esito(!(await ev("document.body.classList.contains('meteo')")), 'Esc chiude la vista');
 
