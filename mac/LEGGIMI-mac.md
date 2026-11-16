@@ -38,6 +38,11 @@ valida e scrive il testo, e restituiscono quel testo più la foto PNG che l'HUD 
 arrivano al cervello così come sono. Hanno una coda loro, così un calcolo di un minuto non ferma mouse e tastiera, e «stop»
 annulla anche la loro attesa.
 
+`mostra_ologramma` e `modifica_ologramma` (in «aggiungi», e in «cambia» quando cambia la forma) rifiutano i pezzi con una
+forma nativa, tranne `file`, `cavo` e quelli con `calcolo: true`: dal 16/11 gli ologrammi si fanno in Blender, e le forme
+native restano per i flussi dei cavi e per gli sforzi. Era una riga della persona, e alla prima domanda il cervello l'ha
+saltata: un turbofan di 61 forme native.
+
 `costruisci_in_blender` sta nella stessa coda. Lo script del cervello è Python libero, quindi Blender (`-b --factory-startup`,
 `gabbia.py`) parte dentro una gabbia scritta al momento:
 - niente rete, nemmeno localhost;

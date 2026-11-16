@@ -127,6 +127,21 @@ raise RuntimeError('ESITI ' + json.dumps(r))
   esito(Object.keys(esiti).length === 9, 'tutte e nove le prove della gabbia hanno risposto', Object.keys(esiti).length + '');
   esito(!fs.existsSync(path.join(BASE, 'fuori.txt')), 'niente è stato scritto fuori');
 
+  // la regola di Tony anche negli ologrammi: forme native solo per i cavi e per gli sforzi («calcolo» true).
+  // Il server di prova non c'è (porta 4999): chi passa la guardia si ferma su «non risponde», chi no sul rifiuto.
+  const olo = async (name, args) => { const m = await chiama('tools/call', { name, arguments: args }); return m.result?.content?.map((c) => c.text).join('\n') ?? ''; };
+  const scatola = { id: 'scatola', forma: 'scatola', misure: { x: 1, y: 1, z: 1 } };
+  let o = await olo('mostra_ologramma', { titolo: 'x', pezzi: [scatola] });
+  esito(/Regola di Tony/.test(o) && /«scatola» \(scatola\)/.test(o), 'mostra_ologramma rifiuta una forma nativa senza «calcolo» true', o.slice(0, 70));
+  o = await olo('mostra_ologramma', { titolo: 'x', pezzi: [{ ...scatola, calcolo: true }, { id: 'f', forma: 'file', misure: { file: '/x.glb' } }, { id: 'c', forma: 'cavo', misure: { r: 1, punti: [[0, 0, 0], [1, 1, 1]] } }] });
+  esito(!/Regola di Tony/.test(o) && /non risponde/.test(o), 'passano i pezzi per gli sforzi, i file e i cavi', o.slice(0, 50));
+  o = await olo('modifica_ologramma', { aggiungi: [scatola] });
+  esito(/Regola di Tony/.test(o) && /«aggiungi»/.test(o), 'modifica_ologramma rifiuta una forma nativa in «aggiungi»');
+  o = await olo('modifica_ologramma', { cambia: [{ id: 'scatola', forma: 'cilindro', misure: { r: 1, h: 1 } }] });
+  esito(/Regola di Tony/.test(o) && /«cambia»/.test(o), 'e in «cambia», quando cambia la forma');
+  o = await olo('modifica_ologramma', { cambia: [{ id: 'scatola', colore: '#fff' }], vista: { esploso: 1 } });
+  esito(!/Regola di Tony/.test(o), 'un «cambia» senza forma e la vista passano');
+
   for (let i = 0; i < 5; i++) await costruisci('prova', BUONO);
   const versioni = fs.readdirSync(path.join(CARTELLA, 'prova')).sort();
   esito(versioni.length === 5 && !versioni.includes('v1'), 'restano le ultime cinque versioni', versioni.join(' '));

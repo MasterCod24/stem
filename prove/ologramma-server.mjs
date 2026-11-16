@@ -323,8 +323,9 @@ esito(MO?.titolo?.type === 'string' && MO?.descrizione?.type === 'string' && /ti
   'modifica_ologramma cambia anche titolo e descrizione; nessuno strumento chiama «sicuro» un colore');
 const STAFFA = {
   titolo: 'Staffa', pezzi: [
-    { id: 'base', nome: 'Base', forma: 'scatola', misure: { x: 60, y: 6, z: 40 }, materiale: 'acciaio-s235' },
-    { id: 'braccio', nome: 'Braccio', forma: 'scatola', misure: { x: 6, y: 50, z: 40 }, posizione: [-27, 28, 0], materiale: 'acciaio-s235' },
+    // «calcolo» true: dal 16/11 lo strumento accetta forme native solo per gli sforzi (il resto si fa in Blender)
+    { id: 'base', nome: 'Base', forma: 'scatola', misure: { x: 60, y: 6, z: 40 }, materiale: 'acciaio-s235', calcolo: true },
+    { id: 'braccio', nome: 'Braccio', forma: 'scatola', misure: { x: 6, y: 50, z: 40 }, posizione: [-27, 28, 0], materiale: 'acciaio-s235', calcolo: true },
   ],
 };
 let t = await M.strumento('mostra_ologramma', STAFFA);

@@ -26,8 +26,14 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
     - 15 pezzi, di cui 6 da Blender per 9.280 triangoli.
 
     La prima versione aveva gli assi sbagliati e lo stelo aperto: il cervello l'ha visto nella foto e ha rifatto il pezzo. La causa era `V()`, che aveva passato agli attrezzi convertendo due volte. Ora la descrizione e `aiuti.py` lo dicono, e `trasforma` gira i pezzi con i gradi di `mostra_ologramma`. **Dopo questa correzione il cervello non è stato riprovato.**
+  - **Blender sempre, senza chiederlo: richiesta di Tony del 16/11.** Dopo il primo riavvio, a «fammi un turbofan» il cervello aveva usato 61 forme native, ed era passato a Blender solo dopo che Tony l'aveva trovato grezzo. Ora la regola è un meccanismo: `mostra_ologramma` e `modifica_ologramma` rifiutano le forme native, tranne i cavi e i pezzi con `calcolo: true` per gli sforzi (vedi `mac/LEGGIMI-mac.md`).
+  - **Prova della guardia col cervello vero** (Nexus di prova, «fammi vedere in 3D un trapano avvitatore a batteria», un giro, senza nominare Blender): tre ricerche, poi 28 pezzi tutti da Blender, nessuna forma nativa. Il trapano si riconosce.
+    - I tempi: primo script (10,7 KB) a 399 s, prima vista a 538 s, fine a 551 s. Quasi tutto è il cervello che pensa e scrive lo script; Blender ci mette 2,4 s.
+    - Errori: due chiamate col nome nudo `costruisci_in_blender`, rifiutate da Claude Code, e un esploso a 5,5 oltre il massimo di 5.
+    - Quanto aspetta Tony con Blender: 4–9 minuti in due prove, contro i 49–262 s dell'11/11 a forme native (domande diverse).
   - **Scelte mie, da guardare con Tony:**
-    - la persona manda in Blender ogni pezzo di un prodotto vero in cui la forma conta; le forme native restano per scatole, tubi, ingranaggi e per gli sforzi;
+    - la guardia sta nello strumento e non nel server: le prove del server e le demo usano ancora le forme native;
+    - i cavi restano nativi, perché i flussi disegnati esistono solo sulla forma «cavo»;
     - le primitive sono rifiutate anche in bmesh (`bmesh.ops.create_*`);
     - i file vanno in `Documents/Nexus-Blender`, si tengono le ultime 5 versioni per modello, e Blender ha al massimo 90 s;
     - niente reticoli di alleggerimento se l'oggetto vero non li ha: la ventola non ne ha;
@@ -271,6 +277,7 @@ Restano decisioni di Tony, non lavoro sul codice:
     - `mac/blender/aiuti.py` sono gli attrezzi già pronti per lo script, in coordinate dell'HUD: anelli, loft, `trasforma` (coi gradi di `mostra_ologramma`), tappi a quadrilateri, rivoluzioni con le punte a griglia «O», profili NACA e superellissi, offset, raccordi, Bézier, rumore.
     - I file vanno in `Documents/Nexus-Blender/<nome>/v<n>/` (`--blender` in `mcp.json`); si tengono le ultime 5 versioni.
     - Il cervello li apre poi con `mostra_ologramma` come pezzi «file» con `centra: false`.
+    - Dal 16/11 `mostra_ologramma` e `modifica_ologramma` rifiutano le forme native, tranne `cavo` e i pezzi con `calcolo: true`.
 - **`browser-fx.js`** è iniettato in ogni pagina di Google: disegna il mirino e l'animazione dei clic e tiene i link nella stessa scheda.
 - **Avvio:**
   - `STEM.app`, nella radice della repository, lancia `avvia-app.sh`, che imposta `NEXUS_APP=1`: con l'HUD chiuso per circa 150 secondi, il server si spegne (più tardi se sta facendo memoria, al massimo dopo 5 minuti). I permessi di macOS vanno a STEM.app; Accessibilità e Registrazione schermo sono stati dati il 1/11.
@@ -337,6 +344,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Blender:** `node prove/blender.mjs` (circa 10 s, senza Nexus né cervello) parla con `mac/mac-mcp.mjs` come il cervello. Controlla:
   - gli attrezzi e le coordinate dell'HUD nei file;
   - il rifiuto delle primitive e gli errori dello script;
+  - la guardia di `mostra_ologramma` e `modifica_ologramma` sulle forme native;
   - le cinque versioni tenute;
   - la gabbia, via per via.
 
@@ -399,7 +407,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **three.js: un `Box3` vuoto vale ±Infinity.** Un NaN finito nella camera ci resta per sempre, perché un lerp da NaN dà NaN: l'ingombro si controlla prima di usarlo.
 - **Un limite scritto senza misurarlo era falso.** Il commento di `TRIANGOLI_MAX` prometteva 45 fps con 2 milioni di triangoli; misurati con le mani, erano 33. Lo stesso per un minimo trovato su poche sequenze: «due lanci ad almeno 667 ms» era il minimo delle prove, e una scansione più larga ne ha trovati a 567.
 - **Un numero preso da un altro contesto non è il «prima».** L'11/11 l'attesa con la ricerca (109–262 s) era stata confrontata con i circa 50 s di una domanda vera del 10/11, fatta a metà conversazione. Sullo stesso banco il codice vecchio dava 80 s. Prima e dopo si misurano con lo stesso banco, la stessa domanda e lo stesso avvio.
-- **Strumenti col nome nudo confondono il cervello.** Con WebSearch e WebFetch, che hanno il nome nudo, il cervello ha chiamato `mostra_ologramma` senza `mcp__mac__` 3 volte su 3, e mai prima. Riceveva «No such tool available» e riscriveva il modello: da 22 a 56 s persi. Ora la prima riga della sezione Ologrammi della persona scrive i nomi interi: nessun errore in due corse, una di prova e una vera.
+- **Strumenti col nome nudo confondono il cervello.** Con WebSearch e WebFetch, che hanno il nome nudo, il cervello ha chiamato `mostra_ologramma` senza `mcp__mac__` 3 volte su 3, e mai prima. Riceveva «No such tool available» e riscriveva il modello: da 22 a 56 s persi. Ora la prima riga della sezione Ologrammi della persona scrive i nomi interi: nessun errore in due corse, una di prova e una vera. È successo di nuovo il 16/11 con `costruisci_in_blender` (due chiamate perse), nonostante il nome intero nella persona: ora anche le descrizioni degli strumenti e le istruzioni di `mac-mcp.mjs` scrivono i nomi interi. Non riprovato.
 - **Una prova che ricopia una formula del codice mente quando la formula cambia.** Gli 80,5 ms di ritardo del cursore dell'11/11 venivano dalla mappa lineare ricopiata nella prova, contro la mappa a S del codice; il ritardo vero era 23,5 ms. Ora l'atteso si calcola con `mappa()` importata da `gesti.js`.
 - **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
 - **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore.

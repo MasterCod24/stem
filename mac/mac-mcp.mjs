@@ -706,6 +706,17 @@ const PEZZO = { type: 'object', properties: {
 }, required: ['id', 'forma', 'misure'] };
 
 const OLOGRAMMI = new Set(['mostra_ologramma', 'modifica_ologramma', 'analizza_struttura']);
+// Regola di Tony del 16/11: gli ologrammi si fanno in Blender, da soli, senza che lui lo chieda. Un pezzo con una forma
+// nativa passa solo se è un cavo (i flussi) o se dichiara «calcolo» true (gli sforzi si calcolano solo sulle forme native).
+// Prima era una riga della persona, e il cervello l'ha saltata alla prima domanda: un turbofan di 61 forme native.
+const SENZA_BLENDER = new Set(['file', 'cavo']);
+function soloBlender(pezzi, campo) {
+  const no = (Array.isArray(pezzi) ? pezzi : []).filter((p) => p && typeof p === 'object' && FORME.includes(p.forma) && !SENZA_BLENDER.has(p.forma) && p.calcolo !== true);
+  if (!no.length) return;
+  throw new ToolError(`Niente è cambiato: ${no.length === 1 ? 'il pezzo' : 'i pezzi'} ${no.slice(0, 6).map((p) => `«${p.id}» (${p.forma})`).join(', ')}${no.length > 6 ? '…' : ''} in ${campo} ${no.length === 1 ? 'ha' : 'hanno'} una forma nativa. ` +
+    'Regola di Tony: gli ologrammi si costruiscono in Blender. Fai i pezzi con mcp__mac__costruisci_in_blender e aprili qui come forma «file»; ' +
+    'le forme native restano per i cavi e per i pezzi da calcolare con gli sforzi, che portano «calcolo» true.');
+}
 TOOLS.push({
   name: 'mostra_ologramma',
   description: 'Mostra nell\'HUD, a schermo intero, un ologramma 3D fatto di pezzi con misure vere in mm, al posto di quello di prima. ' +
@@ -720,7 +731,7 @@ TOOLS.push({
     vista: { type: 'object', description: 'vista iniziale, come in modifica_ologramma' },
   }, required: ['titolo', 'pezzi'] },
   annotations: { title: 'Mostra un ologramma' },
-  run: (a) => ologramma({ azione: 'mostra', modello: a }),
+  run: (a) => { soloBlender(a.pezzi, '«pezzi»'); return ologramma({ azione: 'mostra', modello: a }); },
 });
 TOOLS.push({
   name: 'modifica_ologramma',
@@ -743,7 +754,11 @@ TOOLS.push({
   annotations: { title: 'Modifica l\'ologramma' },
   run: (a) => {
     const { chiudi, ...resto } = a;
-    if (chiudi !== true) return ologramma({ ...resto, azione: 'modifica' });
+    if (chiudi !== true) {
+      soloBlender(resto.aggiungi, '«aggiungi»');
+      soloBlender((Array.isArray(resto.cambia) ? resto.cambia : []).filter((p) => p && 'forma' in p), '«cambia»');
+      return ologramma({ ...resto, azione: 'modifica' });
+    }
     if (Object.keys(resto).length) throw new ToolError('chiudi va mandato da solo: le modifiche in una chiamata, chiudi in un\'altra. Niente è cambiato.');
     return ologramma({ azione: 'chiudi' });
   },
@@ -818,7 +833,7 @@ async function costruisciInBlender(a) {
   }
   if (!CARTELLA_BLENDER) throw new ToolError('manca la cartella di lavoro negli argomenti (mcp.json, --blender): riavvia Nexus');
   let blender;
-  try { blender = fs.realpathSync(BLENDER); } catch { throw new ToolError(`Blender non c'è (${BLENDER}): finché Tony non lo installa, i pezzi si fanno con mostra_ologramma`); }
+  try { blender = fs.realpathSync(BLENDER); } catch { throw new ToolError(`Blender non c'è (${BLENDER}): finché Tony non lo installa, i pezzi si fanno con mcp__mac__mostra_ologramma`); }
   const base = path.join(CARTELLA_BLENDER, nome);
   fs.mkdirSync(base, { recursive: true });
   const versioni = () => fs.readdirSync(base).map((d) => Number(/^v(\d+)$/.exec(d)?.[1])).filter(Number.isInteger).sort((x, y) => x - y);
@@ -868,14 +883,14 @@ async function costruisciInBlender(a) {
 }
 TOOLS.push({
   name: 'costruisci_in_blender',
-  description: 'Costruisce in Blender i pezzi che le forme di mostra_ologramma non fanno: pale ed eliche svergolate, gusci, raccordi, superfici organiche. ' +
+  description: 'Costruisce in Blender i pezzi di ogni ologramma: pale ed eliche svergolate, gusci, raccordi, superfici organiche, e anche quelli semplici. ' +
     'Lo script è Python di Blender (bpy, bmesh) e gira in una gabbia senza rete né file di Tony. Regole di Tony: niente primitive (bpy.ops.mesh.primitive_* e bmesh.ops.create_* sono rifiutati); ' +
     'ogni forma nasce da vertici e facce, a quadrilateri, con dettagli veri: raccordi, nervature, giochi. ' +
-    'Misure in mm e coordinate dell\'HUD (Y in alto): il punto (x, y, z) che dai agli attrezzi è il punto (x, y, z) del file e di mostra_ologramma. ' +
-    'Già pronti, senza import: anello(bm, punti); trasforma(bm, rotazione, posizione), coi gradi di mostra_ologramma; loft(bm, anelli, chiuso); tappo(bm, anello), che unisce il punto k al 2n−1−k; tappo_piano(bm, anello); ' +
+    'Misure in mm e coordinate dell\'HUD (Y in alto): il punto (x, y, z) che dai agli attrezzi è il punto (x, y, z) del file e di mcp__mac__mostra_ologramma. ' +
+    'Già pronti, senza import: anello(bm, punti); trasforma(bm, rotazione, posizione), coi gradi di mcp__mac__mostra_ologramma; loft(bm, anelli, chiuso); tappo(bm, anello), che unisce il punto k al 2n−1−k; tappo_piano(bm, anello); ' +
     'rivoluzione(bm, [(r, y), …], n, chiuso) attorno a Y, con le punte sull\'asse chiuse a quadrilateri; profilo_naca(corda, curvatura, pos_curvatura, spessore, n); profilo_tondo(lungo, largo, esponente, n); ' +
     'ruota2d(pts, gradi, du, dv); offset2d(pts, e); raccordo_circolare(r, n); bezier, bezier_punti, bezier_tangente; noise (Perlin di mathutils), math, Vector; V(x, y, z) solo per bm.verts.new, mai dentro gli attrezzi. ' +
-    'Ogni pezzo si chiude con oggetto(nome, bm, raccordo_mm) e diventa un file GLB. Risponde con percorsi, triangoli e ingombri; poi mostra_ologramma con forma file e centra false.',
+    'Ogni pezzo si chiude con oggetto(nome, bm, raccordo_mm) e diventa un file GLB. Risponde con percorsi, triangoli e ingombri; poi mcp__mac__mostra_ologramma con forma file e centra false.',
   inputSchema: { type: 'object', properties: {
     nome: { type: 'string', pattern: NOME_BLENDER.source, description: 'il modello: «ventola», «staffa-motore»; lo stesso nome fa una versione nuova' },
     script: { type: 'string', description: 'Python per Blender, al massimo 100.000 caratteri' },
@@ -917,7 +932,7 @@ async function handle(msg) {
         serverInfo: { name: 'nexus-mac', version: '1.0.0' },
         instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
           'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda». ' +
-          'Gli oggetti in 3D si mostrano con mostra_ologramma, il meteo con mostra_meteo.',
+          'Gli oggetti in 3D si costruiscono con mcp__mac__costruisci_in_blender e si mostrano con mcp__mac__mostra_ologramma, il meteo con mcp__mac__mostra_meteo. Ogni strumento si chiama col nome intero.',
       } });
     case 'ping':
       return reply({ result: {} });
