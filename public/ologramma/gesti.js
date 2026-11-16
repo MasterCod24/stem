@@ -9,7 +9,9 @@
 // - pizzico fermo per presa_ms: 'afferra' dove l'indice puntava prima di chiudersi, poi 'sposta', e aprendo le dita
 //   'lascia', oppure 'lancia' se in quel momento la mano corre oltre lancio_mm_s;
 // - pizzico breve e fermo: 'afferra' e 'lascia' insieme, cioè un clic che seleziona.
-// Due mani: due pizzichi fanno 'zoom', due palmi aperti 'esplodi'. scena.js non sa dire se sotto il cursore c'è un
+// Due mani: due pizzichi fanno 'zoom', due palmi aperti 'esplodi', due pugni chiusi tenuti per ricomponi_ms 'ricomponi'
+// (richiesta di Tony del 16/11: i pezzi spostati restano dove li lascia, e tornano a posto solo con un gesto apposta).
+// scena.js non sa dire se sotto il cursore c'è un
 // pezzo, quindi ruotare e afferrare si distinguono dal tempo: chi vuole ruotare si muove subito.
 //
 // Sopra i gesti c'è una macchina a tre fasi, una sola per tutte le mani (evento 'stato'):
@@ -55,6 +57,8 @@ export const PREDEFINITI = Object.freeze({
   dito_steso: 1.5,      // dito steso: la punta dista dal polso più di 1,5 volte la sua nocca (piegato è sotto 1,1)
   esplodi_palmi: 3,     // allargare i palmi di 3 palmi porta l'esploso da 0 a 1
   esplodi_soglia: 0.2,  // palmi prima di partire: due mani aperte e ferme non esplodono
+  dito_piegato: 1.1,    // dito chiuso nel pugno: la punta dista dal polso meno di 1,1 volte la sua nocca
+  ricomponi_ms: 500,    // due pugni chiusi tenuti così a lungo: ricomponi. Scelto il 16/11, non misurato sulle mani di Tony
 });
 
 const DITA = [[5, 8], [9, 12], [13, 16], [17, 20]]; // nocca e punta di indice, medio, anulare e mignolo
@@ -195,6 +199,9 @@ export function createGesti(opzioni) {
     // aperto. Il pizzico invece resta: davanti a un portatile si pizzica col palmo in giù, cioè di profilo, e pollice
     // e indice si vedono bene.
     tr.aperta = !tr.pizzico && !tr.profilo && DITA.every(([n, p]) => d(0, p) > o.dito_steso * d(0, n));
+    // Il pugno: le quattro dita piegate. Il pollice non conta: in un pugno il rapporto del pizzico sta vicino alla soglia
+    // (0,27 contro 0,25 sulle foto vere), quindi un pugno può valere anche come pizzico, e i pugni passano prima dello zoom
+    tr.pugno = !tr.profilo && DITA.every(([n, p]) => d(0, p) < o.dito_piegato * d(0, n));
     // Le due àncore che escono verso lo schermo, con la zona morta: la punta dell'indice e il centro del palmo
     let gx = 0, gy = 0;
     for (const i of PALMO) { gx += tr.X[i] / 5; gy += tr.Y[i] / 5; }
@@ -233,7 +240,8 @@ export function createGesti(opzioni) {
   }
 
   function fineDue() {
-    if (due.tipo === 'zoom') due.a.consumato = due.b.consumato = true; // la mano ancora chiusa non comincia a ruotare
+    // la mano ancora chiusa non comincia a ruotare, e un pugno che si riapre non fa un clic
+    if (due.tipo === 'zoom' || due.tipo === 'ricomponi') due.a.consumato = due.b.consumato = true;
     due = null;
   }
 
@@ -245,13 +253,18 @@ export function createGesti(opzioni) {
   };
 
   function dueMani(A, B, out) {
-    const zoom = A.pizzico && B.pizzico, esplodi = A.aperta && B.aperta;
-    if (due && !(due.tipo === 'zoom' ? zoom : esplodi)) fineDue();
+    const pugni = A.pugno && B.pugno, zoom = !pugni && A.pizzico && B.pizzico, esplodi = !pugni && A.aperta && B.aperta;
+    if (due && !(due.tipo === 'zoom' ? zoom : due.tipo === 'esplodi' ? esplodi : pugni)) fineDue();
     if (!due) {
-      if ((!zoom && !esplodi) || !A.dentro || !B.dentro) return; // un gesto a due mani parte solo con tutte e due nella zona attiva
+      if ((!zoom && !esplodi && !pugni) || !A.dentro || !B.dentro) return; // un gesto a due mani parte solo con tutte e due nella zona attiva
       chiudiUna(A, out); chiudiUna(B, out);
+      if (pugni) { due = { tipo: 'ricomponi', a: A, b: B, t0: ultimo, fatto: false, partito: false }; return; }
       const tipo = zoom ? 'zoom' : 'esplodi';
       due = { tipo, a: A, b: B, rif: misuraDue(tipo, A, B), partito: zoom };
+      return;
+    }
+    if (due.tipo === 'ricomponi') { // una volta sola per pugno: per ricomporre di nuovo si riaprono le mani
+      if (!due.fatto && ultimo - due.t0 >= o.ricomponi_ms) { due.fatto = true; out.push({ tipo: 'ricomponi' }); }
       return;
     }
     const m = misuraDue(due.tipo, A, B);
@@ -394,7 +407,7 @@ export function createGesti(opzioni) {
   function stato() {
     return {
       fase, due: due ? due.tipo : null,
-      mani: tracce.map((tr) => ({ id: tr.id, lato: tr.lato, rapporto: tr.r, pizzico: tr.pizzico, aperta: tr.aperta, stabile: tr.n >= o.stabile, modo: tr.modo, consumato: tr.consumato,
+      mani: tracce.map((tr) => ({ id: tr.id, lato: tr.lato, rapporto: tr.r, pizzico: tr.pizzico, aperta: tr.aperta, pugno: Boolean(tr.pugno), stabile: tr.n >= o.stabile, modo: tr.modo, consumato: tr.consumato,
         inclinazione: tr.inclinazione, profilo: tr.profilo, dentro: tr.dentro })),
     };
   }

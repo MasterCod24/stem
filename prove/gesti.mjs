@@ -31,7 +31,9 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 // s: { x, y } polso in coordinate normalizzate, r rapporto del pizzico voluto, lato, rumore (σ normalizzata),
 // imb e bec: la mano girata di tanti gradi attorno all'asse verticale (imbardata) e poi a quello orizzontale (beccheggio).
 // La z esce come quella di MediaPipe: origine al polso, con la scala della x (mm diviso la larghezza dell'immagine).
-function mano({ x, y, r = 1.2, lato = 'Right', rumore = 0, imb = 0, bec = 0 }) {
+// pugno da 0 (mano aperta) a 1 (le quattro dita chiuse sul palmo); pr è il rapporto pollice-indice dentro il pugno.
+// In seq() pugno va messo anche nello stato di partenza, se no l'interpolazione dà NaN e la mano resta aperta.
+function mano({ x, y, r = 1.2, lato = 'Right', rumore = 0, imb = 0, bec = 0, pugno = 0, pr = 0.6 }) {
   const p = BASE.map(([a, b]) => [a * K, b * K]);
   // l'indice si piega verso il pollice mentre il pizzico si chiude: 7→8 gira attorno a 7, fino a 15°, la lunghezza resta
   const phi = -0.26 * (1 - Math.min(r, 1.2) / 1.2), c = Math.cos(phi), s = Math.sin(phi);
@@ -41,6 +43,13 @@ function mano({ x, y, r = 1.2, lato = 'Right', rumore = 0, imb = 0, bec = 0 }) {
   const L = dist(p[5], p[6]) + dist(p[6], p[7]) + dist(p[7], p[8]), u = dist(p[4], p[8]);
   p[4] = [p[8][0] + ((p[4][0] - p[8][0]) / u) * r * L, p[8][1] + ((p[4][1] - p[8][1]) / u) * r * L];
   p[3] = [(p[2][0] + p[4][0]) / 2, (p[2][1] + p[4][1]) / 2];
+  if (pugno > 0) { // le dita si chiudono verso il polso (l'origine); il pollice si appoggia sull'indice chiuso
+    const lerp = (a, b) => [a[0] + (b[0] - a[0]) * pugno, a[1] + (b[1] - a[1]) * pugno];
+    for (const k of [5, 9, 13, 17]) [0.98, 0.82, 0.72].forEach((f, j) => { p[k + 1 + j] = lerp(p[k + 1 + j], [p[k][0] * f, p[k][1] * f]); });
+    const Lf = dist(p[5], p[6]) + dist(p[6], p[7]) + dist(p[7], p[8]);
+    p[4] = lerp(p[4], [p[8][0] - pr * Lf, p[8][1]]);
+    p[3] = [(p[2][0] + p[4][0]) / 2, (p[2][1] + p[4][1]) / 2];
+  }
   const sx = lato === 'Left' ? -1 : 1; // la sinistra è lo specchio della destra
   const n = () => (rumore ? rumore * gauss() : 0);
   const ci = Math.cos((imb * Math.PI) / 180), si = Math.sin((imb * Math.PI) / 180), cb = Math.cos((bec * Math.PI) / 180), sb = Math.sin((bec * Math.PI) / 180);
@@ -615,6 +624,33 @@ prova('ogni numero in uscita è finito, e x e y stanno fra 0 e 1', numeriCattivi
     dettagli = `${dati.length} B, sha256 ${impronta.slice(0, 16)}…`;
   }
   prova('mani.js si importa in Node e MODELLO_MANI coincide col file', ok, dettagli);
+}
+
+// Ricomponi: due pugni chiusi tenuti per ricomponi_ms (16/11, richiesta di Tony) -------------------------------------
+{
+  const pugni = (tieni, opz = {}, sx = {}) => dueMani(
+    seq({ x: 0.6, y: 0.75, r: 1.2, pugno: 0, ...opz }, [8, {}], [4, { pugno: 1 }], [tieni, {}], [4, { pugno: 0 }], [10, {}]),
+    seq({ x: 0.4, y: 0.75, r: 1.2, pugno: 0, lato: 'Left', ...opz, ...sx }, [8, {}], [4, { pugno: 1 }], [tieni, {}], [4, { pugno: 0 }], [10, {}]));
+  const tieni = Math.ceil(700 / DT), breve = Math.ceil(300 / DT);
+  let ev = gira(pugni(tieni), SEMPRE).ev;
+  const g = gesti(ev).filter((e) => e.tipo !== 'sposta');
+  prova('due pugni tenuti 0,7 s: un ricomponi solo, e niente altro', conta(ev, 'ricomponi') === 1 && g.every((e) => e.tipo === 'ricomponi'), `gesti: ${nomi(ev).join(',') || 'nessuno'}`);
+  const iR = ev.find((e) => e.tipo === 'ricomponi')?.i, chiusi = 8 + 4;
+  prova('arriva mezzo secondo dopo che i pugni si chiudono', iR >= chiusi + Math.floor(P.ricomponi_ms / DT) - 3 && iR <= chiusi + Math.ceil(P.ricomponi_ms / DT) + 2, `al fotogramma ${iR}, pugni chiusi al ${chiusi}`);
+  ev = gira(pugni(breve), SEMPRE).ev;
+  prova('due pugni per 0,3 s non ricompongono', conta(ev, 'ricomponi') === 0, `gesti: ${nomi(ev).join(',') || 'nessuno'}`);
+  ev = gira(pugni(tieni, { pr: 0.15 }), SEMPRE).ev;
+  prova('pugni che valgono anche come pizzico: ricomponi e non zoom', conta(ev, 'ricomponi') === 1 && conta(ev, 'zoom') === 0, `gesti: ${[...new Set(nomi(ev))].join(',')}`);
+  const unoSolo = dueMani(seq({ x: 0.6, y: 0.75, r: 1.2, pugno: 0 }, [8, {}], [4, { pugno: 1 }], [tieni, {}]), seq({ x: 0.4, y: 0.75, r: 1.2, pugno: 0, lato: 'Left' }, [8, {}], [4, {}], [tieni, {}]));
+  ev = gira(unoSolo, SEMPRE).ev;
+  prova('un pugno e una mano aperta non ricompongono', conta(ev, 'ricomponi') === 0, `gesti: ${nomi(ev).join(',') || 'nessuno'}`);
+  // con l'innesco: mani che arrivano già chiuse non mostrano il palmo, quindi restano a riposo e non fanno niente
+  ev = gira(dueMani(seq({ x: 0.6, y: 0.75, r: 1.2, pugno: 1 }, [tieni + 8, {}]), seq({ x: 0.4, y: 0.75, r: 1.2, pugno: 1, lato: 'Left' }, [tieni + 8, {}]))).ev;
+  prova('a riposo i pugni non ricompongono', conta(ev, 'ricomponi') === 0 && fasi(ev).every((f) => f === 'riposo'), `fasi: ${fasi(ev).join(' → ')}`);
+  ev = gira(pugni(tieni), undefined, undefined, 1000, PRE).ev; // prima il palmo, poi i pugni
+  prova('dopo il palmo mostrato, i pugni ricompongono', conta(ev, 'ricomponi') === 1, `fasi: ${fasi(ev).join(' → ')}; gesti: ${nomi(ev).join(',')}`);
+  ev = gira(pugni(tieni), { ...SEMPRE, ricomponi_ms: 2000 }).ev;
+  prova('la prova sa fallire: con ricomponi_ms 2 s gli stessi 0,7 s non ricompongono', conta(ev, 'ricomponi') === 0);
 }
 
 console.log(`\n${passati} PASS, ${falliti} FAIL`);

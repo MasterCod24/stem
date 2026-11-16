@@ -99,7 +99,7 @@ Vincolo: { pezzo: id, faccia: '+x'|'-x'|'+y'|'-y'|'+z'|'-z', tipo: 'incastro' }
   modo: 'ologramma'|'solido'|'raggi-x'|'densita'|'sforzi',
   selezionato: id|null,
   isolato: id|null,
-  rotazione_auto: boolean
+  rotazione_auto: boolean // dal 16/11 resta nello stato ma la scena lo ignora, e gli strumenti del cervello non lo hanno più
 }
 ```
 La vista la cambiano il cervello (attraverso il server) e l'HUD, ma in locale. I cambi fatti nell'HUD con mani, mouse o tastiera non tornano al server: solo togliere e rimettere un pezzo ci tornano. L'HUD applica solo i campi della vista che il server ha cambiato, così un modo scelto a mano resta.
@@ -220,7 +220,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
   get aperto(),
   fotogramma(t, dt),    // dal loop di nexus.js, a ogni fotogramma, prima del render dell'HUD
   dopoRender(),         // subito dopo il render, nello stesso fotogramma: qui si legge il canvas per la foto (preserveDrawingBuffer è false)
-  comando(nome, valore),// 'esploso' 0..1 | 'sezione' {asse, posizione, verso}|null | 'modo' | 'seleziona' id | 'isola' id | 'ruota' {dx, dy} | 'zoom' fattore | 'reset' | 'rotazione_auto' bool
+  comando(nome, valore),// 'esploso' 0..1 | 'sezione' {asse, posizione, verso}|null | 'modo' | 'seleziona' id | 'isola' id | 'ruota' {dx, dy} | 'zoom' fattore | 'reset' | 'rotazione_auto' bool (ignorato)
   puntatore(ev),        // eventi del mouse: trascina per ruotare, rotella per lo zoom, clic per selezionare
   gesto(g),             // i gesti di gesti.js; {tipo:'stato', fase} mostra «mani: mostra il palmo» (riposo) o «mani pronte» nella barra, e 'spente' (da nexus.js) la svuota
   ridimensiona(),
@@ -262,7 +262,11 @@ Gesto =
 | {tipo:'esplodi', delta}               // due palmi aperti che si allargano o si stringono
 | {tipo:'afferra', x, y} | {tipo:'sposta', dx, dy} | {tipo:'lascia'}
 | {tipo:'lancia', x, y, vx, vy}         // rilascio veloce di una presa: il pezzo preso si toglie
+| {tipo:'ricomponi'}                    // due pugni chiusi tenuti per ricomponi_ms (500): una volta per pugno
 ```
+- **Si muove solo quando lo muove Tony** (richiesta del 16/11). La scena non gira più da sola (`rotazione_auto` si ignora), e un pezzo spostato, con le mani (`afferra`, `sposta`, `lascia`) o col mouse, resta dove l'ha lasciato. Prima tornava a posto in circa mezzo secondo. Tornano a posto tutti insieme, in circa mezzo secondo e con l'esploso che si chiude, solo con `ricomponi`: due pugni chiusi tenuti mezzo secondo, con le mani già sveglie (palmo mostrato prima). Lo fa anche il tasto R, che rimette pure la camera, ma di colpo. I pezzi tolti restano tolti: si rimettono con Z o a voce.
+- **Il pugno:** le quattro dita piegate, cioè ogni punta più vicina al polso di 1,1 volte la sua nocca (`dito_piegato`), e la mano non di profilo. Il pollice non conta, perché in un pugno il rapporto del pizzico sta vicino alla soglia: due pugni passano prima dello zoom, e quando si riaprono le mani sono consumate, così non fanno un clic.
+- **Il mouse sul pezzo selezionato** lo trascina nel piano dello schermo, come `sposta`; altrove il trascinamento gira il modello come prima. `prove/ologramma-pezzi.mjs` prova tutto questo sulla scena vera.
 - `stato()`: la fase e lo stato di ogni mano (anche `inclinazione` in gradi, `profilo`, `dentro` la zona attiva), senza i punti, per le prove e il lab.
 - Ruotare e afferrare stanno tutti e due sul pizzico di una mano: un pizzico che si muove entro 350 ms ruota, uno fermo per 350 ms afferra, uno breve e fermo è un clic che seleziona. Si afferra dove l'indice puntava prima di chiudersi (entro 300 ms).
 - `lancia` parte solo da una presa: una mano che sparisce dà `lascia`. Un solo cursore per fotogramma; `mano` vale 'Left', 'Right' o null.

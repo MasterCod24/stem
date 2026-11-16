@@ -371,6 +371,9 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
   const cam = { yaw: -0.62, pitch: 0.3, zoom: 1, centro: new THREE.Vector3(), raggio: 1, pronta: false };
   const misureModello = { centro: new THREE.Vector3(), raggio: 1, D1: 1 };
   let gruppi = [], etichetteGruppi = [], zona = null, trascina = null, presa = null, sopra = null, ultimoSopra = 0, ultimoCursore = 0;
+  // I pezzi spostati restano dove Tony li lascia (16/11): tornano a posto solo con ricomponi(), cioè col gesto dei due
+  // pugni chiusi, o di colpo col tasto R. Prima un pezzo lasciato tornava da solo in circa mezzo secondo.
+  let ricompone = false;
   const foto = { attesa: null, pronto: 0, inCorso: false };
   // soggetto: l'id del pezzo quotato, '*' per il modello intero o null; scelta: per asse lo spigolo e il lato della quota
   const quota = { soggetto: null, alfa: 0, scelta: [null, null, null], testi: ['', '', ''], carattere: 0 };
@@ -1015,7 +1018,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     anim.apertura += dt;
     anim.globale = anim.chiusura !== null ? 1 - liscio(0, 0.35, anim.chiusura) : 1;
     anim.esploso += (vista.esploso - anim.esploso) * (1 - Math.exp(-dt * 4));
-    if (vista.rotazione_auto && !trascina) cam.yaw += dt * 0.25;
+    // la rotazione automatica non c'è più (16/11, Tony): l'ologramma lo muove solo lui. Il campo resta nello stato e si ignora
     const e = anim.esploso, s1 = liscio(0, 0.6, e), s2 = liscio(0.4, 1, e), D1 = misureModello.D1, R0 = misureModello.raggio;
     const kAlfa = 1 - Math.exp(-dt * 7), kPresa = 1 - Math.exp(-dt * 5);
     comuni.uFuoco.value += ((vista.selezionato ? 1 : 0) - comuni.uFuoco.value) * kAlfa;
@@ -1025,7 +1028,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       if (Math.abs(R.alfa - R.alfaT) < 0.002) R.alfa = R.alfaT;
       const ent = liscio(R.atterra - 0.42, R.atterra, anim.apertura); // entrata: arriva dalla sua direzione di esploso
       if (R.volo) { R.volo.t += dt; R.voloOff.addScaledVector(R.volo.v, dt); if (R.volo.t > 0.8) R.volo = null; }
-      if (presa?.id !== R.id) R.presaOff.multiplyScalar(1 - kPresa);
+      if (ricompone) R.presaOff.multiplyScalar(1 - kPresa);
       R.off.copy(R.dir1).multiplyScalar(D1 * s1).addScaledVector(R.dir2, R.D2 * s2).add(R.presaOff).add(R.voloOff);
       if (ent < 1) R.off.addScaledVector(R.dir1.lengthSq() ? R.dir1 : R.dir2, -(1 - ent) * (1 - ent) * 0.35 * R0);
       R.nodo.position.copy(R.base).add(R.off);
@@ -1036,6 +1039,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       u.uSel.value += (sel - u.uSel.value) * kAlfa; R.mat.spigoli.uniforms.uSel.value = u.uSel.value;
       trasparenza(R);
     }
+    if (ricompone && [...pezzi.values()].every((R) => R.presaOff.lengthSq() < 0.01)) { for (const R of pezzi.values()) R.presaOff.set(0, 0, 0); ricompone = false; }
     // scansione dell'apertura: una fascia luminosa che sale sul modello
     if (!box.isEmpty()) {
       const k = liscio(0, 1.5, anim.apertura);
@@ -1195,12 +1199,20 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     if (!aperto || !ev) return;
     const x = Number(ev.clientX), y = Number(ev.clientY);
     switch (ev.type) {
-      case 'pointerdown': if (finito(x) && finito(y)) trascina = { x, y, id: ev.pointerId, mosso: false }; break;
+      case 'pointerdown': { // sul pezzo selezionato si trascina il pezzo, altrove si gira il modello
+        if (!finito(x) || !finito(y)) break;
+        const sel = vista.selezionato && pezzi.get(vista.selezionato);
+        trascina = { x, y, id: ev.pointerId, mosso: false, pezzo: sel && !sel.tolto && sottoPunto(x, y) === sel.id ? sel.id : null };
+        break;
+      }
       case 'pointermove':
         if (trascina && ev.pointerId === trascina.id) {
           const dx = x - trascina.x, dy = y - trascina.y;
           if (!trascina.mosso && Math.hypot(dx, dy) > 4) trascina.mosso = true;
-          if (trascina.mosso) { ruota(dx / innerWidth, dy / innerHeight); trascina.x = x; trascina.y = y; }
+          if (trascina.mosso) {
+            if (trascina.pezzo) spostaPezzo(pezzi.get(trascina.pezzo), dx / innerWidth, dy / innerHeight); else ruota(dx / innerWidth, dy / innerHeight);
+            trascina.x = x; trascina.y = y;
+          }
         }
         break;
       case 'pointerup':
@@ -1211,6 +1223,24 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       case 'wheel': if (finito(ev.deltaY)) { ev.preventDefault?.(); zoom(Math.exp(-Math.max(-300, Math.min(300, ev.deltaY)) * 0.0015)); } break;
       case 'dblclick': { const id = sottoPunto(x, y); isola(id && id !== vista.isolato ? id : null); break; }
     }
+  }
+
+  // Sposta un pezzo nel piano dello schermo: dx e dy in frazioni dello schermo, dalle mani o dal mouse
+  function spostaPezzo(R, dx, dy) {
+    if (!R || !finito(dx) || !finito(dy)) return;
+    const alto = 2 * camera.position.distanceTo(cam.centro) * Math.tan((camera.fov * GRADI) / 2); // mondo visibile in altezza
+    v1.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(Math.max(-1, Math.min(1, dx)) * alto * (innerWidth / innerHeight));
+    v2.setFromMatrixColumn(camera.matrixWorld, 1).multiplyScalar(-Math.max(-1, Math.min(1, dy)) * alto);
+    R.presaOff.add(v1).add(v2);
+  }
+
+  // Ricompone il modello: i pezzi spostati tornano a posto in circa mezzo secondo e l'esploso si chiude
+  function ricomponi() {
+    presa = null; cursore.classList.remove('presa');
+    const spostati = [...pezzi.values()].some((R) => R.presaOff.lengthSq() >= 0.01);
+    if (spostati) ricompone = true;
+    if (vista.esploso > 0) impostaEsploso(0, true);
+    else if (spostati) sfx?.esplodi?.(false);
   }
 
   // I gesti di gesti.js: coordinate 0..1 dello schermo. Muovono la camera come il mouse.
@@ -1236,15 +1266,8 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
         presa = { id }; seleziona(id); cursore.classList.add('presa'); sfx?.afferra?.();
         break;
       }
-      case 'sposta': {
-        const R = presa && pezzi.get(presa.id), dx = Number(g.dx), dy = Number(g.dy);
-        if (!R || !finito(dx) || !finito(dy)) return;
-        const alto = 2 * camera.position.distanceTo(cam.centro) * Math.tan((camera.fov * GRADI) / 2); // mondo visibile in altezza
-        v1.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(Math.max(-1, Math.min(1, dx)) * alto * (W / H));
-        v2.setFromMatrixColumn(camera.matrixWorld, 1).multiplyScalar(-Math.max(-1, Math.min(1, dy)) * alto);
-        R.presaOff.add(v1).add(v2);
-        break;
-      }
+      case 'sposta': spostaPezzo(presa && pezzi.get(presa.id), Number(g.dx), Number(g.dy)); break;
+      case 'ricomponi': ricomponi(); break;
       case 'lascia': presa = null; cursore.classList.remove('presa'); break;
       case 'lancia': { // solo il pezzo preso: un lancia senza presa non toglie quello che passa sotto il cursore
         const id = presa?.id, R = id && pezzi.get(id);

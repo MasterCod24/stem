@@ -15,6 +15,21 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 16/11/2026)
+- **L'ologramma si muove solo quando lo muove Tony: richiesta del 16/11, costruito e provato, mai usato da lui.**
+  - Non gira più da solo: la scena ignora `rotazione_auto`, che è sparita dagli strumenti del cervello.
+  - Un pezzo spostato con le mani, o selezionato e trascinato col mouse, resta dove lo lascia; prima tornava a posto in circa mezzo secondo.
+  - Tutto torna a posto, con l'esploso chiuso, solo con due pugni chiusi tenuti mezzo secondo (`ricomponi` in `gesti.js`), o col tasto R.
+  - **Scelte mie, da guardare con Tony:**
+    - il gesto: due pugni, perché non si confonde con quelli che c'erano (pizzico, palmi aperti);
+    - i 500 ms, e la soglia del dito piegato a 1,1;
+    - le mani devono essere già sveglie: prima il palmo, poi i pugni;
+    - i pezzi lanciati via restano tolti.
+  - **Il rischio:** sulle foto vere un pugno ha il rapporto del pizzico a 0,27, contro la soglia di 0,25. Mentre le mani si chiudono, un pizzico di un attimo può partire prima che i pugni siano due: al più un clic che seleziona un pezzo. Sulle mani di Tony non è provato.
+  - **Prove:**
+    - `prove/gesti.mjs` 64 su 64;
+    - `prove/ologramma-pezzi.mjs` 8 su 8;
+    - `prove/mani-foto.mjs` 10 su 10: il pugno vero è un pugno; indice in su, vittoria e palmi aperti no. Il pollice in su vale come pugno, quindi due pollici in su ricompongono;
+    - `prove/ologramma-hud.mjs` 66 su 68. I due falliti sono gli fps con le mani (39–41, contro 45), uguali sulla versione di prima delle modifiche: intanto girava il Nexus vero, con il suo HUD.
 - **Blender per gli ologrammi: costruito e provato, mai usato da Tony** (16/11). Tony ha chiesto che Nexus faccia gli ologrammi con Blender e con le sue regole: niente primitive, mesh da vertici e curve, dettagli veri, almeno 45 fps. Lo strumento è `costruisci_in_blender`: come funziona e la gabbia stanno in **Come è fatto**, sotto `mac/`.
   - **Il confronto che ha convinto Tony** (16/11): la ventola del turbofan di prova, a forme semplici, accanto alla stessa fatta in Blender.
     - Com'è fatta: pale NACA svergolate da 30° a 62°, raccordi da 14 mm, code di rondine con 0,4 mm di gioco, ogiva cava con nervature.
@@ -258,8 +273,8 @@ Restano decisioni di Tony, non lavoro sul codice:
   - `ologramma/`: `forme.js` e `materiali.js` (anche nel server), `geometrie.js`, `scena.js` (la scena), `gesti.js` e `mani.js` (MediaPipe 0.10.35 in locale). Il colore degli sforzi è lo sforzo diviso lo snervamento: blu se è lontano, rosso dove il materiale snerva;
   - in `nexus.js`, con l'ologramma aperto:
     - tasti: E esplodi; X raggi X, D densità, F sforzi (premuti di nuovo tornano all'ologramma); O ologramma, L solido; S sezione lungo x, y, z o niente, con le frecce che la spostano; R ritorna alla vista di partenza; Z rimette l'ultimo pezzo tolto; M accende o spegne le mani (la scelta resta in `localStorage` `nexus-mani`); Esc chiude tutto;
-    - mouse: trascinare ruota, la rotella fa lo zoom, il clic sceglie un pezzo e il doppio clic lo isola;
-    - mani: un pizzico con una mano ruota, con due fa lo zoom, due palmi aperti esplodono, e un pezzo afferrato e lanciato si toglie;
+    - mouse: trascinare ruota, ma sul pezzo selezionato lo sposta; la rotella fa lo zoom, il clic sceglie un pezzo e il doppio clic lo isola;
+    - mani: un pizzico con una mano ruota, con due fa lo zoom, due palmi aperti esplodono, un pezzo afferrato si sposta e resta dove lo lasci, lanciato si toglie, e due pugni chiusi per mezzo secondo ricompongono tutto;
   - `meteo/`: la vista meteo, caricata alla prima apertura.
     - `vista.js`: moduli, timeline, mouse, tasti e gesti. Una linea del tempo comanda tutto, da −2 h a +12 h: i moduli mostrano il tempo a quell'ora, il globo la mappa del radar di allora e il vento di quell'ora.
     - `globo.js`: il globo, con three.js nello `strato` del nucleo, come l'ologramma. Il riquadro `.m-globo` è trasparente: prende mouse e misure, e sopra ha il canvas delle scritte. Il globo resta nel riquadro con lo scissor e una sfumatura di 28 pixel.
@@ -328,6 +343,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Memoria:** una prova con il cervello vero scrive nella memoria vera di Nexus. Prima copia la cartella `memory/` del cervello, dopo confrontala e rimettila com'era. Per provare la chiusura dell'HUD senza HUD: `NEXUS_APP=1 NEXUS_NO_OPEN=1 node server.mjs`, un ciclo di `curl` su `/api/status?hud=1` ogni 5 secondi, la domanda con `curl` su `/api/ask`, poi si ferma il ciclo. Il registro scrive `[memoria] rileggo la conversazione` e, dopo un riavvio, `[cervello] riprendo la conversazione di prima`.
 - **Agenda:** con `?debug`, `nexusAsk('ricordami tra due minuti di …')`. Il compito compare in `runtime/agenda.json`, e quando Nexus lo dice il registro del server scrive `[agenda] parlo per primo`. Gli strumenti da soli si provano anche senza cervello, con `ricorda` nella prova a mano di `mac/LEGGIMI-mac.md`.
 - **Ologrammi:** le prove stanno in `prove/`, non vogliono Nexus acceso e vanno lanciate una alla volta, perché hanno porte fisse.
+  - `node prove/ologramma-pezzi.mjs` (circa 20 s, porte 4433 e 9564): la scena vera sul turbofan di prova, in un Chrome headless. Controlla che il modello non giri da solo, che i pezzi spostati con le mani e col mouse restino dove sono, e che `ricomponi` li rimetta a posto chiudendo l'esploso.
   - `node prove/ologramma-forme.mjs`, `ologramma-stato.mjs`, `struttura.mjs` (25 s), `ologramma-geometrie.mjs`, `gesti.mjs` e `fea/test-trave.mjs --mg 4 8`.
   - `node prove/mani-foto.mjs <cartella>`: MediaPipe vero sulla GPU, su foto vere di mani (porte 4491 e 9591). Le foto vanno in `runtime/modelli/` e si scaricano solo se mancano.
   - `node prove/ologramma-server.mjs <cartella>`: il server vero sulle porte 4422, 8932, 9334 e 4498, con un cervello finto e un Chrome headless suo. Dura circa 30 s.

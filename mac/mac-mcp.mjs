@@ -677,7 +677,6 @@ const VISTA = { type: 'object', description: 'parziale: solo i campi da cambiare
   modo: { type: 'string', enum: MODI, description: 'raggi-x mostra i pezzi interni; densita colora per materiale; sforzi colora in proporzione allo sforzo diviso lo snervamento, dal blu (lontano) al rosso (snerva), dopo analizza_struttura' },
   selezionato: { type: ['string', 'null'], description: 'id del pezzo evidenziato' },
   isolato: { type: ['string', 'null'], description: 'id del pezzo mostrato da solo' },
-  rotazione_auto: { type: 'boolean', description: 'gira da solo' },
 } };
 const MISURE = 'In mm, secondo la forma. scatola {x, y, z}: i lati. cilindro {r, h}: asse Y. tubo {r, r_interno, h}. sfera {r}. ' +
   'cono {r, r_cima, h}: r in basso, r_cima in alto (0 è una punta). toro {R, r}: anello nel piano XZ, R dell\'anello e r della sezione. ' +
@@ -735,7 +734,7 @@ TOOLS.push({
 });
 TOOLS.push({
   name: 'modifica_ologramma',
-  description: 'Cambia l\'ologramma: pezzi (cambia, aggiungi, togli, rimetti), vista (esploso, sezione, modo, selezionato, isolato, rotazione_auto), carichi, vincoli, titolo e descrizione. ' +
+  description: 'Cambia l\'ologramma: pezzi (cambia, aggiungi, togli, rimetti), vista (esploso, sezione, modo, selezionato, isolato), carichi, vincoli, titolo e descrizione. ' +
     'Ogni modifica riapre un ologramma chiuso (per riaprirlo e basta: vista {}); chiudi true lo chiude. Senza campi dice com\'è adesso, anche quello che Tony ha tolto o chiuso. ' +
     'Se c\'era un\'analisi e cambiano pezzi, materiali, carichi o vincoli, gli sforzi si ricalcolano da soli. Risponde con il riassunto e la foto.',
   inputSchema: { type: 'object', properties: {

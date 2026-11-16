@@ -152,7 +152,7 @@ try {
       const u2 = d2(img[4], img[8]) / d2(img[0], img[9]), u3 = d3(img[4], img[8]) / d3(img[0], img[9]), uW = d3(W3[4], W3[8]) / d3(W3[0], W3[9]);
       const i2 = d2(img[4], img[8]) / indice(img, d2), iW = d3(W3[4], W3[8]) / indice(W3, d3);
       const s = st[i] || {};
-      const riga = { nome, mano: i, lato: r.lati[i], incImg, incW, u2, u3, uW, i2, iW, aperta: s.aperta, pizzico: s.pizzico, rapporto: s.rapporto, profilo: s.profilo, incGesti: s.inclinazione };
+      const riga = { nome, mano: i, lato: r.lati[i], incImg, incW, u2, u3, uW, i2, iW, aperta: s.aperta, pugno: s.pugno, pizzico: s.pizzico, rapporto: s.rapporto, profilo: s.profilo, incGesti: s.inclinazione };
       righe.push(riga);
       const f = (v, d = 2) => v.toFixed(d).replace('.', ',');
       console.log(`${nome} · ${i} · ${riga.lato} | ${f(incImg, 0)}° / ${f(incW, 0)}° | ${f(u2)}, ${f(u3)}, ${f(uW)} | ${f(i2)}, ${f(iW)} | ${s.aperta ? 'sì' : 'no'}${s.profilo ? ' (profilo)' : ''} | ${s.pizzico ? 'sì' : 'no'} (${f(s.rapporto ?? NaN)})`);
@@ -172,6 +172,12 @@ try {
   // nessuna posa chiusa è un palmo aperto
   const chiuse = ['fist.jpg', 'thumb_up.jpg', 'pointing_up.jpg', 'victory.jpg'].filter((n) => presenti.includes(n));
   esito(chiuse.every((n) => di(n).every((r) => !r.aperta)), 'pugno, pollice in su, indice in su e vittoria non sono palmi aperti', chiuse.map((n) => `${n} ${di(n).map((r) => (r.aperta ? 'aperta' : 'no')).join('/')}`).join(', '));
+  // il pugno del gesto «ricomponi» (16/11): il pugno vero lo è; indice in su, vittoria e palmi aperti no. Il pollice in su
+  // ha le quattro dita chiuse, quindi vale come pugno: per ricomporre ne servono due, e lo si dice invece di nasconderlo
+  if (presenti.includes('fist.jpg')) esito(di('fist.jpg').every((r) => r.pugno), 'il pugno vero è un pugno per gesti.js', di('fist.jpg').map((r) => `pugno ${r.pugno}`).join(', '));
+  const nonPugni = ['pointing_up.jpg', 'victory.jpg', 'prova-mani.jpg', 'left_hands.jpg'].filter((n) => presenti.includes(n));
+  esito(nonPugni.every((n) => di(n).every((r) => !r.pugno)), 'indice in su, vittoria e palmi aperti non sono pugni', nonPugni.map((n) => `${n} ${di(n).map((r) => (r.pugno ? 'pugno' : 'no')).join('/')}`).join(', ')
+    + (presenti.includes('thumb_up.jpg') ? `; pollice in su: ${di('thumb_up.jpg').map((r) => (r.pugno ? 'pugno' : 'no')).join('/')}` : ''));
   // i gesti OK sono pizzichi con le soglie di oggi
   const ok = ['ok-gebaar.jpg', 'ok-cc0.jpg', 'ok-sign.jpg'].filter((n) => presenti.includes(n) && di(n).length);
   if (ok.length) esito(ok.every((n) => di(n).every((r) => r.pizzico)), 'i gesti OK (pollice e indice che si toccano) sono pizzichi con le soglie di oggi', ok.map((n) => di(n).map((r) => `${n} rapporto ${r.rapporto?.toFixed(2)}`).join(', ')).join('; '));

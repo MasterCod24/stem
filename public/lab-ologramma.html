@@ -6,7 +6,7 @@
 <title>Nexus lab ologramma</title>
 <!-- Laboratorio dell'ologramma con la stessa catena dell'HUD (nucleo.js: composer con stencil, bloom con soglia 0,18)
      e i due modelli di demo.js, senza server: lo stato finto è fatto qui come lo farebbe ologramma.mjs.
-     ?demo=turbofan|staffa  ?modo=…  ?suoni (suoni al primo clic). Tasti: 1–5 modi, E esploso, S sezione, A rotazione,
+     ?demo=turbofan|staffa  ?modo=…  ?suoni (suoni al primo clic). Tasti: 1–5 modi, E esploso, S sezione,
      R reset, T cambia modello, C calcolo finto della staffa, F foto, frecce e +/− camera. Da console: window.prova. -->
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #050912; }
@@ -168,7 +168,6 @@ try {
     if (k >= '1' && k <= '5') holo.comando('modo', MODI[+k - 1]);
     else if (k === 'e') holo.comando('esploso', i.vista.esploso > 0.5 ? 0 : 1);
     else if (k === 's') { const s = i.vista.sezione, assi = [null, 'x', 'y', 'z'], a = assi[(assi.indexOf(s ? s.asse : null) + 1) % 4]; holo.comando('sezione', a ? { asse: a, posizione: centro(a), verso: 1 } : null); }
-    else if (k === 'a') holo.comando('rotazione_auto', !i.vista.rotazione_auto);
     else if (k === 'r') holo.comando('reset');
     else if (k === 't') apri(stato.titolo.startsWith('Staffa') ? 'turbofan' : 'staffa');
     else if (k === 'c') prova.analizza();
@@ -198,6 +197,11 @@ try {
     ruota: (dx, dy) => holo.comando('ruota', { dx, dy }),
     seleziona: (id) => { holo.comando('seleziona', id); return holo.info().vista.selezionato; },
     info: () => holo.info(),
+    // per prove/ologramma-pezzi.mjs: comandi, gesti e mouse come li manda nexus.js, e il centro di ogni pezzo sullo schermo
+    comando: (n, v) => holo.comando(n, v),
+    gesto: (g) => holo.gesto(g),
+    puntatore: (e) => holo.puntatore(e),
+    centri: () => Object.fromEntries(Object.entries(holo.colori()).map(([id, c]) => [id, c.centro])),
     async attendi(ms = 6000) { const da = performance.now(); while (performance.now() - da < ms) { if (holo.info().fermo) return true; await aspetta(50); } return false; },
     // una versione nuova (nessun cambio) fa scattare la foto: torna la dimensione in byte e in pixel
     async foto(ms = 5000) {
