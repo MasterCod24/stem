@@ -40,6 +40,7 @@ L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il 
 - **GIF ed esempi:** quando spiega, mostra accanto alla sfera animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
 - **Report a schermo intero:** alla fine di una ricerca che vuoi vedere, Nexus apre un report come quello di ROSE. È una griglia di note, grafici, un dato in grande, immagini e video di YouTube muti, che arrivano dal fondo e si mettono a fuoco uno alla volta, con i loro suoni, mentre lui si sposta nell'angolo in basso a destra. Le note in più si alternano ogni 9 secondi. Si chiude con `Esc`, oppure chiedendoglielo.
 - **Ologrammi:** chiedigli di mostrarti un oggetto in 3D («mostrami un motore a reazione», «fammi una staffa a L in alluminio») e lo costruisce a schermo intero, con misure in millimetri.
+  - **Blender:** le forme curve, come pale, eliche, gusci, raccordi e superfici morbide, Nexus le costruisce in Blender, da vertici e curve e mai da forme già pronte. Blender gira invisibile e chiuso in una gabbia: niente internet, niente file tuoi, niente altri programmi. I file finiscono in Documenti, nella cartella Nexus-Blender, e si aprono anche in Blender. Quei pezzi non hanno il calcolo degli sforzi.
   - **Com'è fatto davvero:** per un oggetto che esiste prima cerca in rete com'è fatto. Nella scheda di ogni pezzo trovi materiale e lavorazione. Le fonti non ci sono: se vuoi sapere da dove viene un dato, chiediglielo. Per questo la prima vista può arrivare dopo qualche minuto.
   - **Cosa ci fai:** lo giri, lo esplodi, lo tagli, guardi dentro ai raggi X e togli i pezzi, a voce («esplodilo», «taglialo a metà», «togli il coperchio»), col mouse, con la tastiera o con le mani davanti alla fotocamera.
   - **Le mani:** prima mostra il palmo aperto per un attimo, al centro dell'inquadratura: la barra passa da «mani: mostra il palmo» a «mani pronte». Dopo 4 secondi senza gesti tornano a riposo. Poi un pizzico gira il modello, con due mani lo ingrandisci, aprendo i palmi lo esplodi, e un pezzo afferrato e lanciato via si toglie.
@@ -71,7 +72,7 @@ L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il 
 - `ologramma.mjs`: lo stato degli ologrammi; `fisica/`: il calcolo degli sforzi.
 - `meteo.mjs`: le previsioni di Open-Meteo per la vista meteo, e il riassunto per il cervello.
 - `public/`: l'HUD (`nucleo.js` per la sfera e gli anelli, `sfx.js` per i suoni sintetizzati, `nexus.js` per ascolto e logica, `report.js` per il report a schermo intero, `ologramma/` per ologrammi e mani, `meteo/` per la vista meteo, il globo e il radar).
-- `mac/`: controllo del Mac (server MCP + aiutante Swift).
+- `mac/`: controllo del Mac (server MCP + aiutante Swift); `mac/blender/` la gabbia e gli attrezzi per i pezzi fatti in Blender.
 - `nexus-persona.md`: il carattere. Nexus ha una memoria sua, separata dalla repository.
 
 Prove senza microfono: `http://localhost:4321/?debug&wav=file.wav` fa ascoltare un file a Nexus.

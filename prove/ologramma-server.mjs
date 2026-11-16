@@ -199,12 +199,14 @@ if (esito(Boolean(claude), 'il processo claude del cervello è partito')) {
     'le cartelle dei documenti sono quelle della prova', dirs.join(', '));
   esito(dopo('--mcp-config') === path.join(CASA, 'mcp.json'), 'mcp.json sta nella cartella della prova');
   const cfg = JSON.parse(fs.readFileSync(path.join(CASA, 'mcp.json'), 'utf8'));
-  esito(JSON.stringify(cfg.mcpServers.mac.args) === JSON.stringify([path.join(ROOT, 'mac', 'mac-mcp.mjs'), '--porta', String(PORTA)]) && cfg.mcpServers.playwright.url.includes(`:${PW}/`),
-    'mcp.json lancia mac-mcp con --porta 4422', cfg.mcpServers.mac.args.slice(1).join(' '));
+  // --blender: i GLB di costruisci_in_blender vanno sotto i Documenti della prova, non in quelli di Tony
+  esito(JSON.stringify(cfg.mcpServers.mac.args) === JSON.stringify([path.join(ROOT, 'mac', 'mac-mcp.mjs'), '--porta', String(PORTA), '--blender', path.join(CASA, 'Documents', 'Nexus-Blender')]) && cfg.mcpServers.playwright.url.includes(`:${PW}/`),
+    'mcp.json lancia mac-mcp con --porta 4422 e i file di Blender nei Documenti della prova', cfg.mcpServers.mac.args.slice(1).join(' '));
   const cwd = (await sh('/usr/sbin/lsof', ['-a', '-p', String(claude.pid), '-d', 'cwd', '-Fn'])).split('\n').find((l) => l.startsWith('n'))?.slice(1);
   esito(cwd === fs.realpathSync(CASA), 'il cervello lavora nella cartella della prova', cwd);
   const mac = await attendi(async () => { for (const f of await figli(claude.pid)) { const x = await argomenti(f); if (x?.some((s) => s.endsWith('mac-mcp.mjs'))) return x; } return null; }, 20_000, 300);
-  esito(Boolean(mac) && mac.slice(-2).join(' ') === `--porta ${PORTA}`, 'claude ha avviato mac-mcp con la porta di prova', mac ? mac.slice(-2).join(' ') : 'non trovato in 20 s');
+  const iP = mac ? mac.indexOf('--porta') : -1;
+  esito(iP >= 0 && mac[iP + 1] === String(PORTA), 'claude ha avviato mac-mcp con la porta di prova', mac ? mac.slice(iP).join(' ') : 'non trovato in 20 s');
 }
 
 // ---------------------------------------------------------------- richieste da fuori, limiti dei corpi

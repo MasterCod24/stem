@@ -31,11 +31,23 @@ Senza `--porta` vale 4321; una porta non valida non ripiega sulla 4321, così un
 | `mostra_ologramma` | apre nell'HUD un ologramma 3D fatto di pezzi con misure in mm (forme, materiali, carichi e vincoli come in `public/ologramma/LEGGIMI-ologramma.md`); ogni pezzo può portare `materiale_vero` e `fattura` da una ricerca, e la risposta elenca i pezzi a cui mancano; `colore` («#e53935») colora il pezzo nei modi ologramma e solido |
 | `modifica_ologramma` | cambia pezzi, vista, carichi, vincoli, titolo e descrizione; `chiudi` lo chiude; senza campi dice com'è adesso |
 | `analizza_struttura` | calcola gli sforzi e aspetta il risultato fino a 60 s |
+| `costruisci_in_blender` | esegue uno script Python del cervello in Blender, in background e dentro una gabbia di `sandbox-exec`, con gli attrezzi di `blender/aiuti.py` già pronti; esporta un GLB per oggetto in `Documents/Nexus-Blender/<nome>/v<n>/` e risponde con percorsi, triangoli, quadrilateri e ingombri. Rifiuta `bpy.ops.mesh.primitive_*` e `bmesh.ops.create_*` (regola di Tony del 16/11) |
 
 I tre strumenti degli ologrammi sono client sottili: mandano `POST /api/ologramma` a `server.mjs`, che tiene lo stato,
 valida e scrive il testo, e restituiscono quel testo più la foto PNG che l'HUD ha scattato, se c'è. Gli errori del server
 arrivano al cervello così come sono. Hanno una coda loro, così un calcolo di un minuto non ferma mouse e tastiera, e «stop»
 annulla anche la loro attesa.
+
+`costruisci_in_blender` sta nella stessa coda. Lo script del cervello è Python libero, quindi Blender (`-b --factory-startup`,
+`gabbia.py`) parte dentro una gabbia scritta al momento:
+- niente rete, nemmeno localhost;
+- niente Apple Events e nessun altro programma;
+- nessuna lettura in `/Users`, `/Volumes` e nelle cartelle temporanee, tranne la cartella della versione e `mac/blender/`;
+- scritture solo nella cartella della versione, con `TMPDIR` dentro.
+
+`prove/blender.mjs` controlla ognuna di queste vie (circa 10 s). Le versioni tenute sono le ultime 5; dopo 90 s Blender si ferma.
+La cartella arriva da `mcp.json` (`--blender`), perché sta sotto Documenti del Nexus vero o di quello di prova, e l'HUD apre
+i file solo da lì. Lo stesso GLB può fare più pezzi «file» con rotazioni diverse: le 18 pale di una ventola sono un file solo.
 
 ## Permessi
 

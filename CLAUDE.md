@@ -14,7 +14,29 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per Nexus (nome o conversazione), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «nexus». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 12/11/2026)
+## Aperto (al 16/11/2026)
+- **Blender per gli ologrammi: costruito e provato, mai usato da Tony** (16/11). Tony ha chiesto che Nexus faccia gli ologrammi con Blender e con le sue regole: niente primitive, mesh da vertici e curve, dettagli veri, almeno 45 fps. Lo strumento è `costruisci_in_blender`: come funziona e la gabbia stanno in **Come è fatto**, sotto `mac/`.
+  - **Il confronto che ha convinto Tony** (16/11): la ventola del turbofan di prova, a forme semplici, accanto alla stessa fatta in Blender.
+    - Com'è fatta: pale NACA svergolate da 30° a 62°, raccordi da 14 mm, code di rondine con 0,4 mm di gioco, ogiva cava con nervature.
+    - I numeri: 290 mila triangoli. Con le mani, 78 s: fps mediana 51, p10 47, minimo 29.
+    - File e script stanno in `~/Documents/Nexus-Blender/ventola/`, fuori dalla repository.
+  - **Col cervello vero** (Nexus di prova in una cartella vuota, «fammi vedere in 3D le AirPods Pro con la custodia», un giro):
+    - due ricerche, poi il primo script (4 KB) a 212 s;
+    - prima vista a 248 s, fine a 458 s;
+    - 15 pezzi, di cui 6 da Blender per 9.280 triangoli.
+
+    La prima versione aveva gli assi sbagliati e lo stelo aperto: il cervello l'ha visto nella foto e ha rifatto il pezzo. La causa era `V()`, che aveva passato agli attrezzi convertendo due volte. Ora la descrizione e `aiuti.py` lo dicono, e `trasforma` gira i pezzi con i gradi di `mostra_ologramma`. **Dopo questa correzione il cervello non è stato riprovato.**
+  - **Scelte mie, da guardare con Tony:**
+    - la persona manda in Blender ogni pezzo di un prodotto vero in cui la forma conta; le forme native restano per scatole, tubi, ingranaggi e per gli sforzi;
+    - le primitive sono rifiutate anche in bmesh (`bmesh.ops.create_*`);
+    - i file vanno in `Documents/Nexus-Blender`, si tengono le ultime 5 versioni per modello, e Blender ha al massimo 90 s;
+    - niente reticoli di alleggerimento se l'oggetto vero non li ha: la ventola non ne ha;
+    - le facce piane si possono chiudere con un n-gono piano: la regola dei quadrilateri serve a evitare artefatti di luce, e su una faccia piatta non ce ne sono.
+  - **Limiti:**
+    - in modo ologramma un guscio cavo diventa bianco, perché la luce dei suoi strati si somma e passa il bloom;
+    - i pezzi di Blender non entrano nel calcolo degli sforzi;
+    - le righe orizzontali nelle foto del modo solido vengono dall'HUD, non dalla geometria: in Blender la stessa custodia è liscia.
+  - **Mai provati:** con la voce vera di Tony, e su un Mac senza Blender (lo strumento lo dice).
 - **Meteo a schermo intero: costruita e provata, mai usata da Tony** (12/11). «Che tempo fa?» fa chiamare `mostra_meteo`, che apre la vista: al centro un globo 3D col radar vero, vento e pressione, profilo termico, avvisi, condizioni per spostarsi e timeline di 12 ore. Si comanda con mani, mouse e tasti.
   - **Windy tolto, scelta mia sulla richiesta di Tony:** l'API di Windy costa 990 € l'anno, e la chiave gratuita restituisce dati mescolati apposta (la sua pagina dei prezzi, letta il 12/11). Al suo posto Open-Meteo, gratuito e senza chiave, coi quarti d'ora. «Al minuto» non lo dà gratis nessuno: il fondo è il quarto d'ora. Quella che Tony aveva incollato come chiave di RainViewer era l'elenco delle mappe: RainViewer non vuole chiavi.
   - **RainViewer gratuito, misurato il 12/11:** solo le ultime 2 ore (13 mappe, una ogni 10 minuti), nessuna previsione del radar (il nowcast è vuoto), zoom fino a 7 (all'8 risponde «Zoom Level Not Supported»), un solo schema di colori. È riflettività, non Doppler: dove piove e quanto, non la velocità del vento.
@@ -244,11 +266,16 @@ Restano decisioni di Tony, non lavoro sul codice:
   - `sfx.js`: suoni sintetizzati, anche quelli dell'ologramma.
   - `lab-sfx.html` prova i suoni, anche quelli del report. `lab.html` prova la grafica, ma funziona solo servendo la radice della repository (per esempio `python3 -m http.server` in `~/STEM`, poi `/public/lab.html`), non da `localhost:4321`. `lab-ologramma.html?demo=turbofan|staffa` e `lab-mani.html` provano ologramma e mani da soli.
 - **`mac/`** controlla il Mac: un server MCP su stdio senza pacchetti, più un aiutante Swift che si compila da solo in `runtime/stem-mac` quando `helper.swift` cambia. I dettagli stanno in `mac/LEGGIMI-mac.md`.
+  - **Blender** (`costruisci_in_blender`, dal 16/11): il cervello scrive uno script Python, che gira in `Blender -b` dentro una gabbia di `sandbox-exec`. La gabbia toglie rete, Apple Events e altri programmi, letture in `/Users`, `/Volumes` e nelle cartelle temporanee, e scritture fuori dalla cartella della versione.
+    - `mac/blender/gabbia.py` esegue lo script ed esporta un GLB per oggetto, decimato solo nell'esportazione; poi scrive `rapporto.json` e `modello.blend`.
+    - `mac/blender/aiuti.py` sono gli attrezzi già pronti per lo script, in coordinate dell'HUD: anelli, loft, `trasforma` (coi gradi di `mostra_ologramma`), tappi a quadrilateri, rivoluzioni con le punte a griglia «O», profili NACA e superellissi, offset, raccordi, Bézier, rumore.
+    - I file vanno in `Documents/Nexus-Blender/<nome>/v<n>/` (`--blender` in `mcp.json`); si tengono le ultime 5 versioni.
+    - Il cervello li apre poi con `mostra_ologramma` come pezzi «file» con `centra: false`.
 - **`browser-fx.js`** è iniettato in ogni pagina di Google: disegna il mirino e l'animazione dei clic e tiene i link nella stessa scheda.
 - **Avvio:**
   - `STEM.app`, nella radice della repository, lancia `avvia-app.sh`, che imposta `NEXUS_APP=1`: con l'HUD chiuso per circa 150 secondi, il server si spegne (più tardi se sta facendo memoria, al massimo dopo 5 minuti). I permessi di macOS vanno a STEM.app; Accessibilità e Registrazione schermo sono stati dati il 1/11.
   - `avvia.command` è la via da Terminale. Chiede la chiave finché `.env` non ne ha una valida. Il registro va nella finestra e i permessi al Terminale; chiudendo l'HUD il server resta acceso.
-- **Per girare servono:** il comando `claude` nel PATH, la rete (`npx` scarica Playwright MCP, e al primo avvio il server scarica il modello delle mani) e `/usr/bin/swiftc`. `avvia-app.sh` e `avvia.command` lanciano `npm install` se manca `node_modules/@mediapipe/tasks-vision`. Le impostazioni stanno in `.env` (elenco commentato in `.env.example`); `ELEVENLABS_VOICE_ID`, se è pieno, blocca la scelta automatica della voce.
+- **Per girare servono:** il comando `claude` nel PATH, la rete (`npx` scarica Playwright MCP, e al primo avvio il server scarica il modello delle mani) e `/usr/bin/swiftc`. Blender in `/Applications` (o `NEXUS_BLENDER`) serve solo a `costruisci_in_blender`: senza, lo strumento lo dice. `avvia-app.sh` e `avvia.command` lanciano `npm install` se manca `node_modules/@mediapipe/tasks-vision`. Le impostazioni stanno in `.env` (elenco commentato in `.env.example`); `ELEVENLABS_VOICE_ID`, se è pieno, blocca la scelta automatica della voce.
 
 ## Provare
 - **Riavviare.** Il kill colpisce solo il processo sulla porta di Nexus, non altri `node` di Tony:
@@ -307,6 +334,13 @@ Restano decisioni di Tony, non lavoro sul codice:
     - `__misure`, con gli fps per secondo e le misure delle mani;
     - `?debug&mani=immagine`, che usa la foto di prova al posto della fotocamera.
   - Uno Nexus di prova completo: `NEXUS_CERVELLO=<cartella> NEXUS_PORT=… NEXUS_BROWSER_PORT=… NEXUS_CDP_PORT=… NEXUS_NO_OPEN=1 node server.mjs`. Gli strumenti si chiamano senza cervello con `node mac/mac-mcp.mjs --porta <porta>`. Senza un turno del cervello l'HUD vede le versioni nuove solo col giro di `/api/status`, ogni 5 s, e la foto può non arrivare in tempo.
+- **Blender:** `node prove/blender.mjs` (circa 10 s, senza Nexus né cervello) parla con `mac/mac-mcp.mjs` come il cervello. Controlla:
+  - gli attrezzi e le coordinate dell'HUD nei file;
+  - il rifiuto delle primitive e gli errori dello script;
+  - le cinque versioni tenute;
+  - la gabbia, via per via.
+
+  Lavora in `runtime/prova-blender-<pid>` e alla fine la cancella.
 - **Meteo:**
   - `node prove/meteo.mjs`: i conti su dati costruiti, senza rete, in un secondo. Con `--rete` anche Open-Meteo e RainViewer veri e il server vero sulla porta 4423, con lo strumento e un cervello e un Playwright finti.
   - `node prove/meteo-hud.mjs [cartella-foto]`: l'HUD vero headless sulla GPU, porte 4432 e 9563, circa 2 minuti e mezzo, con la rete. Fa le foto e prova il globo: la discesa sul luogo, le città vicine, il mondo intero, le texture che non crescono. Poi prova mouse, tasti e gesti e misura gli fps con le mani.

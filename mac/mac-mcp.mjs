@@ -785,6 +785,104 @@ TOOLS.push({
     return String(d.testo ?? '');
   },
 });
+// --- Blender: pezzi procedurali per gli ologrammi (16/11, richiesta di Tony) ---
+// Lo script del cervello è Python libero, quindi gira in una gabbia di sandbox-exec: niente rete (anche localhost), niente
+// Apple Events, niente altri programmi, niente letture in /Users, /Volumes e nelle cartelle temporanee (dove le app
+// lasciano file loro) fuori dalla sua cartella e dagli attrezzi,
+// scritture solo nella cartella della versione. Provato il 16/11 dentro Blender: tutte le vie bloccate, avvio in 1,8 s.
+const BLENDER = process.env.NEXUS_BLENDER || '/Applications/Blender.app/Contents/MacOS/Blender';
+const CARTELLA_BLENDER = (() => { const i = process.argv.indexOf('--blender'); return i < 0 ? null : process.argv[i + 1] || null; })();
+const ATTREZZI = path.join(DIR, 'blender');
+const BLENDER_MS = 90_000;
+const VERSIONI_TENUTE = 5;      // quelle prima si cancellano: un ologramma aperto usa quasi sempre l'ultima
+const SCRIPT_MAX = 100_000;
+const TRIANGOLI_FILE = 1e6;     // TRIANGOLI_MAX di geometrie.js: oltre, l'HUD non apre il file
+const NOME_BLENDER = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// Regola di Tony del 16/11: niente primitive standard, le forme nascono da vertici e facce
+const VIETATE = [[/\bprimitive_\w+_add\b/, 'bpy.ops.mesh.primitive_*'], [/\bbmesh\.ops\.create_\w+/, 'bmesh.ops.create_*']];
+const sb = (s) => `"${s.replace(/["\\]/g, '\\$&')}"`;
+const gabbia = (blender, dir) => [
+  '(version 1)', '(allow default)', '(deny network*)', '(deny appleevent-send)',
+  '(deny process-exec*)', `(allow process-exec* (literal ${sb(blender)}))`,
+  '(deny file-write*)', `(allow file-write* (subpath ${sb(dir)}) (literal "/dev/null"))`,
+  '(deny file-read* (subpath "/Users") (subpath "/Volumes") (subpath "/private/var/folders") (subpath "/private/tmp"))', `(allow file-read* (subpath ${sb(dir)}) (subpath ${sb(ATTREZZI)}))`,
+].join('\n');
+const it = (n) => (Math.round(n) || 0).toLocaleString('it-IT'); // || 0: niente «-0»
+
+async function costruisciInBlender(a) {
+  const nome = String(a.nome ?? ''), script = String(a.script ?? '');
+  if (!NOME_BLENDER.test(nome)) throw new ToolError('«nome» vuole minuscole, cifre e trattini, fino a 40 caratteri: «ventola», «staffa-motore»');
+  if (!script.trim() || script.length > SCRIPT_MAX) throw new ToolError(`«script» vuoto o oltre ${it(SCRIPT_MAX)} caratteri`);
+  for (const [re, cosa] of VIETATE) {
+    if (re.test(script)) throw new ToolError(`Rifiutato: lo script usa ${cosa}. Regola di Tony: niente primitive standard, ogni forma nasce da vertici e facce (anello, loft, rivoluzione, tappo).`);
+  }
+  if (!CARTELLA_BLENDER) throw new ToolError('manca la cartella di lavoro negli argomenti (mcp.json, --blender): riavvia Nexus');
+  let blender;
+  try { blender = fs.realpathSync(BLENDER); } catch { throw new ToolError(`Blender non c'è (${BLENDER}): finché Tony non lo installa, i pezzi si fanno con mostra_ologramma`); }
+  const base = path.join(CARTELLA_BLENDER, nome);
+  fs.mkdirSync(base, { recursive: true });
+  const versioni = () => fs.readdirSync(base).map((d) => Number(/^v(\d+)$/.exec(d)?.[1])).filter(Number.isInteger).sort((x, y) => x - y);
+  const v = (versioni().at(-1) ?? 0) + 1;
+  fs.mkdirSync(path.join(base, `v${v}`));
+  const dir = fs.realpathSync(path.join(base, `v${v}`)); // la gabbia confronta percorsi veri
+  const tmp = path.join(dir, '.tmp');
+  fs.mkdirSync(tmp);
+  const file = path.join(dir, 'script.py');
+  fs.writeFileSync(file, script);
+  const t0 = Date.now();
+  const r = await new Promise((resolve) => {
+    const child = execFile('/usr/bin/sandbox-exec', ['-p', gabbia(blender, dir), blender, '-b', '--factory-startup', '--python', path.join(ATTREZZI, 'gabbia.py'), '--', dir, file],
+      { timeout: BLENDER_MS, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8', cwd: dir, env: { ...process.env, TMPDIR: tmp, PYTHONNOUSERSITE: '1' } },
+      (error, stdout, stderr) => { inFlight.delete(child); resolve({ error, out: `${stdout}\n${stderr}` }); });
+    inFlight.add(child);
+  });
+  fs.rmSync(tmp, { recursive: true, force: true });
+  const secondi = ((Date.now() - t0) / 1000).toFixed(1).replace('.', ',');
+  let rap = null;
+  try { rap = JSON.parse(fs.readFileSync(path.join(dir, 'rapporto.json'), 'utf8')); } catch {}
+  if (!rap?.pezzi?.length || rap.errore) {
+    const pezzi = rap?.pezzi?.length ? rap.pezzi : null;
+    if (!pezzi) fs.rmSync(dir, { recursive: true, force: true });
+    if (r.error?.killed) throw new ToolError(`Blender non ha finito entro ${BLENDER_MS / 1000} s: lo script è troppo pesante (meno anelli, meno sezioni o meno pezzi). Niente esportato.`);
+    if (rap?.errore) throw new ToolError(`Lo script si è fermato:\n${rap.errore}\nCorreggi e richiama con lo stesso nome.`);
+    if (rap) throw new ToolError('Lo script non ha creato oggetti mesh: chiudi ogni pezzo con oggetto(nome, bm).');
+    throw new ToolError(`Blender è uscito senza rapporto (codice ${r.error?.code ?? 0}): ${r.out.trim().split('\n').slice(-6).join(' | ').slice(0, 600)}`);
+  }
+  // le versioni vecchie si cancellano: sono file di Nexus nella sua cartella, rifatti in un paio di secondi
+  for (const vecchia of versioni().slice(0, -VERSIONI_TENUTE)) fs.rmSync(path.join(base, `v${vecchia}`), { recursive: true, force: true });
+  const tot = rap.pezzi.reduce((s, p) => s + p.triangoli, 0);
+  const righe = [`Costruito «${nome}», versione ${v}, in ${secondi} s: ${rap.pezzi.length} file, ${it(tot)} triangoli in tutto.`];
+  const avvisi = [];
+  for (const p of rap.pezzi) {
+    const q = p.facce ? Math.round((100 * p.quadrilateri) / p.facce) : 0;
+    const box = [0, 1, 2].map((i) => `${'xyz'[i]} da ${it(p.min[i])} a ${it(p.max[i])}`).join(', ');
+    righe.push(`- ${p.nome}: ${it(p.triangoli)} triangoli, ${q}% quadrilateri, ${p.chiuso ? 'chiuso' : 'APERTO'}; ${box} mm\n  ${p.file}`);
+    if (p.triangoli > TRIANGOLI_FILE) avvisi.push(`${p.nome} supera ${it(TRIANGOLI_FILE)} triangoli: l'HUD non lo apre`);
+    if (!p.chiuso) avvisi.push(`${p.nome} è aperto: sezione e raggi X lo disegnano male; chiudilo con tappo, tappo_piano o una rivoluzione`);
+  }
+  if (tot > TRIANGOLI_FILE) avvisi.push(`oltre ${it(TRIANGOLI_FILE)} triangoli in tutto: con le mani l'HUD scende sotto 45 fps (2 milioni fanno 33 fps)`);
+  if (avvisi.length) righe.push(`Avvisi: ${avvisi.join('; ')}.`);
+  righe.push('Per vederli: mcp__mac__mostra_ologramma, un pezzo per file, forma «file», misure { file: percorso, centra: false }: posizione [0, 0, 0] lo lascia dove lo script l\'ha messo. ' +
+    'Un file può fare più pezzi, con rotazione e posizione diverse; i triangoli contano a ogni copia. Questi pezzi non entrano nel calcolo degli sforzi.');
+  return righe.join('\n');
+}
+TOOLS.push({
+  name: 'costruisci_in_blender',
+  description: 'Costruisce in Blender i pezzi che le forme di mostra_ologramma non fanno: pale ed eliche svergolate, gusci, raccordi, superfici organiche. ' +
+    'Lo script è Python di Blender (bpy, bmesh) e gira in una gabbia senza rete né file di Tony. Regole di Tony: niente primitive (bpy.ops.mesh.primitive_* e bmesh.ops.create_* sono rifiutati); ' +
+    'ogni forma nasce da vertici e facce, a quadrilateri, con dettagli veri: raccordi, nervature, giochi. ' +
+    'Misure in mm e coordinate dell\'HUD (Y in alto): il punto (x, y, z) che dai agli attrezzi è il punto (x, y, z) del file e di mostra_ologramma. ' +
+    'Già pronti, senza import: anello(bm, punti); trasforma(bm, rotazione, posizione), coi gradi di mostra_ologramma; loft(bm, anelli, chiuso); tappo(bm, anello), che unisce il punto k al 2n−1−k; tappo_piano(bm, anello); ' +
+    'rivoluzione(bm, [(r, y), …], n, chiuso) attorno a Y, con le punte sull\'asse chiuse a quadrilateri; profilo_naca(corda, curvatura, pos_curvatura, spessore, n); profilo_tondo(lungo, largo, esponente, n); ' +
+    'ruota2d(pts, gradi, du, dv); offset2d(pts, e); raccordo_circolare(r, n); bezier, bezier_punti, bezier_tangente; noise (Perlin di mathutils), math, Vector; V(x, y, z) solo per bm.verts.new, mai dentro gli attrezzi. ' +
+    'Ogni pezzo si chiude con oggetto(nome, bm, raccordo_mm) e diventa un file GLB. Risponde con percorsi, triangoli e ingombri; poi mostra_ologramma con forma file e centra false.',
+  inputSchema: { type: 'object', properties: {
+    nome: { type: 'string', pattern: NOME_BLENDER.source, description: 'il modello: «ventola», «staffa-motore»; lo stesso nome fa una versione nuova' },
+    script: { type: 'string', description: 'Python per Blender, al massimo 100.000 caratteri' },
+  }, required: ['nome', 'script'] },
+  annotations: { title: 'Costruisci in Blender' },
+  run: costruisciInBlender,
+});
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // --- JSON-RPC su stdio ---
@@ -828,7 +926,7 @@ async function handle(msg) {
     case 'tools/call': {
       const run = async () => reply(await callTool(params));
       if (params?.name === 'mostra_meteo') return run(); // solo rete: non aspetta mouse e tastiera, e non li ferma
-      if (OLOGRAMMI.has(params?.name)) return (codaOlo = codaOlo.then(run).catch((e) => log(e.message)));
+      if (OLOGRAMMI.has(params?.name) || params?.name === 'costruisci_in_blender') return (codaOlo = codaOlo.then(run).catch((e) => log(e.message)));
       queue = queue.then(run).catch((e) => log(e.message));
       return queue;
     }

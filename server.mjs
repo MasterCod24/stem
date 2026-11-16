@@ -61,6 +61,7 @@ const PERSONA = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
 const HOME = process.env.HOME;
 const FILE_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', 'Library/Mobile Documents/com~apple~CloudDocs']
   .map((d) => path.join(PROVA || HOME, d)).filter((d) => fs.existsSync(d));
+const DOCUMENTI = path.join(PROVA || HOME, 'Documents');
 // Cartella di lavoro del cervello: vuota e FUORI dalla repository, così Nexus ha una memoria sua
 // e non mescola i suoi ricordi con quelli delle sessioni di sviluppo (prima condividevano ~/STEM)
 const BRAIN = PROVA || path.join(HOME, 'Library', 'Application Support', 'Nexus', 'cervello');
@@ -162,7 +163,9 @@ fs.writeFileSync(MCP_CONFIG, JSON.stringify({
   mcpServers: {
     playwright: { type: 'http', url: `http://localhost:${PW_PORT}/mcp` },
     // app, schermo, mouse, tastiera e ologrammi; la porta dagli argomenti, perché .env non arriva ai processi figli
-    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath, args: [MAC_MCP, '--porta', String(PORT)] } }),
+    // --blender: dove costruisci_in_blender scrive i GLB, dentro Documenti perché l'HUD apre i file solo dalle cartelle di Tony
+    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath, args: [MAC_MCP, '--porta', String(PORT),
+      ...(FILE_DIRS.includes(DOCUMENTI) ? ['--blender', path.join(DOCUMENTI, 'Nexus-Blender')] : [])] } }),
   },
 }));
 const browser = spawn('npx', [
