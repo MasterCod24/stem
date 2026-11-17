@@ -76,7 +76,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
       if (o.type === 'stream_event') {
         const e = o.event;
         if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') { turn.text += e.delta.text; speakable(false); }
-        if (e.type === 'content_block_stop') speakable(true);
+        if (e.type === 'content_block_stop') { speakable(true); turn.text += '\n\n'; } // «Guardo subito.» e il risultato dopo la ricerca: due paragrafi, non una parola sola
       } else if (o.type === 'assistant') {
         for (const c of o.message?.content || []) if (c.type === 'tool_use') toolEvent(c);
       } else if (o.type === 'result') {
@@ -150,7 +150,13 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
   function endTurn({ error } = {}) {
     const T = turn;
     if (!T) return;
-    if (!T.ignored && !T.interrupted) speakable(true);
+    if (!T.ignored && !T.interrupted) {
+      speakable(true);
+      // Tutto il testo del turno da leggere, per Telegram: senza i segnali ma col resto intatto. Il parlato toglie anche
+      // _ * # ` > e un indirizzo come wiki/Torre_Eiffel ne usciva rotto.
+      const testo = T.text.replace(TAG, ' ').replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      if (testo) T.emit({ t: 'testo', s: testo });
+    }
     if (error && !T.interrupted) T.emit({ t: 'error', s: error });
     if (sessionFile && sessionId) saveSession(); // anche l'ora dell'ultima risposta: dice se dopo un riavvio vale la pena riprenderla
     turn = null;
