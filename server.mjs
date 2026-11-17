@@ -12,6 +12,7 @@ import { createMedia } from './media.mjs';
 import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
 import { createMeteo } from './meteo.mjs';
+import { createTelegram } from './telegram.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
 import { testoMisure } from './public/ologramma/gesti.js';
@@ -291,15 +292,69 @@ async function rememberNow() {
 }
 
 // --- Avviato dall'app Nexus (in background): quando chiudi l'HUD, Nexus si spegne da solo ---
+// Con Telegram invece resta acceso (scelta mia del 17/11): Tony gli scrive quando è fuori casa, cioè proprio con l'HUD chiuso.
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
 if (env.NEXUS_APP) {
   setInterval(() => { // 15 giri da 10 s senza notizie dall'HUD: è chiuso
     hudMissed++;
     if (hudMissed >= 2) rememberNow(); // 20 s senza HUD: la conversazione è finita, faccio memoria (anche di un compito che finisce dopo)
     const memoryPending = memoryBusy || memoryDue;
-    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo Nexus'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
+    if (hudMissed === 15 && telegram) console.log('HUD chiuso: Nexus resta acceso per Telegram');
+    if (hudMissed >= 15 && !telegram && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo Nexus'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
   }, 10000);
 }
+
+// --- Una domanda per il cervello, da qualunque parte arrivi: l'HUD (/api/ask) o Telegram ---
+// Il primo turno a effort basso, poi il [pensa] e il [confronto] se servono, tutto nella stessa risposta. onEvent riceve gli
+// eventi del cervello; la promessa si risolve a risposta finita.
+async function rispondi(text, onEvent) {
+  ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
+  let ignored = false, pensa = false, guardato = false;
+  const modelloPrima = holoOra.modello;
+  const ev = (e) => {
+    if (e.t === 'ignore') ignored = true;
+    if (e.t === 'pensa') { pensa = true; return; }
+    if (e.t === 'mac' && e.name === 'guarda_oggetto_vero') guardato = true;
+    onEvent(e);
+  };
+  const primo = await brain.ask(text, ev, { effort: effortDi(EFFORT) });
+  let interrotto = primo.interrotto;
+  // [[pensa]]: il cervello ha detto la frase breve a effort basso e ha chiuso il turno. Il lavoro vero parte subito, con
+  // l'effort alto, nella stessa risposta. Una volta sola, e mai se nel frattempo Tony ha chiesto altro.
+  if (pensa && !ignored && !interrotto) {
+    console.error('[cervello] ci penso a fondo');
+    interrotto = (await brain.ask(`[adesso: ${adesso()}]\n${PENSA_TEXT}`, ev, { effort: effortDi(EFFORT_PENSA) })).interrotto;
+  }
+  // [confronto]: in questa risposta ha guardato l'oggetto vero e aperto un ologramma nuovo, con l'HUD acceso (senza la
+  // sua foto non c'è confronto). Un giro solo, con l'effort alto, nella stessa risposta; mai dopo un'interruzione.
+  if (guardato && !ignored && !interrotto && holoOra.aperto && holoOra.modello !== modelloPrima && Date.now() - hudSeen < 15_000) {
+    console.error('[cervello] confronto col vero');
+    await brain.ask(`[adesso: ${adesso()}]\n${CONFRONTO_TEXT}`, ev, { effort: effortDi(EFFORT_PENSA) });
+  }
+  if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
+}
+
+// --- Telegram (telegram.mjs): Tony scrive dal telefono e risponde lo stesso cervello, con la stessa memoria ---
+// Senza TELEGRAM_BOT_TOKEN non parte niente. Le risposte vanno solo a Telegram, mai all'HUD: a casa nessuno le sente.
+const tgEvento = (manda) => (ev) => {
+  if (ev.t === 'testo') manda(ev.s);
+  else if (ev.t === 'error') manda('Ho perso il filo, scusami. Riprova tra un attimo.');
+};
+const telegram = env.TELEGRAM_BOT_TOKEN ? createTelegram({
+  token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID || '', api: env.NEXUS_TELEGRAM_API || undefined,
+  onLog: (l) => console.error(l),
+  onDomanda: (testo, manda) => rispondi(`[adesso: ${adesso()}]\n${testo}`, tgEvento(manda)),
+}) : null;
+// L'agenda senza HUD: se l'HUD non si sente da 15 s, il compito arrivato all'ora lo consegna il server, per scritto su Telegram.
+// Con l'HUD acceso lo dice l'HUD a voce, e la risposta arriva anche qui (onEvent di /api/ask).
+if (telegram && env.TELEGRAM_CHAT_ID) setInterval(() => {
+  if (Date.now() - hudSeen < 15_000 || brain.busy) return;
+  const due = agenda.due();
+  if (!due.length) return;
+  agenda.remove(due.map((x) => x.id));
+  console.error(`[agenda] la scrivo su Telegram: ${due.length} ${due.length === 1 ? 'compito' : 'compiti'}`);
+  rispondi(`[adesso: ${adesso()}]\n${agendaText(due)}\n[telegram: Tony non è al Mac e non ti sente: quello che scrivi gli arriva su Telegram]`, tgEvento(telegram.manda));
+}, 5000);
 
 // --- Ologramma: lo stato sta solo qui (ologramma.mjs). Gli strumenti del cervello (mac-mcp.mjs) e l'HUD lo cambiano con
 // POST /api/ologramma; l'HUD lo rilegge quando la versione cresce e manda la foto di quello che mostra.
@@ -600,13 +655,8 @@ const server = http.createServer(async (req, res) => {
     const write = (ev) => { if (open) res.write(JSON.stringify(ev) + '\n'); };
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
-    ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
-    let ignored = false, pensa = false, guardato = false;
-    const modelloPrima = holoOra.modello;
     const onEvent = (ev) => {
-      if (ev.t === 'ignore') ignored = true;
-      if (ev.t === 'pensa') { pensa = true; return; }
-      if (ev.t === 'mac' && ev.name === 'guarda_oggetto_vero') guardato = true;
+      if (ev.t === 'testo') { if (body.agenda) telegram?.manda(ev.s); return; } // un promemoria arriva anche sul telefono: l'HUD può parlare a una stanza vuota
       if (ev.t !== 'media') {
         write(ev);
         // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
@@ -617,22 +667,8 @@ const server = http.createServer(async (req, res) => {
       pending++; // GIF e animazioni: le cerco mentre Nexus parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
     };
-    const primo = await brain.ask(text, onEvent, { effort: effortDi(EFFORT) });
-    let interrotto = primo.interrotto;
-    // [[pensa]]: il cervello ha detto la frase breve a effort basso e ha chiuso il turno. Il lavoro vero parte subito, con
-    // l'effort alto, nella stessa risposta all'HUD. Una volta sola, e mai se nel frattempo Tony ha chiesto altro.
-    if (pensa && !ignored && !interrotto) {
-      console.error('[cervello] ci penso a fondo');
-      interrotto = (await brain.ask(`[adesso: ${adesso()}]\n${PENSA_TEXT}`, onEvent, { effort: effortDi(EFFORT_PENSA) })).interrotto;
-    }
-    // [confronto]: in questa risposta ha guardato l'oggetto vero e aperto un ologramma nuovo, con l'HUD acceso (senza la
-    // sua foto non c'è confronto). Un giro solo, con l'effort alto, nella stessa risposta; mai dopo un'interruzione.
-    if (guardato && !ignored && !interrotto && holoOra.aperto && holoOra.modello !== modelloPrima && Date.now() - hudSeen < 15_000) {
-      console.error('[cervello] confronto col vero');
-      await brain.ask(`[adesso: ${adesso()}]\n${CONFRONTO_TEXT}`, onEvent, { effort: effortDi(EFFORT_PENSA) });
-    }
+    await rispondi(text, onEvent);
     finished = true; close();
-    if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
     return;
   }
 
