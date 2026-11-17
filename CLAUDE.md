@@ -34,6 +34,11 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
     - le foto valgono per il prossimo ologramma entro 30 minuti; il confronto delle misure vale un'ora;
     - il confronto non vede le copie e gli spostamenti fatti in `mostra_ologramma`, solo quello che esce da Blender;
     - niente rifiuto se il cervello non guarda l'oggetto vero: c'è solo la riga che glielo ricorda, perché gli oggetti che Tony progetta non hanno foto.
+- **Esploso con le mani: gesto cambiato il 17/11, richiesta di Tony, mai provato da lui.** Tony col ventilatore: dopo uno zoom a due pizzichi, staccando le mani i pezzi esplodevano. Il motivo: bastavano due palmi aperti, e i pizzichi che si riaprono sono proprio due palmi aperti; da lì ogni movimento cambiava la distanza. Il palmo aperto è anche il gesto che sveglia le mani.
+  - **Ora** (`gesti.js`): l'esploso parte solo da due mani aperte unite al centro (centri dei palmi entro `esplodi_unite`, 2 palmi), aperte da almeno `esplodi_ms` (300 ms). Mai dopo uno zoom o un ricomponi, finché le mani non si separano oltre i 2 palmi o una esce. Partito, è come prima: allargare esplode, stringere rimonta.
+  - **Prove:** `prove/gesti.mjs` 70 su 70, con 6 casi nuovi: lo zoom seguito dalle mani che si staccano, lo zoom che finisce a mani unite, il gesto vero e i palmi lontani. Sul `gesti.js` di prima i 6 casi falliscono, con 19 esplosi nel caso di Tony. `prove/ologramma-pezzi.mjs` 8 su 8 (alla fine la prova non riesce a cancellare il profilo di Chrome, che ci sta ancora scrivendo: è la pulizia, non i gesti).
+  - **Scelte mie, da guardare con Tony:** i 2 palmi e i 300 ms; il blocco dopo il ricomponi; l'esploso già partito che continua finché le mani restano aperte, anche mentre le si abbassa.
+  - **La sessione di Tony col ventilatore** (riga «mani accese» da 516 s): fps a posto (mediana 57, p10 54, minimo 45, detect 7 ms), ma 240 salti contro i 29–78 delle sessioni prima, 45 buchi e 15 gesti persi. «Non segue bene» viene da lì. La causa non si vede dal registro: luce, distanza o sfondo. Il filtro non è stato toccato.
 - **Mani sotto 45 fps nelle ultime sessioni vere** (registro al 17/11, 17 righe «mani accese»). Le prime otto, fino al 12/11, hanno p10 fra 48 e 62 e detect fra 7 e 17 ms. Dopo:
   - due sessioni a 30 fps di mediana: Risparmio energetico, non le mani;
   - meteo da 53 s: p10 24, detect 22 ms;
@@ -305,7 +310,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - in `nexus.js`, con l'ologramma aperto:
     - tasti: E esplodi; X raggi X, D densità, F sforzi (premuti di nuovo tornano all'ologramma); O ologramma, L solido; S sezione lungo x, y, z o niente, con le frecce che la spostano; R ritorna alla vista di partenza; Z rimette l'ultimo pezzo tolto; M accende o spegne le mani (la scelta resta in `localStorage` `nexus-mani`); Esc chiude tutto;
     - mouse: trascinare ruota, ma sul pezzo selezionato lo sposta; la rotella fa lo zoom, il clic sceglie un pezzo e il doppio clic lo isola;
-    - mani: un pizzico con una mano ruota, con due fa lo zoom, due palmi aperti esplodono, un pezzo afferrato si sposta e resta dove lo lasci, lanciato si toglie, e due pugni chiusi per mezzo secondo ricompongono tutto;
+    - mani: un pizzico con una mano ruota, con due fa lo zoom, due mani aperte unite al centro e poi allargate esplodono, un pezzo afferrato si sposta e resta dove lo lasci, lanciato si toglie, e due pugni chiusi per mezzo secondo ricompongono tutto;
   - `meteo/`: la vista meteo, caricata alla prima apertura.
     - `vista.js`: moduli, timeline, mouse, tasti e gesti. Una linea del tempo comanda tutto, da −2 h a +12 h: i moduli mostrano il tempo a quell'ora, il globo la mappa del radar di allora e il vento di quell'ora.
     - `globo.js`: il globo, con three.js nello `strato` del nucleo, come l'ologramma. Il riquadro `.m-globo` è trasparente: prende mouse e misure, e sopra ha il canvas delle scritte. Il globo resta nel riquadro con lo scissor e una sfumatura di 28 pixel.

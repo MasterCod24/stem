@@ -9,8 +9,11 @@
 // - pizzico fermo per presa_ms: 'afferra' dove l'indice puntava prima di chiudersi, poi 'sposta', e aprendo le dita
 //   'lascia', oppure 'lancia' se in quel momento la mano corre oltre lancio_mm_s;
 // - pizzico breve e fermo: 'afferra' e 'lascia' insieme, cioè un clic che seleziona.
-// Due mani: due pizzichi fanno 'zoom', due palmi aperti 'esplodi', due pugni chiusi tenuti per ricomponi_ms 'ricomponi'
-// (richiesta di Tony del 16/11: i pezzi spostati restano dove li lascia, e tornano a posto solo con un gesto apposta).
+// Due mani: due pizzichi fanno 'zoom', due pugni chiusi tenuti per ricomponi_ms 'ricomponi' (richiesta di Tony del
+// 16/11: i pezzi spostati restano dove li lascia, e tornano a posto solo con un gesto apposta). 'esplodi' parte da due
+// mani aperte unite al centro (centri dei palmi entro esplodi_unite) e aperte da esplodi_ms, che poi si allargano; mai
+// dopo uno zoom o un ricomponi finché le mani non si sono separate. Prima bastavano due palmi aperti, e uscendo da uno
+// zoom i pizzichi riaperti erano già due palmi: staccando le mani i pezzi esplodevano (Tony, 17/11).
 // scena.js non sa dire se sotto il cursore c'è un
 // pezzo, quindi ruotare e afferrare si distinguono dal tempo: chi vuole ruotare si muove subito.
 //
@@ -57,6 +60,9 @@ export const PREDEFINITI = Object.freeze({
   dito_steso: 1.5,      // dito steso: la punta dista dal polso più di 1,5 volte la sua nocca (piegato è sotto 1,1)
   esplodi_palmi: 3,     // allargare i palmi di 3 palmi porta l'esploso da 0 a 1
   esplodi_soglia: 0.2,  // palmi prima di partire: due mani aperte e ferme non esplodono
+  esplodi_unite: 2,     // palmi fra i centri dei palmi: sotto, le mani sono «unite» e l'esploso può partire. Due mani
+                        // affiancate coi pollici vicini stanno sui 1,4–1,6 (stima anatomica, non misurata su Tony)
+  esplodi_ms: 300,      // le due mani aperte da tanto prima che l'esploso possa partire. Scelto il 17/11, non misurato
   dito_piegato: 1.1,    // dito chiuso nel pugno: la punta dista dal polso meno di 1,1 volte la sua nocca
   ricomponi_ms: 500,    // due pugni chiusi tenuti così a lungo: ricomponi. Scelto il 16/11, non misurato sulle mani di Tony
 });
@@ -104,7 +110,7 @@ function leggiOpzioni(opzioni) {
   }
   if (!(o.chiuso < o.aperto) || !(o.margine < 0.5) || !(o.stabile >= 1) || !(o.curva < 1) || !(o.zona <= 1) || !(o.profilo_gradi <= 90)
     // riposo_ms 0 con l'innesco faceva sfarfallare riposo e pronto ogni innesco_ms (prova del revisore dell'11/11)
-    || ['aspetto', 'mincutoff', 'dcutoff', 'palmo_mm', 'lancio_ms', 'esplodi_palmi', 'salto_palmi', 'zona', 'riposo_ms'].some((k) => !(o[k] > 0)))
+    || ['aspetto', 'mincutoff', 'dcutoff', 'palmo_mm', 'lancio_ms', 'esplodi_palmi', 'esplodi_unite', 'salto_palmi', 'zona', 'riposo_ms'].some((k) => !(o[k] > 0)))
     throw new Error('gesti: opzioni incoerenti (chiuso < aperto, margine < 0,5, stabile ≥ 1, curva < 1, zona ≤ 1, profilo ≤ 90°, scale e riposo_ms > 0)');
   return o;
 }
@@ -112,6 +118,7 @@ function leggiOpzioni(opzioni) {
 export function createGesti(opzioni) {
   const o = leggiOpzioni(opzioni), FASE0 = o.innesco_ms > 0 ? 'riposo' : 'pronto';
   let tracce = [], due = null, ultimo = -Infinity, nuovoId = 1;
+  let bloccoEsplodi = false; // dopo uno zoom o un ricomponi, finché le mani non si separano oltre esplodi_unite
   let fase = FASE0, detta = false, tAttivo = -Infinity; // detta: la fase è già uscita come evento
   // Le misure d'uso vero: solo conti e somme, mai punti né posizioni
   const vuote = () => ({ ms: 0, trem2: 0, tremN: 0, buchi: 0, gesti_persi: 0, inneschi: 0, scaduti: 0, pizzichi: 0, pizzichi_profilo: 0,
@@ -241,7 +248,7 @@ export function createGesti(opzioni) {
 
   function fineDue() {
     // la mano ancora chiusa non comincia a ruotare, e un pugno che si riapre non fa un clic
-    if (due.tipo === 'zoom' || due.tipo === 'ricomponi') due.a.consumato = due.b.consumato = true;
+    if (due.tipo === 'zoom' || due.tipo === 'ricomponi') { due.a.consumato = due.b.consumato = true; bloccoEsplodi = true; }
     due = null;
   }
 
@@ -253,8 +260,12 @@ export function createGesti(opzioni) {
   };
 
   function dueMani(A, B, out) {
-    const pugni = A.pugno && B.pugno, zoom = !pugni && A.pizzico && B.pizzico, esplodi = !pugni && A.aperta && B.aperta;
-    if (due && !(due.tipo === 'zoom' ? zoom : due.tipo === 'esplodi' ? esplodi : pugni)) fineDue();
+    const pugni = A.pugno && B.pugno, zoom = !pugni && A.pizzico && B.pizzico, aperte = !pugni && A.aperta && B.aperta;
+    const unite = misuraDue('esplodi', A, B);
+    if (bloccoEsplodi && unite > o.esplodi_unite) bloccoEsplodi = false;
+    // un esploso nuovo: mani aperte unite al centro, aperte (tPalmo) da esplodi_ms, e non appena uscite da zoom o ricomponi
+    const esplodi = aperte && !bloccoEsplodi && unite <= o.esplodi_unite && [A, B].every((tr) => tr.tPalmo !== null && ultimo - tr.tPalmo >= o.esplodi_ms);
+    if (due && !(due.tipo === 'zoom' ? zoom : due.tipo === 'esplodi' ? aperte : pugni)) fineDue();
     if (!due) {
       if ((!zoom && !esplodi && !pugni) || !A.dentro || !B.dentro) return; // un gesto a due mani parte solo con tutte e due nella zona attiva
       chiudiUna(A, out); chiudiUna(B, out);
@@ -379,6 +390,7 @@ export function createGesti(opzioni) {
     if (!due || (stabili.includes(due.a) && stabili.includes(due.b))) {
       const [A, B] = due ? [due.a, due.b] : stabili;
       if (B) dueMani(A, B, dopo);
+      else bloccoEsplodi = false; // una mano sola, o nessuna: chi rimette le due mani ricomincia da capo
     }
     for (const tr of stabili) if (!due || (tr !== due.a && tr !== due.b)) unaMano(tr, t, dopo);
 
@@ -401,7 +413,7 @@ export function createGesti(opzioni) {
   }
 
   // Dimentica le mani e torna alla fase di partenza; la prossima aggiorna() la ridice. Le misure restano.
-  function azzera() { tracce = []; due = null; ultimo = -Infinity; fase = FASE0; detta = false; tAttivo = -Infinity; }
+  function azzera() { tracce = []; due = null; ultimo = -Infinity; fase = FASE0; detta = false; tAttivo = -Infinity; bloccoEsplodi = false; }
 
   // per le prove e per il lab: la fase e lo stato di ogni mano, senza i punti
   function stato() {

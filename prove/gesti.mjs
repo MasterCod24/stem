@@ -195,6 +195,30 @@ for (const [modo, opz, pre] of MODI) {
     `fermi: ${fermi} eventi; allargando Σdelta ${f3(apri)} (atteso ${f3(attApri)}), stringendo ${f3(chiudi)} (atteso ${f3(attChiudi)})`);
 }
 
+// 3b. L'esploso parte solo da mani aperte unite al centro (17/11, Tony: uscendo da uno zoom, staccando le mani, i pezzi
+// esplodevano). Previsione: zero esplodi nei casi a, b e d; nel caso c l'esploso parte e si allarga.
+for (const [modo, opz, pre] of MODI) {
+  // a. zoom che allarga, poi le dita si riaprono e le mani si staccano in basso e di lato
+  const Da = seq({ x: 0.62, y: 0.6, r: 1.2 }, [8, {}], [3, { r: 0.15 }], [5, {}], [12, { x: 0.78 }], [5, {}], [3, { r: 1.2 }], [10, {}], [12, { x: 0.84, y: 0.85 }], [10, {}]);
+  const Sa = seq({ x: 0.38, y: 0.6, r: 1.2, lato: 'Left' }, [8, {}], [3, { r: 0.15 }], [5, {}], [12, { x: 0.22 }], [5, {}], [3, { r: 1.2 }], [10, {}], [12, { x: 0.16, y: 0.85 }], [10, {}]);
+  const a = gira(dueMani(Da, Sa), opz, undefined, 1000, pre).ev;
+  prova(`esplodi (${modo}): uno zoom e poi le mani che si staccano non esplodono`, conta(a, 'zoom') > 3 && conta(a, 'esplodi') === 0,
+    `${conta(a, 'zoom')} zoom, ${conta(a, 'esplodi')} esplodi`);
+  // b. zoom che stringe fino a unire le mani, dita riaperte e tenute 500 ms, poi le mani si allargano: ancora bloccato.
+  // c. separate, le mani si riuniscono, restano aperte 500 ms e si allargano: adesso è il gesto, ed esplode
+  const Db = seq({ x: 0.75, y: 0.6, r: 1.2 }, [8, {}], [3, { r: 0.15 }], [5, {}], [12, { x: 0.6 }], [5, {}], [3, { r: 1.2 }], [15, {}], [12, { x: 0.75 }], [10, {}], [12, { x: 0.6 }], [15, {}], [12, { x: 0.75 }], [10, {}]);
+  const Sb = seq({ x: 0.25, y: 0.6, r: 1.2, lato: 'Left' }, [8, {}], [3, { r: 0.15 }], [5, {}], [12, { x: 0.4 }], [5, {}], [3, { r: 1.2 }], [15, {}], [12, { x: 0.25 }], [10, {}], [12, { x: 0.4 }], [15, {}], [12, { x: 0.25 }], [10, {}]);
+  const b = gira(dueMani(Db, Sb), opz, undefined, 1000, pre).ev, separate = 8 + 3 + 5 + 12 + 5 + 3 + 15 + 12 + 10;
+  const espB = b.filter((e) => e.tipo === 'esplodi' && e.i < separate), espC = somma(b, 'esplodi', 'delta', (e) => e.i >= separate);
+  prova(`esplodi (${modo}): dopo uno zoom che unisce le mani, aprirle e allargarle non esplode; riunite e tenute aperte, sì`,
+    conta(b, 'zoom') > 3 && espB.length === 0 && espC > 0.3, `${conta(b, 'zoom')} zoom, ${espB.length} esplodi prima di separarle, poi Σdelta ${f3(espC)}`);
+  // d. due palmi aperti lontani (oltre esplodi_unite), fermi e poi allargati: non è il gesto
+  const Dd = seq({ x: 0.74, y: 0.6, r: 1.2 }, [8, {}], [18, {}], [12, { x: 0.84 }], [10, {}]);
+  const Sd = seq({ x: 0.26, y: 0.6, r: 1.2, lato: 'Left' }, [8, {}], [18, {}], [12, { x: 0.16 }], [10, {}]);
+  const d = gira(dueMani(Dd, Sd), opz, undefined, 1000, pre).ev;
+  prova(`esplodi (${modo}): due palmi aperti lontani che si allargano non esplodono`, conta(d, 'esplodi') === 0, `${conta(d, 'esplodi')} esplodi`);
+}
+
 // 4. Afferra, sposta e lascia -----------------------------------------------------------------------------------------
 for (const [modo, opz, pre] of MODI) {
   const stati = seq({ x: 0.45, y: 0.75, r: 1.2 }, [8, {}], [3, { r: 0.15 }], [15, {}], [9, { x: 0.45 + 9 * vel(0.3) }], [15, {}], [3, { r: 1.2 }], [5, {}]);

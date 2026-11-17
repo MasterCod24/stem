@@ -259,7 +259,9 @@ Gesto =
 | {tipo:'cursore', x, y, mano}          // punta dell'indice, schermo 0..1
 | {tipo:'ruota', dx, dy}                // pizzico con una mano e trascinamento
 | {tipo:'zoom', fattore}                // due mani che pizzicano: rapporto delle distanze
-| {tipo:'esplodi', delta}               // due palmi aperti che si allargano o si stringono
+| {tipo:'esplodi', delta}               // due palmi aperti che si allargano o si stringono, partiti uniti al centro
+                                        // (centri entro esplodi_unite, 2 palmi) e aperti da esplodi_ms (300); mai dopo
+                                        // uno zoom o un ricomponi finché le mani non si separano (dal 17/11)
 | {tipo:'afferra', x, y} | {tipo:'sposta', dx, dy} | {tipo:'lascia'}
 | {tipo:'lancia', x, y, vx, vy}         // rilascio veloce di una presa: il pezzo preso si toglie
 | {tipo:'ricomponi'}                    // due pugni chiusi tenuti per ricomponi_ms (500): una volta per pugno
