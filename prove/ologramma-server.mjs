@@ -552,7 +552,20 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   }
   if (m.type !== 'user') return;
   const t = String(m.message && m.message.content || '');
-  if (t.includes('[memoria]')) testo('fatto.');
+  // «oggetto vero» guarda l'oggetto vero e apre un ologramma (come mac-mcp, con POST /api/ologramma); «solo ologramma» lo apre
+  // senza guardare: il server deve chiedere il giro di [confronto] solo nel primo caso
+  const apri = (guarda) => {
+    const usi = [{ type: 'tool_use', id: 'toolu_m', name: 'mcp__mac__mostra_ologramma', input: {} }];
+    if (guarda) usi.unshift({ type: 'tool_use', id: 'toolu_g', name: 'mcp__mac__guarda_oggetto_vero', input: { oggetto: 'staffa vera' } });
+    out({ type: 'assistant', message: { content: usi } });
+    fetch('http://127.0.0.1:' + process.env.NEXUS_PORT + '/api/ologramma', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ azione: 'mostra', modello: ${JSON.stringify(STAFFA)} }) })
+      .catch(() => {}).finally(() => { testo('Ecco.'); out({ type: 'result', subtype: 'success', is_error: false }); });
+  };
+  if (t.includes('[confronto]')) testo('Corretto, effort ' + effort + '.');
+  else if (/\\boggetto vero\\b/.test(t)) return apri(true);
+  else if (/\\bsolo ologramma\\b/.test(t)) return apri(false);
+  else if (t.includes('[memoria]')) testo('fatto.');
   else if (/\\bvuoto\\b/.test(t)) report([]);
   else if (/\\breport\\b/.test(t)) report([{ tipo: 'testo', titolo: 'Uno', testo: 'Prova.' }]);
   else if (/\\bricerca\\b/.test(t)) { ricerca(); testo('Trovato.'); }
@@ -584,6 +597,16 @@ esito(conNome === 'Riga col nome.' && libero === 'Senza riga.' && proto === 'Sen
 const evPensa = await domanda('pensaci', 'nome'), dettoPensa = detto(evPensa), dopoPensa = detto(await domanda('quale effort', 'nome'));
 esito(dettoPensa === 'Te lo costruisco. Fatto a fondo, effort high.' && !evPensa.some((e) => e.t === 'pensa') && dopoPensa === 'Effort low.',
   '[[pensa]] rilancia il compito a effort high nella stessa risposta; la domanda dopo torna a low', `${dettoPensa} | ${dopoPensa}`);
+// [confronto] (17/11): dopo aver guardato l'oggetto vero e aperto un ologramma nuovo con l'HUD acceso, il server chiede un giro
+// di confronto a effort high nella stessa risposta. Senza guardare, o senza HUD, niente giro. Previsione: «Ecco. Corretto, effort high.»
+await vedoHud();
+const evVero = await domanda('oggetto vero', 'nome'), dettoVero = detto(evVero);
+esito(dettoVero === 'Ecco. Corretto, effort high.' && S1.registro.includes('[cervello] confronto col vero'),
+  'oggetto vero e ologramma nuovo con l\'HUD acceso: il server chiede il giro di [confronto] a effort high', dettoVero);
+await vedoHud();
+const confrontiPrima = (S1.registro.match(/confronto col vero/g) || []).length;
+const dettoSolo = detto(await domanda('solo ologramma', 'nome'));
+esito(dettoSolo === 'Ecco.' && (S1.registro.match(/confronto col vero/g) || []).length === confrontiPrima, 'un ologramma senza oggetto vero: niente giro di confronto', dettoSolo);
 await cervello({ azione: 'mostra', modello: STAFFA });
 let ev = await domanda('fammi un report');
 s = await stato();

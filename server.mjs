@@ -54,6 +54,12 @@ const effortDi = (e) => (e === 'default' ? undefined : e);
 const SENTITO = { nome: 'col nome', conversazione: 'senza nome, cominciata nei 15 secondi dopo che hai finito di parlare' };
 // Il secondo tempo di un compito annunciato con [[pensa]]: lo stesso turno di Tony, con l'effort alto
 const PENSA_TEXT = '[pensa] Adesso hai più tempo per ragionare: fai il compito che hai appena annunciato, senza ripetere la frase che hai già detto.';
+// Il giro di confronto (richiesta di Tony del 17/11): con le foto vere accanto alla foto dell'HUD il cervello diceva «fatto,
+// stilizzate» senza correggere niente (prova sulle AirPods). Uno solo, dopo la prima vista, come il [pensa]
+const CONFRONTO_TEXT = '[confronto] Prima di chiudere, rimetti a confronto la foto dell\'HUD con le foto vere che ti ha dato mcp__mac__mostra_ologramma: ' +
+  'forma, proporzioni, curve, pezzi mancanti o fuori posto. Trova le tre differenze più grandi e correggi le due più grandi, rifacendo i pezzi con ' +
+  'mcp__mac__costruisci_in_blender e aggiornandoli con mcp__mac__modifica_ologramma. Se l\'oggetto ha un dentro, guardalo anche in raggi-x contro la foto «dentro». ' +
+  'Poi di\' a Tony in una frase cosa hai corretto, senza ripetere quello che hai già detto.';
 const PERSONA = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
 
 // File del Mac: Nexus legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
@@ -595,10 +601,12 @@ const server = http.createServer(async (req, res) => {
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
     ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
-    let ignored = false, pensa = false;
+    let ignored = false, pensa = false, guardato = false;
+    const modelloPrima = holoOra.modello;
     const onEvent = (ev) => {
       if (ev.t === 'ignore') ignored = true;
       if (ev.t === 'pensa') { pensa = true; return; }
+      if (ev.t === 'mac' && ev.name === 'guarda_oggetto_vero') guardato = true;
       if (ev.t !== 'media') {
         write(ev);
         // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
@@ -610,11 +618,18 @@ const server = http.createServer(async (req, res) => {
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
     };
     const primo = await brain.ask(text, onEvent, { effort: effortDi(EFFORT) });
+    let interrotto = primo.interrotto;
     // [[pensa]]: il cervello ha detto la frase breve a effort basso e ha chiuso il turno. Il lavoro vero parte subito, con
     // l'effort alto, nella stessa risposta all'HUD. Una volta sola, e mai se nel frattempo Tony ha chiesto altro.
-    if (pensa && !ignored && !primo.interrotto) {
+    if (pensa && !ignored && !interrotto) {
       console.error('[cervello] ci penso a fondo');
-      await brain.ask(`[adesso: ${adesso()}]\n${PENSA_TEXT}`, onEvent, { effort: effortDi(EFFORT_PENSA) });
+      interrotto = (await brain.ask(`[adesso: ${adesso()}]\n${PENSA_TEXT}`, onEvent, { effort: effortDi(EFFORT_PENSA) })).interrotto;
+    }
+    // [confronto]: in questa risposta ha guardato l'oggetto vero e aperto un ologramma nuovo, con l'HUD acceso (senza la
+    // sua foto non c'è confronto). Un giro solo, con l'effort alto, nella stessa risposta; mai dopo un'interruzione.
+    if (guardato && !ignored && !interrotto && holoOra.aperto && holoOra.modello !== modelloPrima && Date.now() - hudSeen < 15_000) {
+      console.error('[cervello] confronto col vero');
+      await brain.ask(`[adesso: ${adesso()}]\n${CONFRONTO_TEXT}`, onEvent, { effort: effortDi(EFFORT_PENSA) });
     }
     finished = true; close();
     if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
