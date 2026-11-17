@@ -219,6 +219,35 @@ for (const [modo, opz, pre] of MODI) {
   prova(`esplodi (${modo}): due palmi aperti lontani che si allargano non esplodono`, conta(d, 'esplodi') === 0, `${conta(d, 'esplodi')} esplodi`);
 }
 
+// 3c. I salti dell'indice (17/11, Tony: «il cursore saltava»; 240 salti in una sessione) -------------------------------
+// Mano ferma e aperta; l'indice (punti 6, 7 e 8) balza di quasi un palmo per un fotogramma (20 e 32) e per due (44–45),
+// poi dal 56 si sposta davvero e resta lì. salto_fotogrammi 0 è il comportamento di prima: lo stesso codice senza scarto.
+// Previsione: senza scarto il cursore fa passi oltre 0,05 dello schermo; con lo scarto resta entro 0,005, e lo spostamento
+// vero arriva lo stesso (entro 0,02 dalla sua posizione dopo 20 fotogrammi).
+{
+  const stati = seq({ x: 0.5, y: 0.6, r: 1.2 }, [80, {}]);
+  const balza = (p, k) => ({ ...p, x: p.x + 0.12 * ((k - 5) / 3), y: p.y + 0.05 * ((k - 5) / 3) });
+  const fot = unaMano(stati).map((mani, i) => (i === 20 || i === 32 || i === 44 || i === 45 || i >= 56
+    ? mani.map((m) => ({ ...m, punti: m.punti.map((p, k) => (k >= 6 && k <= 8 ? balza(p, k) : p)) })) : mani));
+  const prova0 = (opz) => {
+    const cur = gira(fot, { ...SEMPRE, ...opz }).ev.filter((e) => e.tipo === 'cursore');
+    const passi = cur.slice(1).map((e, j) => ({ i: e.i, d: Math.hypot(e.x - cur[j].x, e.y - cur[j].y) }));
+    const fermi = passi.filter((p) => p.i >= 10 && p.i < 56), fine = cur.at(-1);
+    const vero = schermo(fot[79][0].punti[8]);
+    return { passo: Math.max(...fermi.map((p) => p.d)), finale: Math.hypot(fine.x - vero.x, fine.y - vero.y), gesti: nomi(gira(fot, { ...SEMPRE, ...opz }).ev) };
+  };
+  const senza = prova0({ salto_fotogrammi: 0 }), con = prova0({});
+  prova('salti: senza scarto il cursore salta (il comportamento di prima)', senza.passo > 0.05, `passo massimo ${f4(senza.passo)} dello schermo`);
+  prova('salti: con lo scarto il cursore resta fermo, e lo spostamento vero arriva', con.passo < 0.005 && con.finale < 0.02 && con.gesti.length === 0,
+    `passo massimo ${f4(con.passo)}; dopo lo spostamento vero il cursore è a ${f4(con.finale)} dalla punta; gesti ${con.gesti.join(',') || 'nessuno'}`);
+  const g = createGesti(SEMPRE);
+  fot.forEach((mani, i) => g.aggiorna(mani, 1000 + i * DT));
+  const ms = g.misure();
+  // 7 salti: 20, 32, 44, 45 e i tre dello spostamento vero (56 e 57 scartati, 58 creduto); il ritorno dopo un balzo non
+  // conta, perché si confronta con la forma creduta. Scartati 6: i quattro balzi e i primi due fotogrammi dello spostamento
+  prova('salti: le misure contano i salti e quelli scartati', ms.salti === 7 && ms.salti_tenuti === 6, `salti ${ms.salti}, scartati ${ms.salti_tenuti}`);
+}
+
 // 4. Afferra, sposta e lascia -----------------------------------------------------------------------------------------
 for (const [modo, opz, pre] of MODI) {
   const stati = seq({ x: 0.45, y: 0.75, r: 1.2 }, [8, {}], [3, { r: 0.15 }], [15, {}], [9, { x: 0.45 + 9 * vel(0.3) }], [15, {}], [3, { r: 1.2 }], [5, {}]);

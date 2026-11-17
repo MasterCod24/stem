@@ -65,6 +65,9 @@ export const PREDEFINITI = Object.freeze({
   esplodi_ms: 300,      // le due mani aperte da tanto prima che l'esploso possa partire. Scelto il 17/11, non misurato
   dito_piegato: 1.1,    // dito chiuso nel pugno: la punta dista dal polso meno di 1,1 volte la sua nocca
   ricomponi_ms: 500,    // due pugni chiusi tenuti così a lungo: ricomponi. Scelto il 16/11, non misurato sulle mani di Tony
+  salto_fotogrammi: 2,  // un salto dell'indice (oltre SALTO_U palmi rispetto al palmo in un fotogramma) si scarta per
+                        // tanti fotogrammi di fila: la mano tiene la forma di prima. Oltre, è un movimento vero. 0 non scarta.
+                        // Scelto il 17/11 (Tony: «il cursore saltava»), non misurato
 });
 
 const DITA = [[5, 8], [9, 12], [13, 16], [17, 20]]; // nocca e punta di indice, medio, anulare e mignolo
@@ -122,7 +125,7 @@ export function createGesti(opzioni) {
   let fase = FASE0, detta = false, tAttivo = -Infinity; // detta: la fase è già uscita come evento
   // Le misure d'uso vero: solo conti e somme, mai punti né posizioni
   const vuote = () => ({ ms: 0, trem2: 0, tremN: 0, buchi: 0, gesti_persi: 0, inneschi: 0, scaduti: 0, pizzichi: 0, pizzichi_profilo: 0,
-    lanci: 0, prese_sparite_veloci: 0, salti: 0, quadri: 0, quadriProfilo: 0, minimi: [] });
+    lanci: 0, prese_sparite_veloci: 0, salti: 0, salti_tenuti: 0, quadri: 0, quadriProfilo: 0, minimi: [] });
   let M = vuote();
 
   const sx = (X) => mappa(X / o.aspetto, o.margine, o.curva), sy = (Y) => mappa(Y, o.margine, o.curva);
@@ -161,7 +164,17 @@ export function createGesti(opzioni) {
     palmo: m.palmo, r: 1, pizzico: false, aperta: false, consumato: false, modo: null,
     ix: 0, iy: 0, fx: 0, fy: 0, gx: m.cx, gy: m.cy, cx: m.cx, cy: m.cy, storia: [], mira: null, tMira: -Infinity,
     nx: 0, ny: 0, nz: 1, inclinazione: 0, profilo: false, dentro: false, tPalmo: null, falsi: 0, pMin: null, rel: null,
+    forma: null, tenuti: 0, // la forma della mano dell'ultimo fotogramma creduto (21 punti rispetto al palmo, in palmi)
   });
+
+  // pollice (4) e indice (8) rispetto al centro del palmo, in palmi: è su questi due che si misurano i salti
+  const relDi = (m) => [(m.X[4] - m.cx) / m.palmo, (m.Y[4] - m.cy) / m.palmo, (m.X[8] - m.cx) / m.palmo, (m.Y[8] - m.cy) / m.palmo];
+  const scartoRel = (a, b) => Math.max(Math.hypot(a[0] - b[0], a[1] - b[1]), Math.hypot(a[2] - b[2], a[3] - b[3]));
+  function formaDi(m) {
+    const f = new Float64Array(42);
+    for (let i = 0; i < 21; i++) { f[2 * i] = (m.X[i] - m.cx) / m.palmo; f[2 * i + 1] = (m.Y[i] - m.cy) / m.palmo; }
+    return f;
+  }
 
   // La zona morta «a corda»: l'àncora resta ferma finché il punto filtrato le sta entro zona_morta; oltre, lo segue
   // restandogli a quella distanza. Da ferma la mano non fa tremare niente, e un movimento lento non va a gradini.
@@ -181,6 +194,23 @@ export function createGesti(opzioni) {
   // ferma non trema e quella veloce non resta indietro.
   function nutri(tr, m, t, prec) {
     const dt = (t - tr.visto) / 1000, ad = alfa(o.dcutoff, dt), nuova = !tr.pronta;
+    // I salti di MediaPipe (17/11, Tony: «il cursore saltava»; 240 salti in 380 s di mani nella sua sessione col
+    // ventilatore). Si contano su pollice e indice, come prima. Si scartano solo quelli dell'indice, la punta che fa il
+    // cursore: rispetto al palmo si muove poco anche mentre pizzica, quindi più di SALTO_U palmi in un fotogramma non è un
+    // dito vero. Il pollice no: un pizzico aperto di scatto lo sposta di tanto davvero, e scartarlo perdeva i lanci
+    // (prove/gesti.mjs). Per salto_fotogrammi fotogrammi di fila la mano tiene la forma dell'ultimo fotogramma creduto e
+    // segue solo il palmo; se dura di più è un movimento vero, e passa. Il confronto è con la forma creduta.
+    const rel = relDi(m);
+    const saltato = !nuova && tr.rel && tr.visto === prec && scartoRel(rel, tr.rel) > SALTO_U;
+    const saltaIndice = saltato && Math.hypot(rel[2] - tr.rel[2], rel[3] - tr.rel[3]) > SALTO_U;
+    if (saltato && tr.n >= o.stabile) M.salti++;
+    if (saltaIndice && tr.forma && tr.tenuti < o.salto_fotogrammi) {
+      for (let i = 0; i < 21; i++) { m.X[i] = m.cx + tr.forma[2 * i] * m.palmo; m.Y[i] = m.cy + tr.forma[2 * i + 1] * m.palmo; }
+      tr.tenuti++;
+      if (tr.n >= o.stabile) M.salti_tenuti++;
+    } else {
+      tr.tenuti = 0; tr.forma = formaDi(m); tr.rel = rel;
+    }
     // per il tremolio di misure(): la punta grezza contro il filtrato di prima. Dopo l'aggiornamento il filtrato ha già fatto
     // un passo verso il grezzo e lo scarto usciva più piccolo del rumore (0,82 volte con σ 0,004, prove/gesti.mjs)
     const eX = m.X[8] - tr.X[8], eY = m.Y[8] - tr.Y[8];
@@ -225,19 +255,16 @@ export function createGesti(opzioni) {
     else if (tr.n < o.stabile) tr.consumato = true; // comparsa già chiusa: prima di un gesto deve aprirsi
     if (!tr.lato) tr.lato = m.lato;
 
-    // Misure, solo sulle mani stabili
-    const rel = [(m.X[4] - m.cx) / m.palmo, (m.Y[4] - m.cy) / m.palmo, (m.X[8] - m.cx) / m.palmo, (m.Y[8] - m.cy) / m.palmo];
+    // Misure, solo sulle mani stabili (i salti si contano in cima, contro la forma creduta)
     if (tr.n >= o.stabile) {
       M.quadri++; if (tr.profilo) M.quadriProfilo++;
       let vX = 0, vY = 0;
       for (const i of PALMO) { vX += tr.dX[i] / 5; vY += tr.dY[i] / 5; }
       if (Math.hypot(vX, vY) < FERMO_V) { M.trem2 += eX * eX + eY * eY; M.tremN++; }
-      if (tr.rel && tr.visto === prec && Math.max(Math.hypot(rel[0] - tr.rel[0], rel[1] - tr.rel[1]), Math.hypot(rel[2] - tr.rel[2], rel[3] - tr.rel[3])) > SALTO_U) M.salti++;
       // un pizzico si conta quando si chiude fuori dal riposo; la sua distanza minima, in palmi, quando si riapre
       if (tr.pizzico && !chiusoPrima && fase !== 'riposo') { M.pizzichi++; if (tr.profilo) M.pizzichi_profilo++; tr.pMin = Infinity; }
       if (tr.pMin !== null) { if (tr.pizzico) tr.pMin = Math.min(tr.pMin, d(4, 8) / tr.palmo); else fineMinimo(tr); }
     }
-    tr.rel = rel;
     tr.n++; tr.visto = t;
   }
 
@@ -441,6 +468,8 @@ export function createGesti(opzioni) {
       lanci: M.lanci,
       prese_sparite_veloci: M.prese_sparite_veloci,            // prese finite perché la mano è sparita mentre correva oltre lancio_mm_s
       salti: M.salti,                                          // fotogrammi con la punta di pollice o indice spostata di più di 0,5 palmi rispetto al palmo
+                                                               // (dal 17/11 rispetto alla forma creduta: un salto di un fotogramma conta 1, non 2)
+      salti_tenuti: M.salti_tenuti,                            // di quei fotogrammi, quelli scartati tenendo la forma di prima
       profilo: M.quadri ? M.quadriProfilo / M.quadri : null,   // frazione dei fotogrammi con la mano di profilo
     };
   }
@@ -455,7 +484,7 @@ export function createGesti(opzioni) {
 // registro. Tutte facoltative (un HUD vecchio non le manda), ma quelle che ci sono devono essere numeri finiti dentro
 // questi limiti: null se qualcosa non va, '' se non c'è niente da dire. Sta qui, senza DOM, perché si provi in Node.
 const LIMITI_MISURE = Object.freeze({ secondi: 86400, tremolio_px: 1000, tremolio_n: 1e7, buchi: 1e7, gesti_persi: 1e7, inneschi: 1e7, scaduti: 1e7,
-  pizzichi: 1e7, pizzico_min: 10, pizzichi_profilo: 1e7, lanci: 1e7, prese_sparite_veloci: 1e7, salti: 1e7, profilo: 1 });
+  pizzichi: 1e7, pizzico_min: 10, pizzichi_profilo: 1e7, lanci: 1e7, prese_sparite_veloci: 1e7, salti: 1e7, salti_tenuti: 1e7, profilo: 1 });
 export function testoMisure(g) {
   if (g === undefined) return '';
   if (g === null || typeof g !== 'object' || Array.isArray(g)) return null;
@@ -471,7 +500,7 @@ export function testoMisure(g) {
     pezzi.push(`pizzichi ${r(g.pizzichi)}${dentro.length ? ` (${dentro.join(', ')})` : ''}`);
   }
   const conti = [['buchi', 'buchi'], ['gesti_persi', 'gesti persi'], ['lanci', 'lanci'], ['prese_sparite_veloci', 'prese sparite in corsa'], ['salti', 'salti']]
-    .filter(([k]) => ha(k)).map(([k, nome]) => `${nome} ${r(g[k])}`);
+    .filter(([k]) => ha(k)).map(([k, nome]) => `${nome} ${r(g[k])}${k === 'salti' && ha('salti_tenuti') ? ` (scartati ${r(g.salti_tenuti)})` : ''}`);
   if (ha('profilo')) conti.push(`profilo ${r(100 * g.profilo)}%`);
   if (conti.length) pezzi.push(conti.join(', '));
   return pezzi.map((p) => `; ${p}`).join('');
