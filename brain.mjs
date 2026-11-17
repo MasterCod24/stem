@@ -49,7 +49,10 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
       if (gone) return; gone = true;
       onLog(`[cervello] fermo (${why}) ${stderr.trim().slice(-300)}`);
       if (child === c) child = null;
-      const quick = Date.now() - bornAt < 20000;
+      // Ucciso da me per un'interruzione lenta: non è la conversazione rotta, e si riprende sempre. Il 17/11 sera una domanda
+      // di Telegram e due dell'HUD in 11 s hanno fatto uccidere due volte il cervello, la seconda mentre ripartiva: contato
+      // come «morto subito», ha aperto una conversazione nuova e perso quella della sera (20 domande).
+      const quick = Date.now() - bornAt < 20000 && !c.uccisoDaMe;
       // Ripreso e morto subito (conversazione sparita o rovinata): riparto da una nuova, se no riproverei la stessa all'infinito
       if (quick && extra.length && sessionId) { onLog('[cervello] non riesco a riprendere la conversazione: ne apro una nuova'); sessionId = null; }
       fails = quick ? fails + 1 : 0; // se muore appena nato, aspetto sempre di più (prima di endTurn, che può farlo ripartire)
@@ -191,7 +194,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
     turn.interrupted = true;
     send({ type: 'control_request', request_id: `stop-${Date.now()}`, request: { subtype: 'interrupt' } });
     const T = turn;
-    setTimeout(() => { if (turn === T) { onLog('[cervello] interruzione lenta: riavvio'); child?.kill('SIGTERM'); } }, 4000);
+    setTimeout(() => { if (turn === T && child) { onLog('[cervello] interruzione lenta: riavvio'); child.uccisoDaMe = true; child.kill('SIGTERM'); } }, 4000);
   }
 
   function stop() { if (waiting) { waiting.resolve({ interrotto: true }); waiting = null; } interrupt(); }
