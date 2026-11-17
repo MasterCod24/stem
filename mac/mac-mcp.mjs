@@ -2,6 +2,7 @@
 // Nexus — server MCP per il controllo del Mac (stdio, JSON-RPC 2.0, un messaggio JSON per riga). Senza dipendenze.
 // Le azioni native le fa runtime/stem-mac, compilato al volo da mac/helper.swift.
 import { execFile } from 'node:child_process';
+import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -648,8 +649,216 @@ async function ologramma(corpo) {
   // Testo e foto, senza structuredContent: secondo la misura dello studio, con quello il testo non arriverebbe al cervello
   const out = [{ type: 'text', text: String(d.testo ?? '') }];
   if (typeof d.foto === 'string' && d.foto) out.push({ type: 'image', data: d.foto, mimeType: 'image/png' });
+  return accantoAlVero(corpo, out);
+}
+
+// --- L'oggetto vero: foto e misure, per confrontare l'ologramma con la realtà (17/11, richiesta di Tony) ---
+// Tony ha bocciato gli oggetti fatti «a occhio»: il cervello costruiva da quello che ricordava e controllava la foto
+// dell'HUD solo contro sé stesso. Con guarda_oggetto_vero guarda le foto vere, e gli strumenti gliele rimettono accanto
+// alla foto dell'HUD: «fuori» alla prima vista (mostra), «dentro» quando guarda ai raggi X o in sezione. Le misure
+// ufficiali le confronta costruisci_in_blender con l'ingombro di quello che esce da Blender.
+// Le foto vengono dal web: solo https verso indirizzi pubblici (niente Nexus né altri servizi del Mac o di casa).
+// Nessuno le apre sul Mac: tipo e misure si leggono dai primi byte, e passano così come sono solo se stanno entro
+// 2000 pixel per lato (il limite delle immagini quando una conversazione ne ha più di 20) e 3,5 MB (5 MB in base64).
+// Una più grande si rifiuta dicendo dove trovarne una più piccola. Ridurle con sips voleva una gabbia con tre eccezioni
+// (17/11): tolto.
+const VERO_FOTO = 3, VERO_BYTE = 3.5 * 2 ** 20, VERO_LATO = 2000, VERO_MS = 15_000;
+const TIPI_FOTO = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+const VERO_VALE_MS = 30 * 60_000; // una foto guardata vale per il prossimo ologramma, se arriva entro mezz'ora
+const VERO_SCARTO = 0.1;          // oltre il 10% su un lato, il testo chiede di correggere o di dirlo a Tony
+const UA_WEB = { 'user-agent': 'Nexus/1.0 (assistente personale)' };
+const mm = (n) => (Math.round(n * 10) / 10 || 0).toLocaleString('it-IT');
+let vero = null; // { oggetto, foto: [{ cosa, data }], misure (dal lato più lungo), fonte, scala, quando, mostrato, costruito }
+
+function indirizzoPrivato(ip) {
+  const v4 = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(v4)) {
+    const [a, b] = v4.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b < 32) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b < 128);
+  }
+  const s = ip.toLowerCase();
+  return s === '::' || s === '::1' || /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith('::ffff:');
+}
+
+async function scaricaFoto(indirizzo) {
+  let u;
+  try { u = new URL(String(indirizzo ?? '')); } catch { throw new Error('non è un indirizzo'); }
+  for (let rimandi = 0; ; rimandi++) {
+    if (u.protocol !== 'https:' || u.port || u.username || u.password) throw new Error('serve https, senza porta né credenziali');
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    const ind = await dns.lookup(host, { all: true }).catch(() => []);
+    if (!ind.length) throw new Error(`${host} non si trova`);
+    if (ind.some((x) => indirizzoPrivato(x.address))) throw new Error(`${host} porta a un indirizzo del Mac o della rete di casa`);
+    let r;
+    try { r = await fetch(u, { headers: UA_WEB, redirect: 'manual', signal: AbortSignal.timeout(VERO_MS) }); } catch (e) { throw new Error(`il sito non risponde (${e.cause?.code || e.name})`); }
+    const dove = r.headers.get('location');
+    if (r.status >= 300 && r.status < 400 && dove) {
+      r.body?.cancel().catch(() => {});
+      if (rimandi >= 3) throw new Error('troppi rimandi');
+      u = new URL(dove, u);
+      continue;
+    }
+    if (!r.ok) { r.body?.cancel().catch(() => {}); throw new Error(`il sito ha risposto ${r.status}`); }
+    const parti = [];
+    let n = 0;
+    try {
+      for await (const c of r.body) {
+        n += c.length;
+        if (n > VERO_BYTE) throw new Error(`oltre ${mm(VERO_BYTE / 2 ** 20)} MB: ${PIU_PICCOLA}`);
+        parti.push(c);
+      }
+    } catch (e) { throw e.name === 'TimeoutError' ? new Error(`non è arrivata entro ${VERO_MS / 1000} s`) : e; }
+    return Buffer.concat(parti);
+  }
+}
+
+function tipoFoto(b) { // dai primi byte, non da quello che dice il sito
+  if (b.length < 16) return null;
+  if (b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG') return 'png';
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if (b.toString('latin1', 0, 4) === 'GIF8') return 'gif';
+  if (b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
+const PIU_PICCOLA = `serve una versione entro ${VERO_LATO} pixel per lato e ${mm(VERO_BYTE / 2 ** 20)} MB, per esempio l'anteprima di Wikimedia (/thumb/…/1280px-…) o la .medium di iFixit`;
+
+// Larghezza e altezza dall'intestazione, senza decodificare l'immagine
+function latiFoto(b, tipo) {
+  if (tipo === 'png') return b.length >= 24 && b.toString('latin1', 12, 16) === 'IHDR' ? { w: b.readUInt32BE(16), h: b.readUInt32BE(20) } : null;
+  if (tipo === 'gif') return { w: b.readUInt16LE(6), h: b.readUInt16LE(8) };
+  if (tipo === 'webp') {
+    const f = b.toString('latin1', 12, 16);
+    if (f === 'VP8 ' && b.length >= 30) return { w: b.readUInt16LE(26) & 0x3fff, h: b.readUInt16LE(28) & 0x3fff };
+    if (f === 'VP8L' && b.length >= 25) { const n = b.readUInt32LE(21); return { w: (n & 0x3fff) + 1, h: ((n >>> 14) & 0x3fff) + 1 }; }
+    if (f === 'VP8X' && b.length >= 30) return { w: 1 + b.readUIntLE(24, 3), h: 1 + b.readUIntLE(27, 3) };
+    return null;
+  }
+  for (let i = 2; i + 9 < b.length;) { // jpg: il primo marcatore SOF
+    if (b[i] !== 0xff) return null;
+    const m = b[i + 1];
+    if (m === 0xff) { i++; continue; }
+    if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+    if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { h: b.readUInt16BE(i + 5), w: b.readUInt16BE(i + 7) };
+    i += 2 + b.readUInt16BE(i + 2);
+  }
+  return null;
+}
+
+async function guardaOggettoVero(a) {
+  const oggetto = String(a.oggetto ?? '').trim().slice(0, 80);
+  if (!oggetto) throw new ToolError('«oggetto» dice cosa guardi: «AirPods Pro 2 con custodia». Niente è cambiato.');
+  let misure = null;
+  if (a.misure != null) {
+    if (!Array.isArray(a.misure) || a.misure.length !== 3 || !a.misure.every((x) => typeof x === 'number' && x > 0 && x <= 1e9)) {
+      throw new ToolError('«misure» sono i tre lati dell\'oggetto vero in mm, numeri positivi. Niente è cambiato.');
+    }
+    misure = [...a.misure].sort((x, y) => y - x);
+  }
+  const scala = a.scala == null ? 1 : a.scala;
+  if (!(typeof scala === 'number' && scala > 0 && scala <= 1e6)) throw new ToolError('«scala» è un numero positivo: 1000 per un ologramma 1:1000. Niente è cambiato.');
+  const foto = Array.isArray(a.foto) ? a.foto : [];
+  if (foto.length > VERO_FOTO) throw new ToolError(`Al massimo ${VERO_FOTO} foto. Niente è cambiato.`);
+  if (!foto.length && !misure) throw new ToolError('Servono le foto, le misure o tutte e due. Niente è cambiato.');
+  const prese = [], errori = [];
+  await Promise.all(foto.map(async (f, i) => {
+    const cosa = f?.cosa === 'dentro' ? 'dentro' : 'fuori';
+    try {
+      const b = await scaricaFoto(f?.url);
+      const t = tipoFoto(b);
+      if (!t) {
+        throw new Error(b.toString('latin1', 0, 256).trimStart().startsWith('<')
+          ? 'è una pagina o un SVG, non una foto: serve l\'indirizzo del jpg o del png (per Wikimedia l\'anteprima /thumb/…/1280px-…)'
+          : 'non è un jpg, png, webp o gif');
+      }
+      const l = latiFoto(b, t);
+      if (!l || !(l.w > 0 && l.h > 0)) throw new Error(`l'intestazione del ${t} non si legge`);
+      if (Math.max(l.w, l.h) > VERO_LATO) throw new Error(`è di ${l.w}×${l.h} pixel: ${PIU_PICCOLA}`);
+      prese[i] = { cosa, data: b.toString('base64'), mimeType: TIPI_FOTO[t] };
+    } catch (e) {
+      errori[i] = `foto ${i + 1} (${cosa}): ${e.message}`;
+    }
+  }));
+  const buone = prese.filter(Boolean);
+  if (!buone.length && !misure) throw new ToolError(`Nessuna foto presa, niente è cambiato:\n- ${errori.filter(Boolean).join('\n- ')}`);
+  const fonte = String(a.fonte ?? '').trim().slice(0, 200);
+  vero = { oggetto, foto: buone, misure, fonte, scala, quando: Date.now(), mostrato: false, costruito: new Map() };
+  const quante = (cosa) => buone.filter((f) => f.cosa === cosa).length;
+  const righe = [`Guardato «${oggetto}»: ${buone.length ? `${buone.length} foto (fuori ${quante('fuori')}, dentro ${quante('dentro')}), qui sotto` : 'nessuna foto'}` +
+    (misure ? `; misure vere ${misure.map(mm).join(' × ')} mm${fonte ? ` (${fonte})` : ''}${scala !== 1 ? `, ologramma in scala 1:${mm(scala)}` : ''}` : '') + '.'];
+  if (errori.some(Boolean)) righe.push(`Non prese:\n- ${errori.filter(Boolean).join('\n- ')}`);
+  righe.push('Costruisci su queste. Alla prima vista mcp__mac__mostra_ologramma ti rimette accanto alla foto dell\'HUD quelle «fuori», e quelle «dentro» quando guardi in raggi-x o in sezione' +
+    (misure ? '; mcp__mac__costruisci_in_blender confronta le misure con quello che costruisci.' : '.'));
+  return [{ type: 'text', text: righe.join('\n') }, ...buone.map((f) => ({ type: 'image', data: f.data, mimeType: f.mimeType }))];
+}
+
+// Dopo la foto dell'HUD, quelle vere: «fuori» alla prima vista, «dentro» ai raggi X o in sezione
+function accantoAlVero(corpo, out) {
+  if (corpo.azione === 'mostra') {
+    if (!vero || vero.mostrato || Date.now() - vero.quando > VERO_VALE_MS) {
+      vero = null; // un ologramma nuovo senza foto nuove: quelle di prima erano di un altro oggetto
+      out[0].text += '\nFoto vere: nessuna per questo ologramma. Se l\'oggetto esiste, guardalo con mcp__mac__guarda_oggetto_vero e confronta prima di dire che è fatto.';
+      return out;
+    }
+    vero.mostrato = true;
+    return conFotoVere(out, 'fuori', 'com\'è fuori: confronta forma, proporzioni e pezzi, e correggi prima di dire che è fatto');
+  }
+  const v = corpo.vista;
+  if (corpo.azione === 'modifica' && vero?.mostrato && v && (v.modo === 'raggi-x' || (v.sezione && typeof v.sezione === 'object'))) {
+    return conFotoVere(out, 'dentro', 'com\'è dentro: confronta i pezzi interni, dove stanno e quanto sono grandi');
+  }
   return out;
 }
+function conFotoVere(out, cosa, perche) {
+  const f = vero.foto.filter((x) => x.cosa === cosa);
+  if (!f.length) return out;
+  if (out.length < 2) {
+    out[0].text += `\nLe foto vere di «${vero.oggetto}» (${cosa}) non te le rimetto: senza la foto dell'HUD non c'è confronto.`;
+    return out;
+  }
+  out[0].text += `\nDopo la foto dell'HUD, ${f.length === 1 ? 'la foto vera' : `le ${f.length} foto vere`} di «${vero.oggetto}», ${perche}.`;
+  for (const x of f) out.push({ type: 'image', data: x.data, mimeType: x.mimeType });
+  return out;
+}
+
+// L'ingombro di quello che esce da Blender (unione dei modelli costruiti dopo guarda_oggetto_vero, ultima versione di
+// ciascuno) contro le misure vere, lato per lato dal più lungo: l'orientamento non conta, le proporzioni sì.
+function confrontaMisure(nome, pezzi) {
+  if (!vero?.misure || Date.now() - vero.quando > 2 * VERO_VALE_MS) return null;
+  const box = (lista) => [[0, 1, 2].map((i) => Math.min(...lista.map((b) => b[0][i]))), [0, 1, 2].map((i) => Math.max(...lista.map((b) => b[1][i])))];
+  vero.costruito.set(nome, box(pezzi.map((p) => [p.min, p.max])));
+  const [lo, hi] = box([...vero.costruito.values()]);
+  const lati = [0, 1, 2].map((i) => (hi[i] - lo[i]) * vero.scala).sort((x, y) => y - x);
+  const scarti = lati.map((l, i) => (l - vero.misure[i]) / vero.misure[i]);
+  const pc = (s) => `${s < -0.005 ? '−' : '+'}${Math.round(Math.abs(s) * 100)}%`;
+  let t = `Misure vere di «${vero.oggetto}»: ${vero.misure.map(mm).join(' × ')} mm. ` +
+    `Quello che hai costruito dopo averlo guardato (${[...vero.costruito.keys()].join(', ')}), come esce da Blender e senza le copie di mcp__mac__mostra_ologramma: ` +
+    `${lati.map(mm).join(' × ')} mm${vero.scala !== 1 ? ` in grandezza vera (×${mm(vero.scala)})` : ''}. Scarti dal lato più lungo: ${scarti.map(pc).join(', ')}.`;
+  if (scarti.some((s) => Math.abs(s) > VERO_SCARTO)) t += ` Oltre il ${VERO_SCARTO * 100}%: correggi le misure, o di' a Tony quale lato è diverso e perché.`;
+  return t;
+}
+
+TOOLS.push({
+  name: 'guarda_oggetto_vero',
+  description: 'Per un oggetto che esiste, dopo le ricerche e prima di costruirlo: guardi 1–3 sue foto vere e fissi le misure ufficiali. ' +
+    'Le foto sono indirizzi https di immagini jpg, png, webp o gif (non la pagina) entro 2000 pixel per lato e 3,5 MB, trovati con WebSearch e WebFetch: ' +
+    'Wikimedia (l\'anteprima /thumb/…/1280px-…), iFixit (.medium), il sito del produttore. «fuori» è com\'è fuori, «dentro» uno spaccato o uno smontaggio. Tornano a te; poi mcp__mac__mostra_ologramma te le rimette accanto alla foto dell\'HUD: ' +
+    '«fuori» alla prima vista, «dentro» quando guardi in raggi-x o in sezione. Con «misure», mcp__mac__costruisci_in_blender confronta l\'ingombro di quello che costruisci con quello vero. ' +
+    'Vale per il prossimo ologramma; una chiamata nuova sostituisce la precedente.',
+  inputSchema: { type: 'object', properties: {
+    oggetto: { type: 'string', description: 'cosa è, al massimo 80 caratteri: «AirPods Pro 2 con custodia»' },
+    foto: { type: 'array', maxItems: VERO_FOTO, items: { type: 'object', properties: {
+      url: { type: 'string', description: 'https, l\'immagine e non la pagina' },
+      cosa: { type: 'string', enum: ['fuori', 'dentro'] },
+    }, required: ['url', 'cosa'] } },
+    misure: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'ingombro dell\'oggetto vero in mm, i tre lati in qualunque ordine' },
+    fonte: { type: 'string', description: 'la pagina che dà le misure' },
+    scala: { type: 'number', description: 'solo per un ologramma in scala: 1000 se è 1:1000' },
+  }, required: ['oggetto'] },
+  annotations: { title: 'Guarda l\'oggetto vero', readOnlyHint: true },
+  run: guardaOggettoVero,
+});
 
 // Ogni forma di dati è descritta per intero in uno strumento solo, e gli altri lo citano: le definizioni degli strumenti
 // stanno nel contesto del cervello a ogni domanda, e con le copie i tre strumenti pesavano 13,2 KB invece di 7,9.
@@ -876,6 +1085,8 @@ async function costruisciInBlender(a) {
   }
   if (tot > TRIANGOLI_FILE) avvisi.push(`oltre ${it(TRIANGOLI_FILE)} triangoli in tutto: con le mani l'HUD scende sotto 45 fps (2 milioni fanno 33 fps)`);
   if (avvisi.length) righe.push(`Avvisi: ${avvisi.join('; ')}.`);
+  const confronto = confrontaMisure(nome, rap.pezzi);
+  if (confronto) righe.push(confronto);
   righe.push('Per vederli: mcp__mac__mostra_ologramma, un pezzo per file, forma «file», misure { file: percorso, centra: false }: posizione [0, 0, 0] lo lascia dove lo script l\'ha messo. ' +
     'Un file può fare più pezzi, con rotazione e posizione diverse; i triangoli contano a ogni copia. Questi pezzi non entrano nel calcolo degli sforzi.');
   return righe.join('\n');
@@ -931,6 +1142,7 @@ async function handle(msg) {
         serverInfo: { name: 'nexus-mac', version: '1.0.0' },
         instructions: 'Controllo del Mac di Tony. Prima di cliccare fai «schermo»: le coordinate sono in pixel dell\'ultima schermata. ' +
           'Per aprire o chiudere un\'app usa apri_app e chiudi_app, non il mouse. I compiti per dopo si segnano con «ricorda». ' +
+          'Un oggetto che esiste si guarda prima con mcp__mac__guarda_oggetto_vero (foto vere e misure). ' +
           'Gli oggetti in 3D si costruiscono con mcp__mac__costruisci_in_blender e si mostrano con mcp__mac__mostra_ologramma, il meteo con mcp__mac__mostra_meteo. Ogni strumento si chiama col nome intero.',
       } });
     case 'ping':
@@ -940,7 +1152,8 @@ async function handle(msg) {
     case 'tools/call': {
       const run = async () => reply(await callTool(params));
       if (params?.name === 'mostra_meteo') return run(); // solo rete: non aspetta mouse e tastiera, e non li ferma
-      if (OLOGRAMMI.has(params?.name) || params?.name === 'costruisci_in_blender') return (codaOlo = codaOlo.then(run).catch((e) => log(e.message)));
+      // guarda_oggetto_vero sta nella stessa fila: le foto vere devono esserci prima del mostra che le rimette accanto
+      if (OLOGRAMMI.has(params?.name) || params?.name === 'costruisci_in_blender' || params?.name === 'guarda_oggetto_vero') return (codaOlo = codaOlo.then(run).catch((e) => log(e.message)));
       queue = queue.then(run).catch((e) => log(e.message));
       return queue;
     }

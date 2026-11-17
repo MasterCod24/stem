@@ -14,7 +14,28 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per Nexus (nome o conversazione), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «nexus». Tiene le ultime 300 righe.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 16/11/2026)
+## Aperto (al 17/11/2026)
+- **Foto e misure vere accanto all'ologramma: richiesta di Tony del 17/11, costruito e provato senza cervello, mai usato.** Tony ha bocciato gli oggetti fatti «a occhio»: il cervello costruiva da quello che ricordava e confrontava la foto dell'HUD solo con sé stessa. Ora c'è `guarda_oggetto_vero` in `mac/mac-mcp.mjs`.
+  - **Cosa fa:** il cervello gli dà 1–3 foto vere (`fuori`, oppure `dentro` per uno spaccato o uno smontaggio) e le misure ufficiali. Alla prima vista `mostra_ologramma` mette dopo la foto dell'HUD le foto «fuori»; `modifica_ologramma` mette quelle «dentro» quando passa ai raggi X o mette una sezione. `costruisci_in_blender` confronta l'ingombro di quello che esce da Blender con le misure vere, lato per lato dal più lungo (l'orientamento non conta), anche in scala. Un `mostra` senza foto nuove dice di guardare l'oggetto vero e non rimette quelle vecchie.
+  - **Sicurezza:** solo https sulla porta 443 verso indirizzi pubblici, controllati dopo il DNS e a ogni rimando (Mac, rete di casa e Nexus restano fuori). Le foto non si aprono sul Mac: tipo e misure si leggono dai primi byte, e passano intere solo entro 2000 px per lato e 3,5 MB.
+  - **Tolto prima di finire:** ridurre le foto con `sips` nella gabbia di Blender. Per farlo funzionare servivano i metadati delle cartelle sopra e le scritture temporanee di `sips` in `$TMPDIR` di sistema, cioè una gabbia con tre eccezioni. Il prezzo: una foto troppo grande si rifiuta, e l'errore dice di prendere l'anteprima (Wikimedia `/thumb/…/1280px-`, iFixit `.medium`).
+  - **Prove:** `prove/oggetto-vero.mjs` 34 su 34, con la rete e Blender. `prove/blender.mjs` resta 30 su 30. `prove/ologramma-server.mjs` dà 121 su 122: il fallito (`runtime/modelli/prova-mani.jpg`) c'era già prima ed è la foto di prova da scaricare (vedi **Provare**). Una riga di quella prova voleva la nota della foto in fondo al testo, e ora controlla che ci sia e basta.
+  - **Previsione da verificare col cervello vero** (mai provato): chiamerà lo strumento, ma almeno una foto su due giri sarà rifiutata al primo colpo, perché pagina o troppo grande.
+  - **Scelte mie, da guardare con Tony:**
+    - lo scarto oltre il quale il testo chiede di correggere: 10% su un lato;
+    - le foto valgono per il prossimo ologramma entro 30 minuti; il confronto delle misure vale un'ora;
+    - il confronto non vede le copie e gli spostamenti fatti in `mostra_ologramma`, solo quello che esce da Blender;
+    - niente rifiuto se il cervello non guarda l'oggetto vero: c'è solo la riga che glielo ricorda, perché gli oggetti che Tony progetta non hanno foto.
+- **Mani sotto 45 fps nelle ultime sessioni vere** (registro al 17/11, 17 righe «mani accese»). Le prime otto, fino al 12/11, hanno p10 fra 48 e 62 e detect fra 7 e 17 ms. Dopo:
+  - due sessioni a 30 fps di mediana: Risparmio energetico, non le mani;
+  - meteo da 53 s: p10 24, detect 22 ms;
+  - ologrammi da 313, 78, 928 e 188 s: p10 45, 47, 42 e 28, minimi da 18 a 29, detect da 16 a 20 ms. Quella da 78 s è la ventola Blender del 16/11 (290 mila triangoli); le due dopo sono del 16/11 sera. Quali modelli fossero aperti il registro non lo dice: la riga non conta i triangoli.
+
+  **L'idea di Tony del 17/11** è spostare il tracciamento delle mani fuori dal thread principale: in un Worker, o in un processo Node con YOLO-Pose e coordinate su WebSocket. Valutata, non fatta:
+  - **la parte giusta:** il detect è chiamata sincrona sul thread principale, ora da 16–22 ms a chiamata. Il 12/11 la meteo aveva il thread principale occupato al 75–80% da MediaPipe. Un Worker gli toglierebbe quel tempo;
+  - **la parte sbagliata:** la GPU dell'M2 è una sola. Un Worker o un processo a parte libera il thread, non la GPU, a meno che il modello giri sulla CPU o sul Neural Engine. Per un Worker basta `postMessage`, senza WebSocket. MediaPipe non esiste per Node, e YOLO-Pose di serie trova le articolazioni del corpo, non le dita;
+  - **il caso dell'1,5 milioni di triangoli** non si è mai visto: i modelli Blender misurati stanno fra 9 mila (AirPods) e 290 mila (ventola). Con 2 milioni la sola GPU costa 22 ms a fotogramma (8/11), quindi lì non salverebbe niente nemmeno il Worker;
+  - **la prova che può smentirla,** da fare prima di costruirla: `prove/ologramma-hud.mjs` con la ventola Blender da 290 mila triangoli, mani accese e spente, con la foto di prova. **Criterio scritto prima:** se a mani spente il p10 sta sopra 55 e a mani accese sotto 48, il costo sono le mani, e il Worker si prova (MediaPipe in un Worker classico, fotogrammi passati con `MediaStreamTrackProcessor` o `ImageBitmap`). Se a mani spente sta già sotto 45, il problema è la scena (bloom, spigoli, pezzi), e il Worker non serve. **Previsione:** mani spente sopra 55, accese sotto 48.
 - **L'ologramma si muove solo quando lo muove Tony: richiesta del 16/11, costruito e provato, mai usato da lui.**
   - Non gira più da solo: la scena ignora `rotazione_auto`, che è sparita dagli strumenti del cervello.
   - Un pezzo spostato con le mani, o selezionato e trascinato col mouse, resta dove lo lascia; prima tornava a posto in circa mezzo secondo.
@@ -155,6 +176,7 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
     - i colori delle anomalie in un caso vero.
 - **Ologrammi: usati da Tony per la prima volta il 10/11** (AirPods Pro e MacBook Air, stilizzati). Cosa è vero e cosa no, e come si parlano i pezzi, sta nel contratto `public/ologramma/LEGGIMI-ologramma.md`. Tony non ha file CAD: i suoi oggetti veri fatti a occhio li ha bocciati 3 volte su 3, mentre gli sono piaciuti un modello di Sketchfab con vista esplosa ed etichette e un turbofan fatto di primitive.
   - **Mani, la regola di Tony:** si accendono solo se l'HUD resta sopra 45 fps sul suo M2. Registro al 12/11: otto sessioni con la fotocamera vera, 2.187 s di mani accese in tutto, con il p10 sempre fra 48 e 62: la regola regge. I minimi stanno fra 43 e 47, tranne 18 (la sessione da 47 s, al 10/11) e 33 (quella da 358 s, l'11/11), mai spiegati. Una sessione da 342 s ha la mediana a 85, oltre i 60 Hz dello schermo del Mac: forse l'HUD era sul monitor esterno, non verificato.
+    - Dopo il 12/11 non regge più sempre: vedi «Mani sotto 45 fps» in cima a **Aperto**.
     - La misura vera arriva da sola. Quando l'ologramma si chiude, dopo almeno 10 s di mani accese, `runtime/server.log` riceve una riga «[ologramma] mani accese N s: fps mediana …, p10 …, minimo …, detect … ms» (`grep 'mani accese' runtime/server.log`).
     - Se il p10 vero sta sotto 45, le mani si spengono di base cambiando `maniVolute` in `public/nexus.js`.
     - La riga non arriva se Tony chiude la finestra dell'HUD con l'ologramma aperto.
@@ -293,6 +315,7 @@ Restano decisioni di Tony, non lavoro sul codice:
     - I file vanno in `Documents/Nexus-Blender/<nome>/v<n>/` (`--blender` in `mcp.json`); si tengono le ultime 5 versioni.
     - Il cervello li apre poi con `mostra_ologramma` come pezzi «file» con `centra: false`.
     - Dal 16/11 `mostra_ologramma` e `modifica_ologramma` rifiutano le forme native, tranne `cavo` e i pezzi con `calcolo: true`.
+  - **L'oggetto vero** (`guarda_oggetto_vero`, dal 17/11): foto vere scaricate in https da indirizzi pubblici, mai aperte sul Mac (tipo e misure dai primi byte, al massimo 2000 px e 3,5 MB), e misure ufficiali. Lo stato è in `mac-mcp.mjs` (`vero`), nella stessa fila degli ologrammi: `ologramma()` rimette le foto dopo quella dell'HUD (`accantoAlVero`), `costruisciInBlender` aggiunge il confronto delle misure (`confrontaMisure`). Si perde se il cervello riparte.
 - **`browser-fx.js`** è iniettato in ogni pagina di Google: disegna il mirino e l'animazione dei clic e tiene i link nella stessa scheda.
 - **Avvio:**
   - `STEM.app`, nella radice della repository, lancia `avvia-app.sh`, che imposta `NEXUS_APP=1`: con l'HUD chiuso per circa 150 secondi, il server si spegne (più tardi se sta facendo memoria, al massimo dopo 5 minuti). I permessi di macOS vanno a STEM.app; Accessibilità e Registrazione schermo sono stati dati il 1/11.
@@ -365,6 +388,11 @@ Restano decisioni di Tony, non lavoro sul codice:
   - la gabbia, via per via.
 
   Lavora in `runtime/prova-blender-<pid>` e alla fine la cancella.
+- **L'oggetto vero:** `node prove/oggetto-vero.mjs` (circa 20 s, con la rete e Blender, senza Nexus né cervello). Parla con `mac/mac-mcp.mjs` come il cervello, con un finto `/api/ologramma` che manda una foto dell'HUD finta. Controlla:
+  - i rifiuti: http, localhost, 127.0.0.1, ::1, rete di casa, porte, pagine, foto troppo grandi;
+  - le anteprime vere di Wikimedia (jpg e png) che passano intatte;
+  - le foto rimesse accanto a quella dell'HUD;
+  - il confronto delle misure con Blender, anche fra due modelli e in scala.
 - **Meteo:**
   - `node prove/meteo.mjs`: i conti su dati costruiti, senza rete, in un secondo. Con `--rete` anche Open-Meteo e RainViewer veri e il server vero sulla porta 4423, con lo strumento e un cervello e un Playwright finti.
   - `node prove/meteo-hud.mjs [cartella-foto]`: l'HUD vero headless sulla GPU, porte 4432 e 9563, circa 2 minuti e mezzo, con la rete. Fa le foto e prova il globo: la discesa sul luogo, le città vicine, il mondo intero, le texture che non crescono. Poi prova mouse, tasti e gesti e misura gli fps con le mani.

@@ -433,7 +433,8 @@ esito(r.codice === 200 && fs.existsSync(LOG) && fs.readFileSync(LOG, 'utf8').inc
 // Previsione: con l'HUD acceso e nessuna foto il server aspetta 8 s dopo mostra (l'entrata di un modello nuovo dura 3 s)
 // e 4 s dopo una modifica, poi lo dice
 t = await M.strumento('mostra_ologramma', STAFFA);
-esito(!t.errore && !t.foto && t.testo.endsWith("Senza foto: l'HUD non l'ha mandata entro 8 s.") && t.ms > 7900 && t.ms < 8800, 'HUD acceso ma foto che non arriva: dopo mostra aspetta 8 s e lo dice', `${Math.round(t.ms)} ms`);
+// Dal 17/11 dopo la riga della foto può venire quella delle foto vere (guarda_oggetto_vero in mac-mcp.mjs)
+esito(!t.errore && !t.foto && t.testo.includes("Senza foto: l'HUD non l'ha mandata entro 8 s.") && t.ms > 7900 && t.ms < 8800, 'HUD acceso ma foto che non arriva: dopo mostra aspetta 8 s e lo dice', `${Math.round(t.ms)} ms`);
 await vedoHud();
 t = await M.strumento('modifica_ologramma', { vista: { esploso: 0.2 } });
 esito(!t.errore && !t.foto && t.testo.endsWith("Senza foto: l'HUD non l'ha mandata entro 4 s.") && t.ms > 3900 && t.ms < 4800, 'dopo una modifica aspetta 4 s', `${Math.round(t.ms)} ms`);
