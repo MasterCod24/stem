@@ -93,6 +93,22 @@ try {
   esito(r.errore && /niente primitive/.test(r.testo), 'una primitiva di Blender è rifiutata', r.testo.slice(0, 60));
   r = await costruisci('prova', 'bm = bmesh.new()\nbmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=8, radius=5)');
   esito(r.errore && /bmesh\.ops\.create_/.test(r.testo), 'anche una primitiva di bmesh');
+  // 17/11: un profilo chiuso con un tratto sull'asse faceva fallire l'export GLB con «NaN to integer» (4 volte su 7).
+  // Il NaN nasce dal raccordo (Bevel) sulle facce di area zero lungo l'asse: oggetto() col raccordo di serie, come Nexus.
+  r = await costruisci('asse', `
+bm = bmesh.new()
+rivoluzione(bm, [(0, 0), (27, 0), (28, 4), (26, 12), (20, 24), (10, 33), (0, 37)], 40, True)
+oggetto('punta', bm)
+bm = bmesh.new()
+pr = [(60 + 3 * math.cos(math.pi * k / 4), 20 + 3 * math.sin(math.pi * k / 4)) for k in range(8)]
+rivoluzione(bm, pr + [pr[0]], 48, True)
+oggetto('filo', bm)`);
+  const rapAsse = r.errore ? {} : JSON.parse(fs.readFileSync(path.join(CARTELLA, 'asse', 'v1', 'rapporto.json'), 'utf8'));
+  const pezzoAsse = (n) => rapAsse.pezzi?.find((p) => p.nome === n) ?? {};
+  esito(!r.errore && /- punta: .*chiuso; x da -28 a 28, y da 0 a 37, z da -28 a 28/.test(r.testo),
+    'rivoluzione chiusa con un tratto sull\'asse: diventa una punta chiusa, niente NaN', r.errore ? r.testo.split('\n').slice(-1)[0] : '');
+  esito(pezzoAsse('filo').facce === 8 * 48, 'il primo punto ripetuto in fondo non lascia facce di area zero', `${pezzoAsse('filo').facce} facce`);
+
   r = await costruisci('prova', 'x = 1 +');
   esito(r.errore && /SyntaxError/.test(r.testo) && /si è fermato/.test(r.testo), 'un errore di sintassi torna al cervello', r.testo.split('\n')[0]);
   r = await costruisci('prova', 'loft(bmesh.new(), [[1, 2], [1]])');

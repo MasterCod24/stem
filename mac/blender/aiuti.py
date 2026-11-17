@@ -125,14 +125,49 @@ def bezier_tangente(controlli, u):
 def bezier_punti(controlli, n):
     return [bezier(controlli, i / n) for i in range(n + 1)]
 
+def _chiuso_senza_asse(prof):
+    """Profilo chiuso di rivoluzione senza il primo punto ripetuto in fondo. Se ha un tratto sull'asse (due o più punti
+    di fila con r = 0) quel tratto non è una faccia ma l'asse stesso: il profilo si gira in uno aperto che comincia e
+    finisce sull'asse, come vuole chiuso=False."""
+    if len(prof) > 1 and math.dist(prof[0], prof[-1]) <= 1e-6:
+        prof = prof[:-1]
+    m = len(prof)
+    sull_asse = [r <= 1e-6 for r, _ in prof]
+    if all(sull_asse):
+        raise ValueError('rivoluzione: servono punti fuori dall\'asse')
+    tratti = []
+    for i in range(m):
+        if sull_asse[i] and not sull_asse[i - 1]:
+            e = i
+            while sull_asse[(e + 1) % m]:
+                e = (e + 1) % m
+            if e != i:
+                tratti.append((i, e))
+    if not tratti:
+        return prof
+    if len(tratti) > 1:
+        raise ValueError('rivoluzione: il profilo chiuso sta sull\'asse in più tratti separati; fanne un pezzo per tratto')
+    s, e = tratti[0]
+    aperto, j = [prof[e]], (e + 1) % m
+    while j != s:
+        aperto.append(prof[j])
+        j = (j + 1) % m
+    return aperto + [prof[s]]
+
 def rivoluzione(bm, profilo, n=96, chiuso=False):
     """Fa girare attorno all'asse Y un profilo [(r, y), …] in n passi (multiplo di 4).
-    chiuso=True: il profilo è un poligono chiuso tutto fuori dall'asse (una flangia, un disco col foro, un guscio): esce un
-    anello chiuso. chiuso=False: il profilo va da un punto sull'asse (r = 0) a un altro, o tocca l'asse a un capo solo:
-    le punte sull'asse si chiudono con una griglia «O» di quadrilateri, alla quota del profilo. Restituisce gli anelli."""
+    chiuso=True: il profilo è un poligono chiuso (una flangia, un disco col foro, un guscio): esce un anello chiuso. Il primo
+    punto ripetuto in fondo si toglie da solo; se il poligono tocca l'asse lungo un tratto, quel tratto è l'asse e il pezzo
+    si fa come con chiuso=False. chiuso=False: il profilo va da un punto sull'asse (r = 0) a un altro, o tocca l'asse a un
+    capo solo: le punte sull'asse si chiudono con una griglia «O» di quadrilateri, alla quota del profilo. Restituisce gli anelli."""
     if n % 4:
         raise ValueError('rivoluzione: n deve essere un multiplo di 4')
     prof = [(float(r), float(y)) for r, y in profilo]
+    if chiuso:
+        # il 17/11 un poligono chiuso con due punti sull'asse ha dato facce di area zero lungo l'asse e un export GLB
+        # fallito con «NaN to integer», 4 volte su 7: qui si sistema il profilo invece di ricordarsi la regola
+        prof = _chiuso_senza_asse(prof)
+        chiuso = prof[0][0] > 1e-6
     ang = [math.pi / 4 + 2 * math.pi * j / n for j in range(n)]
     def giro(r, y):
         return [bm.verts.new(V(r * math.cos(a), y, r * math.sin(a))) for a in ang]
