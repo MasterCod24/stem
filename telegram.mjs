@@ -4,6 +4,8 @@
 // Passano solo i messaggi privati di Tony (TELEGRAM_CHAT_ID); quelli degli altri si scartano, e nel registro va solo il loro
 // numero, mai il testo. Solo testo, per ora: per parlare Tony detta col microfono della tastiera dell'iPhone, che trascrive
 // sul telefono. Il token sta solo nell'indirizzo delle chiamate, che non finisce mai nel registro.
+import http from 'node:http';
+import https from 'node:https';
 import { quandoIt, traQuanto } from './orologio.mjs';
 
 const TETTO = 4000; // Telegram accetta 4096 caratteri a messaggio: una risposta più lunga va in più messaggi
@@ -12,6 +14,27 @@ const SOLO_ALLEGATI = 'Per ora leggo solo il testo: per parlarmi tieni premuto i
 const ALLEGATI = { photo: 'una foto', voice: 'un vocale', audio: 'un audio', video: 'un video', video_note: 'un videomessaggio',
   document: 'un file', sticker: 'uno sticker', animation: 'una GIF', location: 'una posizione', contact: 'un contatto' };
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Una POST con JSON, in HTTP/1.1, e l'attesa dei messaggi su una connessione tutta sua. Il 17/11 la prima risposta vera a
+// Tony è andata persa: fetch di Node 26 parla HTTP/2 con api.telegram.org e mette tutte le chiamate su una connessione
+// sola, così la sendMessage restava ferma dietro la getUpdates che aspetta fino a 50 s, e scadeva dopo 15. Da sola la
+// stessa sendMessage rispondeva in 0,1–0,3 s.
+const AGENTI = { attesa: new https.Agent({ keepAlive: true, maxSockets: 1 }), resto: new https.Agent({ keepAlive: true }) };
+function posta(indirizzo, corpo, ms, attesa) {
+  return new Promise((ok, ko) => {
+    const u = new URL(indirizzo), sicuro = u.protocol === 'https:', dati = Buffer.from(JSON.stringify(corpo));
+    const req = (sicuro ? https : http).request(u, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': dati.length },
+      ...(sicuro && { agent: attesa ? AGENTI.attesa : AGENTI.resto }) }, (res) => {
+      const parti = [];
+      res.on('data', (d) => parti.push(d));
+      res.on('end', () => { clearTimeout(timer); ok({ status: res.statusCode, testo: Buffer.concat(parti).toString('utf8') }); });
+      res.on('error', (e) => { clearTimeout(timer); ko(e); });
+    });
+    const timer = setTimeout(() => { const e = new Error('scaduta'); e.name = 'TimeoutError'; req.destroy(e); }, ms);
+    req.on('error', (e) => { clearTimeout(timer); ko(e); });
+    req.end(dati);
+  });
+}
 
 // I messaggi di Tony arrivati insieme diventano una domanda sola per il cervello (dopo uno stop del Mac possono essere tanti).
 // Restituisce il testo senza la riga [adesso], oppure null se non c'è niente da leggere (solo foto, vocali, sticker…).
@@ -54,10 +77,10 @@ export function createTelegram({ token, chatId, api = 'https://api.telegram.org'
 
   async function chiama(metodo, corpo, ms = 15_000) {
     let r;
-    try {
-      r = await fetch(`${base}/${metodo}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(ms) });
-    } catch (e) { throw new Error(`${metodo}: ${e.name === 'TimeoutError' ? 'nessuna risposta' : 'rete non raggiungibile'}`); } // il messaggio di fetch può contenere l'indirizzo, cioè il token
-    const j = await r.json().catch(() => null);
+    try { r = await posta(`${base}/${metodo}`, corpo, ms, metodo === 'getUpdates'); }
+    catch (e) { throw new Error(`${metodo}: ${e.name === 'TimeoutError' ? 'nessuna risposta' : 'rete non raggiungibile'}`); } // il messaggio d'errore può contenere l'indirizzo, cioè il token
+    let j = null;
+    try { j = JSON.parse(r.testo); } catch {}
     if (!j?.ok) throw new Error(`${metodo}: ${String(j?.description || `errore ${r.status}`).slice(0, 120)}`);
     return j.result;
   }
