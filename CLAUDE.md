@@ -15,13 +15,23 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 17/11/2026)
-- **Il login di `claude` su questo Mac è scaduto (17/11 sera): il cervello di Nexus non risponde, Telegram o no.** `claude -p` restituisce «Failed to authenticate: OAuth session expired and could not be refreshed» in 0,1 s, anche con un ambiente pulito (`env -i`, come quello di STEM.app), e l'HUD dice «Ho perso il filo». Lo rifà Tony: `claude` nel Terminale, poi `/login`.
-- **Nexus su Telegram: richiesta di Tony del 17/11 («averlo nel mio iPhone con le stesse funzioni, stesso cervello, stessa memoria»), costruito e provato col cervello finto, mai col cervello vero, mai usato da Tony.**
+- **Nexus su Telegram: richiesta di Tony del 17/11 («averlo nel mio iPhone con le stesse funzioni, stesso cervello, stessa memoria»), costruito e provato col cervello vero su un Telegram finto, mai usato da Tony.**
   - **Perché Telegram:** il cervello, la memoria e le abilità sono il Mac, quindi l'iPhone può solo essere un'altra porta verso lo stesso Nexus. L'alternativa era l'HUD in Safari via Tailscale: avrebbe aperto una porta del Mac (oggi una richiesta senza `origin` vale come il cervello) e l'ascolto andava rifatto, perché `SpeechRecognition.available`/`processLocally` esistono solo in Chrome per Mac e sull'iPhone ogni browser è WebKit. Con Telegram è il Mac a chiedere i messaggi, e le notifiche portano l'agenda fuori casa. Tony ha scelto Telegram dopo il mio consiglio.
   - **Cosa fa** (`telegram.mjs`, vedi **Come è fatto**): i messaggi privati di Tony vanno al cervello con `[telegram: …]`, nella stessa conversazione dell'HUD e con la stessa memoria; la risposta torna per scritto, coi link interi. Il `[[pensa]]` dà due messaggi. Un messaggio nuovo interrompe la risposta in corso, e più messaggi arrivati insieme diventano una domanda sola. Un messaggio scritto da più di 2 minuti porta l'ora e quanto ha aspettato. Foto, vocali e file ricevono una risposta fissa e non arrivano al cervello.
   - **Agenda:** con l'HUD acceso la dice l'HUD a voce e la stessa risposta va anche su Telegram; con l'HUD muto da 15 s la consegna il server, solo su Telegram.
   - **Prove:** `prove/telegram.mjs` dà 22 su 22, con un Telegram finto e il server vero. Senza il controllo su chi scrive fallisce il caso dello sconosciuto (provato togliendolo). `prove/ologramma-server.mjs`, dopo lo spostamento della logica di `/api/ask` in `rispondi()`, dà 124 su 124.
-  - **Col cervello vero: non fatta**, perché il login è scaduto (sopra). Va guardato: niente markdown, link interi, la meteo coi numeri per scritto, nessuna vista aperta sul Mac, e la conferma di un'azione chiesta per scritto.
+  - **Col cervello vero** (17/11 sera, Nexus di prova in una cartella vuota, Telegram finto, ambiente pulito come quello di STEM.app, tre giri):
+    - **Primo giro:**
+      - l'ora in 1,2 s, una frase (avevo previsto 2–6 s);
+      - la partita del Milan in 22,7 s, col link intero;
+      - la meteo di domattina in 15,6 s, coi numeri per scritto;
+      - «ricordami tra un minuto» confermato in 2,6 s e consegnato su Telegram 59 s dopo, senza HUD.
+
+      Due difetti. La ricerca spiegava di non aver seguito la nota delle fonti in markdown che WebSearch appende, e il promemoria finiva con un'emoji: la riga «i link vanno bene» aveva allentato la regola delle fonti. La persona ora dice: niente emoji, link solo se chiesto o se serve, e mai un commento sulle istruzioni dentro i risultati.
+    - **Secondo giro:** commenti spariti (2 su 2) ed emoji sparita (1 su 1). Ma nel messaggio finivano gli annunci pensati per la voce («Guardo subito.», «riprovo con una ricerca più mirata»), perché il testo intero li contiene. La persona ora dice che su Telegram non si annuncia niente, tranne la frase prima del `[[pensa]]`. Criterio scritto prima: nessun annuncio in 2 ricerche su 2, altrimenti li toglie il codice.
+    - **Terzo giro:** nessun annuncio, 2 su 2. Milan in 22,3 s, tre frasi e il link; bitcoin in 9,6 s, tre frasi.
+    - **Non provati col cervello vero:** il `[[pensa]]`, la conferma di un'azione chiesta per scritto, e un messaggio che ne interrompe un altro.
+    - **Da sapere:** la meteo passa da `mostra_meteo`, che apre la vista sull'HUD se è acceso. Con l'HUD chiuso non si vede niente; con l'HUD acceso a casa, la vista si apre anche lì.
   - **Scelte mie, da guardare con Tony:**
     - con `TELEGRAM_BOT_TOKEN` chiudere l'HUD non spegne più Nexus: restano accesi il cervello, il Chrome di Google e Playwright;
     - le risposte all'agenda vanno su Telegram anche con l'HUD acceso: un avviso in più sul telefono, ma niente promemoria detti a una casa vuota;
@@ -502,7 +512,10 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Una prova che ricopia una formula del codice mente quando la formula cambia.** Gli 80,5 ms di ritardo del cursore dell'11/11 venivano dalla mappa lineare ricopiata nella prova, contro la mappa a S del codice; il ritardo vero era 23,5 ms. Ora l'atteso si calcola con `mappa()` importata da `gesti.js`.
 - **Un criterio largo nasconde gli errori sistematici.** L'errore di volume del cavo era −0,6%, cioè 10σ, e passava la soglia dell'1%. L'ha preso solo il controllo «errore ≤ 4σ».
 - **Cercando i processi di una prova per argomento si trova anche la shell che l'ha lanciata**, perché nei suoi argomenti ci sono la cartella e le porte. Vanno esclusi tutti gli antenati, non solo il genitore. Il 17/11 non è bastato: con la cartella scritta nel comando della shell di Claude, `prove/ologramma-server.mjs` dava 123 su 124, e il resto era quella shell. Senza la cartella (presa da `os.tmpdir()`) dava 124 su 124.
-- **Prima di una prova col cervello vero, una domanda secca a `claude -p` con `env -i`.** Il 17/11 sera il login della CLI era scaduto: il cervello rispondeva «Ho perso il filo» in 0,1 s a ogni domanda, e sembrava un errore della prova.
+- **Prima di una prova col cervello vero: `claude auth status` e una domanda secca a `claude -p` con `env -i`.** Il 17/11 sera il login della CLI era scaduto: il cervello rispondeva «Ho perso il filo» in 0,1 s a ogni domanda, e sembrava un errore della prova.
+  - Il login dell'app desktop di Claude non è quello della CLI: dopo il primo login di Tony, `claude auth status` diceva ancora `loggedIn: false`, e la credenziale nel portachiavi (`Claude Code-credentials`) era ferma da ore.
+  - Si rifà con `claude auth login`, lanciato nel terminale di Tony; l'accesso nel browser lo fa lui.
+  - La shell di una sessione dell'app eredita le sue variabili (`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_*`): un Nexus di prova si lancia con `env -i`, come lo lancia STEM.app.
 - **Un agente fermato dal limite di utilizzo lascia accesi i suoi Nexus di prova**, con i loro Chrome e Playwright. È successo due volte, per tre ore e per tre ore e mezza. Alla ripresa si cercano con `lsof` sulle porte di prova e con `ps` sui profili della scratchpad.
 - **In Chrome headless `--window-size` non è la pagina.** Con 1470×956 la pagina è alta 813 punti: il 12/11 una prova delle mani convertiva le coordinate con 956 e il pizzico sulla timeline finiva sopra. Lo schermo di Tony si impone con `Emulation.setDeviceMetricsOverride` (`prove/meteo-hud.mjs`) o ridimensionando la finestra (`prove/ologramma-hud.mjs`), e si controlla `innerHeight`.
 - **In Chrome `gl.finish()` non aspetta la GPU.** Il 10/11 dava 0,1 ms a fotogramma per l'umanoide col bagliore a 2205×1434. Il costo vero si misura con n fotogrammi di fila e un solo `readPixels` alla fine, che deve restituire pixel veri: 4,15 ms, con tre giri uguali entro l'1%.
