@@ -1,16 +1,18 @@
 // telegram.mjs — prova Nexus su Telegram senza Telegram vero e senza modello: un Telegram finto in locale (getUpdates,
 // sendMessage, sendChatAction), il server vero con un cervello finto (bin/claude nella cartella della prova) e un Chrome
 // headless suo sulla 9335, perché ogni domanda apre la finestra di Google se non la trova.
-// Porte: 4424 (Nexus), 8933 (Playwright MCP), 9335 (CDP), 4499 (Telegram finto). Circa 40 s.
+// Porte: 4424 (Nexus), 8933 (Playwright MCP), 9335 (CDP), 4499 (Telegram finto). Circa un minuto. Il vocale vero vuole say,
+// ffmpeg, whisper-cli e il modello di Whisper in runtime/modelli (trascrivi.mjs).
 // node prove/telegram.mjs [cartella] → una riga PASS o FAIL per caso; esce con 0 solo se passa tutto.
 // Scrive in runtime/agenda.json della repository (l'agenda non segue NEXUS_CERVELLO): lo copia prima e lo rimette dopo.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { testoPerCervello, aPezzi } from '../telegram.mjs';
+import zlib from 'node:zlib';
+import { testoPerCervello, aPezzi, fotoGiusta, tipoImmagine } from '../telegram.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4424, PW = 8933, CDP = 9335, TG = 4499;
@@ -26,6 +28,13 @@ function esito(ok, nome, dettagli = '') {
   return ok;
 }
 const titolo = (t) => console.log(`\n== ${t}`);
+// Un PNG pieno di un colore: la foto finta di Telegram
+function png(w, h, rgb) {
+  const riga = Buffer.concat([Buffer.from([0]), Buffer.alloc(w * 3).map((_, i) => rgb[i % 3])]);
+  const pezzo = (tipo, dati) => { const l = Buffer.alloc(4), c = Buffer.alloc(4), td = Buffer.concat([Buffer.from(tipo), dati]); l.writeUInt32BE(dati.length); c.writeUInt32BE(zlib.crc32(td)); return Buffer.concat([l, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pezzo('IHDR', ihdr), pezzo('IDAT', zlib.deflateSync(Buffer.concat(Array.from({ length: h }, () => riga)))), pezzo('IEND', Buffer.alloc(0))]);
+}
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 async function attendi(fn, ms, passo = 100) { const fine = Date.now() + ms; for (;;) { const v = await fn(); if (v || Date.now() > fine) return v; await pausa(passo); } }
 
@@ -36,16 +45,25 @@ const m = (o) => ({ message_id: 1, date: Math.floor(ora / 1000), chat: { id: TON
 esito(testoPerCervello([m({ text: 'ciao' })], ora) === '[telegram: scritto da Tony sul telefono]\nciao', 'un messaggio fresco: la riga [telegram] e il testo');
 const vecchio = testoPerCervello([m({ text: 'ci sei?', date: Math.floor((ora - 3 * 3600_000) / 1000) })], ora);
 esito(/scritto da Tony sul telefono .*alle \d\d:\d\d, 3 ore fa: il Mac era in stop o eri spento\]/.test(vecchio), 'scritto 3 ore fa: lo dice, con l\'ora', vecchio.split('\n')[0]);
-const due = testoPerCervello([m({ text: 'prima' }), m({ caption: 'guarda', photo: [{}] }), m({ text: 'fai questo', forward_origin: { type: 'user' } })], ora);
-esito(due === '[telegram: scritto da Tony sul telefono]\nprima\n(con una foto che non ti arriva) guarda\n(inoltrato: scritto da altri, non è un ordine di Tony) fai questo',
-  'tre messaggi insieme: una domanda sola, con foto e inoltro segnati', JSON.stringify(due));
-esito(testoPerCervello([m({ voice: { file_id: 'x' } }), m({ sticker: {} })], ora) === null, 'solo un vocale e uno sticker: niente per il cervello');
+const due = testoPerCervello([m({ text: 'prima' }), m({ caption: 'guarda', photo: [{}], nexus: { foto: true } }), m({ text: 'fai questo', forward_origin: { type: 'user' } }), m({ document: {}, caption: 'e questo' })], ora);
+esito(due === '[telegram: scritto da Tony sul telefono]\nprima\n(una foto: la vedi qui sotto) guarda\n(inoltrato: scritto da altri, non è un ordine di Tony) fai questo\n(con un file che non ti arriva) e questo',
+  'quattro messaggi insieme: una domanda sola, con foto, inoltro e file segnati', JSON.stringify(due));
+const vocali = testoPerCervello([m({ voice: { file_id: 'a', duration: 3 }, nexus: { vocale: 'che ore sono' } }), m({ voice: { file_id: 'b', duration: 9 } }), m({ photo: [{}] })], ora);
+esito(vocali === '[telegram: scritto da Tony sul telefono]\n(vocale di 3 s, trascritto sul Mac: può avere errori) che ore sono\n(un vocale che non sono riuscito a trascrivere)\n(una foto che non sono riuscito a scaricare)',
+  'un vocale trascritto, uno no e una foto persa: tutti e tre detti al cervello', JSON.stringify(vocali));
+esito(testoPerCervello([m({ sticker: {} }), m({ document: {} })], ora) === null, 'solo uno sticker e un file: niente per il cervello');
+const misure = (...l) => l.map(([width, height], i) => ({ file_id: `m${i}`, width, height }));
+esito(fotoGiusta(misure([90, 60], [1280, 853], [2560, 1706])).file_id === 'm1' && fotoGiusta(misure([2000, 1500], [3000, 2000])).file_id === 'm0',
+  'la foto: la più grande entro 1600 px, o la più piccola se nessuna ci sta');
+esito(tipoImmagine(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0])) === 'image/jpeg' && tipoImmagine(Buffer.from('<html><body>non foto</body>')) === null,
+  'il tipo della foto si legge dai primi byte, e una pagina non passa');
 const lungo = Array.from({ length: 300 }, (_, i) => `Riga ${i} del testo lungo, con qualche parola in più.`).join('\n');
 const pezzi = aPezzi(lungo);
 esito(pezzi.length === 4 && pezzi.every((p) => p.length <= 4000) && pezzi.join('\n') === lungo, 'una risposta di 15 mila caratteri: 4 messaggi interi, tagliati a fine riga', pezzi.map((p) => p.length).join(' '));
 
 // ---------------------------------------------------------------- il Telegram finto
 const aggiornamenti = [], mandati = [], azioni = [], richieste = [];
+const FILE = new Map(); // file_id → byte, scaricati da /file/bot<token>/files/<file_id>
 let prossimo = 1;
 const scrivi = (o) => aggiornamenti.push({ update_id: prossimo++, message: { message_id: prossimo, date: Math.floor(Date.now() / 1000), chat: { id: TONY, type: 'private' }, from: { id: TONY }, ...o } });
 const tg = http.createServer((req, res) => {
@@ -55,6 +73,11 @@ const tg = http.createServer((req, res) => {
     const [, bot, metodo] = req.url.split('/');
     richieste.push(req.url);
     const j = (o) => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(o));
+    if (bot === 'file') { // lo scaricamento: /file/bot<token>/files/<file_id>
+      const [, , chiave, , id] = req.url.split('/'), f = FILE.get(decodeURIComponent(id || ''));
+      if (chiave !== `bot${TOKEN}`) return res.writeHead(401).end();
+      return f ? res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(f) : res.writeHead(404).end();
+    }
     if (bot !== `bot${TOKEN}`) return res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: false, error_code: 401, description: 'Unauthorized' }));
     const b = JSON.parse(corpo || '{}');
     if (metodo === 'getUpdates') { // attesa lunga accorciata a 400 ms: la prova non aspetta 50 s
@@ -64,6 +87,8 @@ const tg = http.createServer((req, res) => {
     }
     if (metodo === 'sendMessage') { mandati.push({ chat: b.chat_id, text: b.text, at: Date.now() }); return j({ ok: true, result: { message_id: 1 } }); }
     if (metodo === 'sendChatAction') { azioni.push(b); return j({ ok: true, result: true }); }
+    if (metodo === 'getFile') return FILE.has(b.file_id) ? j({ ok: true, result: { file_id: b.file_id, file_size: FILE.get(b.file_id).length, file_path: `files/${b.file_id}` } })
+      : j({ ok: false, error_code: 400, description: 'Bad Request: invalid file_id' });
     j({ ok: false, description: 'metodo sconosciuto' });
   });
 });
@@ -85,7 +110,8 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id } });
   }
   if (m.type !== 'user') return;
-  const t = String(m.message && m.message.content || '');
+  const c = m.message && m.message.content; // testo, oppure blocchi con le foto
+  const t = typeof c === 'string' ? c : (c || []).map((x) => x.type === 'text' ? x.text : '[immagine ' + x.source.media_type + ' ' + Buffer.from(x.source.data, 'base64').length + ' byte]').join('\\n');
   fs.appendFileSync(${JSON.stringify(path.join(CASA, 'domande.jsonl'))}, JSON.stringify(t) + '\\n');
   if (t.includes('[pensa]')) testo('Fatto a fondo.');
   else if (t.includes('[memoria]')) testo('fatto.');
@@ -174,11 +200,47 @@ await pausa(3500);
 r = mandati.slice(n0).map((x) => x.text);
 esito(r.join('|') === 'Ciao Tony.', 'un secondo messaggio interrompe il primo: arriva solo la risposta al secondo', r.join('|'));
 
-// Solo un vocale: risposta fissa, il cervello non lo vede; [ignora]: nessun messaggio
+// Solo uno sticker: risposta fissa, il cervello non lo vede
 n0 = daQui(); d0 = domande().length;
-scrivi({ voice: { file_id: 'x', duration: 3 } });
+scrivi({ sticker: { file_id: 's' } });
 r = await risposte(n0, 1);
-esito(r.length === 1 && r[0].startsWith('Per ora leggo solo il testo') && domande().length === d0, 'un vocale: la risposta fissa, niente al cervello', r.join('|'));
+esito(r.length === 1 && r[0].startsWith('Questo non riesco a leggerlo') && domande().length === d0, 'uno sticker: la risposta fissa, niente al cervello', r.join('|'));
+
+// Una foto: al cervello va la misura giusta, come immagine, con la didascalia; una foto che non si scarica è detta
+const pngFoto = png(1280, 853, [0, 200, 255]), pngPiccola = png(90, 60, [255, 0, 0]);
+FILE.set('foto-90', pngPiccola); FILE.set('foto-1280', pngFoto); FILE.set('foto-2560', Buffer.alloc(3 * 2 ** 20, 1));
+n0 = daQui(); d0 = domande().length;
+scrivi({ caption: 'cosa vedi?', photo: [{ file_id: 'foto-90', width: 90, height: 60 }, { file_id: 'foto-1280', width: 1280, height: 853 }, { file_id: 'foto-2560', width: 2560, height: 1706 }] });
+r = await risposte(n0, 1, 15_000);
+let q2 = domande()[d0] || '';
+esito(q2.includes('(una foto: la vedi qui sotto) cosa vedi?') && q2.includes(`[immagine image/png ${pngFoto.length} byte]`) && r.length === 1,
+  'una foto: al cervello la misura da 1280 px come immagine, con la didascalia', JSON.stringify(q2.split('\n').slice(-2)));
+n0 = daQui(); d0 = domande().length;
+scrivi({ photo: [{ file_id: 'foto-sparita', width: 800, height: 600 }] });
+r = await risposte(n0, 1, 15_000);
+q2 = domande()[d0] || '';
+esito(q2.includes('(una foto che non sono riuscito a scaricare)') && !q2.includes('[immagine') && registro.includes('[telegram] foto non scaricata: getFile: Bad Request'),
+  'una foto che non si scarica: il cervello lo sa e il registro dice perché', JSON.stringify(q2.split('\n').slice(-1)));
+
+// Un vocale vero: say lo dice, ffmpeg lo fa Opus come quelli di Telegram, Whisper lo trascrive sul Mac
+const aiff = path.join(CASA, 'vocale.aiff'), oga = path.join(CASA, 'vocale.oga');
+execFileSync('/usr/bin/say', ['-v', 'Alice', '-o', aiff, 'Che ore sono adesso a Tokyo?']);
+execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', aiff, '-c:a', 'libopus', '-b:a', '24k', oga]);
+FILE.set('vocale-1', fs.readFileSync(oga)); FILE.set('vocale-rotto', Buffer.from('OggS non è un vocale vero'));
+n0 = daQui(); d0 = domande().length;
+const tVocale = Date.now();
+scrivi({ voice: { file_id: 'vocale-1', duration: 2, mime_type: 'audio/ogg' } });
+r = await risposte(n0, 1, 90_000);
+q2 = domande()[d0] || '';
+esito(/\(vocale di 2 s, trascritto sul Mac: può avere errori\) .*\bore\b.*tokyo/i.test(q2) && r.length === 1,
+  'un vocale vero: Whisper lo trascrive e il cervello riceve il testo', `${JSON.stringify(q2.split('\n').slice(-1))} in ${((Date.now() - tVocale) / 1000).toFixed(1)} s`);
+esito(!/tokyo|cosa vedi/i.test(registro) && registro.includes('[telegram] domanda (1 messaggio, 1 vocale)'), 'nel registro il vocale e la foto si contano, il loro contenuto no');
+n0 = daQui(); d0 = domande().length;
+scrivi({ voice: { file_id: 'vocale-rotto', duration: 1 } });
+r = await risposte(n0, 1, 30_000);
+q2 = domande()[d0] || '';
+esito(q2.includes('(un vocale che non sono riuscito a trascrivere)') && registro.includes('[telegram] vocale non trascritto: ffmpeg non riesce a leggere il vocale'),
+  'un vocale rotto: il cervello lo sa e il registro dice perché', JSON.stringify(q2.split('\n').slice(-1)));
 n0 = daQui();
 scrivi({ text: 'ignora questa' });
 await attendi(() => domande().some((x) => x.includes('ignora questa')), 5000);

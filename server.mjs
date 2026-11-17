@@ -13,6 +13,7 @@ import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
 import { createMeteo } from './meteo.mjs';
 import { createTelegram } from './telegram.mjs';
+import { createTrascrittore } from './trascrivi.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
 import { testoMisure } from './public/ologramma/gesti.js';
@@ -307,7 +308,8 @@ if (env.NEXUS_APP) {
 // --- Una domanda per il cervello, da qualunque parte arrivi: l'HUD (/api/ask) o Telegram ---
 // Il primo turno a effort basso, poi il [pensa] e il [confronto] se servono, tutto nella stessa risposta. onEvent riceve gli
 // eventi del cervello; la promessa si risolve a risposta finita.
-async function rispondi(text, onEvent) {
+// immagini: blocchi «image» che vanno al cervello con la prima domanda (le foto di Telegram)
+async function rispondi(text, onEvent, immagini = []) {
   ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
   let ignored = false, pensa = false, guardato = false;
   const modelloPrima = holoOra.modello;
@@ -317,7 +319,7 @@ async function rispondi(text, onEvent) {
     if (e.t === 'mac' && e.name === 'guarda_oggetto_vero') guardato = true;
     onEvent(e);
   };
-  const primo = await brain.ask(text, ev, { effort: effortDi(EFFORT) });
+  const primo = await brain.ask(immagini.length ? [{ type: 'text', text }, ...immagini] : text, ev, { effort: effortDi(EFFORT) });
   let interrotto = primo.interrotto;
   // [[pensa]]: il cervello ha detto la frase breve a effort basso e ha chiuso il turno. Il lavoro vero parte subito, con
   // l'effort alto, nella stessa risposta. Una volta sola, e mai se nel frattempo Tony ha chiesto altro.
@@ -343,7 +345,8 @@ const tgEvento = (manda) => (ev) => {
 const telegram = env.TELEGRAM_BOT_TOKEN ? createTelegram({
   token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID || '', api: env.NEXUS_TELEGRAM_API || undefined,
   onLog: (l) => console.error(l),
-  onDomanda: (testo, manda) => rispondi(`[adesso: ${adesso()}]\n${testo}`, tgEvento(manda)),
+  trascrivi: createTrascrittore({ cartella: path.join(RUNTIME, 'modelli') }), // i vocali: Whisper sul Mac
+  onDomanda: (testo, manda, immagini) => rispondi(`[adesso: ${adesso()}]\n${testo}`, tgEvento(manda), immagini),
 }) : null;
 // L'agenda senza HUD: se l'HUD non si sente da 15 s, il compito arrivato all'ora lo consegna il server, per scritto su Telegram.
 // Con l'HUD acceso lo dice l'HUD a voce, e la risposta arriva anche qui (onEvent di /api/ask).
