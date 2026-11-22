@@ -1,13 +1,13 @@
 # Nexus: appunti per chi ci lavora
 
-Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si chiamava STEM: dal 12/11 Nexus è il nome di tutto, e il vecchio resta solo dove è legato ai permessi di macOS (vedi il trasloco in **Aperto**). È sempre in ascolto, parla con Kokoro, una voce che gira sul Mac (o con quella del Mac), mostra un HUD a schermo intero e usa Google, le app e lo schermo al posto suo. Quello che fa, visto da Tony, sta in [LEGGIMI.md](LEGGIMI.md); qui c'è quello che serve per lavorarci.
+Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si chiamava STEM: dal 12/11 Nexus è il nome di tutto, e il vecchio resta solo dove è legato ai permessi di macOS (vedi il trasloco in **Aperto**). È sempre in ascolto, parla con la voce del Mac, mostra un HUD a schermo intero e usa Google, le app e lo schermo al posto suo. Quello che fa, visto da Tony, sta in [LEGGIMI.md](LEGGIMI.md); qui c'è quello che serve per lavorarci.
 
 ## Ripartire da dove eravamo
 1. **Cosa è stato fatto:** `git log --oneline -10`. Ogni commit dice nel titolo cosa è cambiato per Tony e nel corpo il perché.
 2. **Lavoro lasciato a metà:** `git status`. File non committati vogliono dire che una sessione si è interrotta prima di chiudere.
 3. **Lo stato vivo** non è scritto qui, perché invecchierebbe: si guarda.
-   - `curl -s localhost:4321/api/status`: se non stampa niente, Nexus è spento. Da acceso risponde `{"voice":{"provider":"kokoro"|"mac","voce":…},"browser":…,"gifs":…,"agenda":…,"ologramma":…}`.
-     - `provider` dice quale voce useranno le prossime risposte: Kokoro, o la voce del Mac se Kokoro non c'è.
+   - `curl -s localhost:4321/api/status`: se non stampa niente, Nexus è spento. Da acceso risponde `{"voice":{"provider":"mac","voce":…},"browser":…,"gifs":…,"agenda":…,"ologramma":…}`.
+     - `voce` dice quale voce del Mac parla: quella di sistema (anche Siri) o `NEXUS_MAC_VOICE`.
      - `browser` dice che Playwright è pronto, non che la finestra di Google sia aperta.
      - `agenda` conta i compiti arrivati all'ora e non ancora detti. Tutta l'agenda sta in `runtime/agenda.json`.
    - `tail -50 runtime/server.log` mostra server, cervello e voce. Le righe non hanno l'ora: gli avvii si separano dalle righe «Nexus online». Il file si riempie solo se Nexus è partito da `STEM.app`.
@@ -19,12 +19,8 @@ Nexus è l'assistente vocale di Tony sul Mac, stile JARVIS. Fino all'11/11 si ch
   - **La causa:** `rivoluzione(..., chiuso=True)` con un tratto del profilo sull'asse (r = 0) faceva un anello di facce di area zero lungo l'asse, e il raccordo (Bevel) di `oggetto()` ci produceva il NaN. Il cervello se l'era segnato in memoria come regola da ricordare.
   - **Ora** (`_chiuso_senza_asse` in `mac/blender/aiuti.py`): con chiuso=True il tratto sull'asse diventa una punta, come con chiuso=False, e il primo punto ripetuto in fondo si toglie (lasciava un anello di facce di area zero: 48 su 432 nel filo di prova). Un punto isolato sull'asse resta com'era; più tratti separati sull'asse danno un errore che lo dice (non provato).
   - **Prove:** `prove/blender.mjs` 32 su 32, e i due casi nuovi falliscono sul codice di prima. Nella memoria del cervello la regola è cambiata (`ologramma-blender-flusso.md`).
-- **Voce Kokoro al posto di ElevenLabs: scelta di Tony del 22/11, costruita e provata, mai sentita da Tony.** Lo stesso giorno, su sua richiesta, è stato tolto anche Telegram, del tutto.
-  - **Perché:** per gran parte del mese parlava la voce del Mac (col piano gratuito di ElevenLabs i crediti finivano presto, e finché c'erano parlava «George», una voce inglese), e `say` costa 0,8–1,4 s anche per «Guardo subito.», più del cervello (0,6 s), perché riparte e ricarica la voce a ogni frase (misurato il 22/11).
-  - **Com'è:** `voce-kokoro.py` (kokoro-onnx 0.6.1, `kokoro-v1.0.onnx` a 32 bit, voce `im_nicola`) resta acceso, lanciato da `voice.mjs`. Lo installa `./installa-kokoro.sh` in `runtime/kokoro`: Python 3.12 di Homebrew, circa 500 MB. Si regola con `NEXUS_VOCE` (anche una miscela, `im_nicola:0.7+bm_george:0.3`) e `NEXUS_VOCE_VELOCITA`.
-  - **Misure del 22/11** (M2, una frase dopo l'altra): avvio 2,8 s; «Guardo subito.» 0,37 s, «Te lo costruisco.» 0,38 s, una frase di 106 caratteri 1,54 s per 6,7 s di voce. A velocità 1,1 e con la miscela uguale entro 0,1 s. `prove/voce.mjs` 7 su 7; l'HUD fotografato dice «KOKORO · IM_NICOLA».
-  - **Il rischio:** in italiano Kokoro ha una sola voce maschile, voto C nel suo elenco, addestrata con 10–100 minuti di audio, e i fonemi passano da espeak. Nessuno l'ha ancora ascoltata dentro Nexus. Se non regge, si cambia voce in `.env`, oppure si cancella `runtime/kokoro` e torna la voce del Mac.
-  - **Scelte mie, da guardare con Tony:** il modello a 32 bit (310 MB) invece di quello a 8 bit (88 MB), per la qualità, senza averli confrontati; la velocità 1; le impronte SHA-256 dei due file prese al primo scaricamento, perché GitHub non le pubblica (le misure in byte coincidono con la release).
+- **Voce: solo quella del Mac, dal 22/11, scelta di Tony.** Lo stesso giorno sono stati tolti ElevenLabs e Telegram, del tutto, e il modello di Whisper è finito nel Cestino. Kokoro (kokoro-onnx, voce italiana `im_nicola`) è stato messo e tolto in giornata, su richiesta di Tony; la sua installazione in `runtime/kokoro` è nel Cestino come `kokoro-nexus`.
+  - **Le misure, se se ne riparla** (M2, 22/11): `say` 0,8–1,4 s anche per «Guardo subito.», perché riparte e ricarica la voce a ogni frase; Kokoro sempre acceso 0,37 s per la stessa frase e 1,5 s per una di 106 caratteri. Il cervello dice la prima parola in 0,6 s: la voce del Mac è il pezzo più lento della catena.
 - **Persona e conversazione ripresa (22/11).** Claude Code registra il prompt di sistema al primo messaggio di una conversazione (`--system-prompt-snapshot`, attivo di base) e ogni ripresa riusa quello. Provato con Haiku: una ripresa non vede la persona cambiata, con `--system-prompt-snapshot off` sì. Ora `runtime/cervello.json` tiene l'impronta della persona, e se è cambiata il cervello apre una conversazione nuova invece di riprendere. `prove/cervello-interruzioni.mjs` 6 su 6; sul `brain.mjs` di prima i 2 casi nuovi falliscono. Il primo avvio dopo l'aggiornamento apre una conversazione nuova, perché il file vecchio non ha l'impronta.
 - **Da sapere:** STEM.app gira da `~/STEM`, che al 17/11 sera è sul ramo `fix/rivoluzione-asse`, con `main` unito dentro fino a 2861fdf. Così ha la correzione di Blender (e3ff30c), che su `main` non c'è ancora. Un `main` nuovo arriva lì solo con un altro merge.
 - **Foto e misure vere accanto all'ologramma: richiesta di Tony del 17/11, costruito e provato senza cervello, mai usato.** Tony ha bocciato gli oggetti fatti «a occhio»: il cervello costruiva da quello che ricordava e confrontava la foto dell'HUD solo con sé stessa. Ora c'è `guarda_oggetto_vero` in `mac/mac-mcp.mjs`.
@@ -274,11 +270,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - **Marcatori nella risposta:** `[ignora]` vale solo prima che Nexus abbia detto qualcosa. `[[mostra]]` apre il pannello del browser, che comunque si apre da solo alla quarta azione su Google. Poi ci sono `[gif: …]` e `[anim: …]`.
   - **Report:** il cervello chiama lo strumento `mostra_report` di `mac/mac-mcp.mjs`, che risponde e basta. È `brain.mjs` a leggere i blocchi dalla chiamata nel flusso e a mandarli all'HUD come evento `report`. Zero blocchi lo chiudono, come `Esc` e come un `[[mostra]]` nuovo. Un report con blocchi, `[[mostra]]` e la quarta azione nel browser chiudono anche l'ologramma, nell'HUD e nel server.
 - **`nexus-persona.md`** è il carattere di Nexus, passato con `--append-system-prompt`. Il modo di ragionare è il `~/.claude/CLAUDE.md` di Tony, che Claude Code carica da solo. **Questo file non arriva a Nexus:** per cambiare come risponde si modifica `nexus-persona.md` e **si riavvia il server**, che lo legge una volta sola (`/api/reset` non basta). Con la persona cambiata il cervello apre una conversazione nuova: riprendendo quella vecchia, Claude Code userebbe il prompt registrato al suo primo messaggio.
-- **`voice.mjs`** fa parlare Nexus con Kokoro (`voce-kokoro.py`, sempre acceso, voce `NEXUS_VOCE`) o con `say`. Il fornitore si decide alla prima frase di ogni risposta: Kokoro se è pronto.
-  - Se Kokoro fallisce alla prima frase, tutta la risposta passa al Mac (`x-nexus-voce: mac;cambio`).
-  - Se fallisce dopo aver già parlato, la frase si salta invece di cambiare voce. Se il processo muore, riparte da solo (da 2 s a 60 s di attesa).
-  - Kokoro riceve una frase per riga in JSON e restituisce un WAV a 24 kHz in base64; le fa una alla volta, e l'HUD ne chiede al massimo 2 insieme.
-  - La voce del Mac è quella di sistema, se italiana, anche Siri, letta da `defaults`. `NEXUS_MAC_VOICE` la scavalca.
+- **`voice.mjs`** fa parlare Nexus con `say`, una frase alla volta in un WAV a 24 kHz. La voce è quella di sistema, se italiana, anche Siri, letta da `defaults`; altrimenti la migliore italiana installata. `NEXUS_MAC_VOICE` la scavalca.
 - **`media.mjs`** cerca le immagini: `[gif: …]` su GIPHY (senza chiave non trova niente), `[anim: …]` su Wikimedia Commons.
 - **`orologio.mjs`** è l'ora e l'agenda.
   - **L'ora:** il server mette `[adesso: giorno, ora (fuso, UTC±n)]` davanti a ogni messaggio per il cervello, perché Claude Code gli dà solo la data. Davanti alle frasi sentite aggiunge `[sentito: …]`, il perché dell'HUD, solo da `SENTITO` in `server.mjs`.
@@ -350,8 +342,8 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **`browser-fx.js`** è iniettato in ogni pagina di Google: disegna il mirino e l'animazione dei clic e tiene i link nella stessa scheda.
 - **Avvio:**
   - `STEM.app`, nella radice della repository, lancia `avvia-app.sh`, che imposta `NEXUS_APP=1`: con l'HUD chiuso per circa 150 secondi, il server si spegne (più tardi se sta facendo memoria, al massimo dopo 5 minuti). I permessi di macOS vanno a STEM.app; Accessibilità e Registrazione schermo sono stati dati il 1/11.
-  - `avvia.command` è la via da Terminale. Se manca Kokoro lancia `installa-kokoro.sh`. Il registro va nella finestra e i permessi al Terminale; chiudendo l'HUD il server resta acceso.
-- **Per girare servono:** il comando `claude` nel PATH, la rete (`npx` scarica Playwright MCP, e al primo avvio il server scarica il modello delle mani) e `/usr/bin/swiftc`. Blender in `/Applications` (o `NEXUS_BLENDER`) serve solo a `costruisci_in_blender`: senza, lo strumento lo dice. Kokoro in `runtime/kokoro` (Python 3.12 o 3.13 di Homebrew, `./installa-kokoro.sh`): senza, parla la voce del Mac e il registro lo dice. `avvia-app.sh` e `avvia.command` lanciano `npm install` se manca `node_modules/@mediapipe/tasks-vision`. Le impostazioni stanno in `.env` (elenco commentato in `.env.example`).
+  - `avvia.command` è la via da Terminale. Il registro va nella finestra e i permessi al Terminale; chiudendo l'HUD il server resta acceso.
+- **Per girare servono:** il comando `claude` nel PATH, la rete (`npx` scarica Playwright MCP, e al primo avvio il server scarica il modello delle mani) e `/usr/bin/swiftc`. Blender in `/Applications` (o `NEXUS_BLENDER`) serve solo a `costruisci_in_blender`: senza, lo strumento lo dice. `avvia-app.sh` e `avvia.command` lanciano `npm install` se manca `node_modules/@mediapipe/tasks-vision`. Le impostazioni stanno in `.env` (elenco commentato in `.env.example`).
 
 ## Provare
 - **Riavviare.** Il kill colpisce solo il processo sulla porta di Nexus, non altri `node` di Tony:
@@ -429,15 +421,12 @@ Restano decisioni di Tony, non lavoro sul codice:
   - `node prove/meteo-hud.mjs [cartella-foto]`: l'HUD vero headless sulla GPU, porte 4432 e 9563, circa 2 minuti e mezzo, con la rete. Fa le foto e prova il globo: la discesa sul luogo, le città vicine, il mondo intero, le texture che non crescono. Poi prova mouse, tasti e gesti e misura gli fps con le mani.
   - Il costo del globo si misura con `prove/grafica-banco.mjs --stati angolo`, su un modulo ponte messo per poco in `public/`. Il modulo chiama `createScene` di `nucleo.js`, crea `createGlobo` su un `div` fisso grande come il riquadro (364, 76, 742×604 punti) e gira `fetch('/meteo/mappa.json')` su `/m/meteo/mappa.json`.
   - Con `?debug`: `nexusMeteo()` apre la vista con gli ultimi dati del server (prima serve una `POST /api/meteo` senza origin, per esempio con `curl`), `nexusVistaMeteo()` dà `info()` e `gesto()`.
-- **Voce:** `node prove/voce.mjs` (circa 10 s, senza server): `voice.mjs` vero con Kokoro, la morte di Kokoro a metà risposta, la voce del Mac per la risposta dopo e la ripartenza. In una worktree basta un collegamento a `~/STEM/runtime/kokoro`.
 - **Mani, GPU o CPU:** `node prove/mani-delegato.mjs` (circa 3 minuti, porte 4435 e 9566): l'HUD headless con la ventola Blender di `~/Documents/Nexus-Blender/ventola`, mani spente, sulla GPU e sulla CPU, due giri.
 - **Interruzioni del cervello:** `node prove/cervello-interruzioni.mjs` (circa 15 s, senza server né modello). Un claude finto non chiude mai il turno; tre domande ravvicinate lo fanno uccidere due volte, e ogni avvio deve riprendere la stessa conversazione. Poi l'impronta: stessa persona riprende, persona cambiata o file senza impronta no.
 - **Voce:**
   ```bash
-  curl -s -X POST localhost:4321/api/tts -H 'content-type: application/json' -d '{"text":"prova","answer":"prova-1"}' -o /tmp/prova.audio -D -
+  curl -s -X POST localhost:4321/api/tts -H 'content-type: application/json' -d '{"text":"prova"}' -o /tmp/prova.wav
   ```
-  - L'intestazione `x-nexus-voce` dice chi ha parlato.
-  - Cambia `answer` a ogni prova, perché il fornitore resta fisso per risposta.
 
 ## Regole del progetto
 - **Dipendenze:** in `package.json` ci sono solo three.js e `@mediapipe/tasks-vision`, fissata alla 0.10.35 perché dalla 1.0 manda statistiche a Google ogni 60 s. Node con moduli ES, nessuna build. Commenti e testi sono in italiano.
