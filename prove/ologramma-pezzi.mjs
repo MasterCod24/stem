@@ -80,11 +80,9 @@ try {
   const c0 = await ev('prova.centri()');
   esito(c0[P] && c0[ALTRO], 'il turbofan di prova è aperto e i pezzi si vedono', `${Object.keys(c0).length} pezzi`);
 
-  await ev("prova.comando('rotazione_auto', true)");
   await pausa(1500);
   let c = await ev('prova.centri()');
-  esito(d(c[P], c0[P]) < 1 && d(c[ALTRO], c0[ALTRO]) < 1, 'con la rotazione automatica chiesta, il modello resta fermo', `pilone spostato di ${px(d(c[P], c0[P]))} in 1,5 s`);
-  await ev("prova.comando('rotazione_auto', false)");
+  esito(d(c[P], c0[P]) < 1 && d(c[ALTRO], c0[ALTRO]) < 1, 'senza mani né mouse il modello resta fermo', `pilone spostato di ${px(d(c[P], c0[P]))} in 1,5 s`);
 
   // mani: afferra, sposta di un decimo di schermo, lascia; il pezzo resta lì
   const [gx, gy] = [c0[P][0] / W, c0[P][1] / H];

@@ -187,7 +187,7 @@ if (RETE) {
   fs.writeFileSync(path.join(BIN, 'npx'), '#!/bin/sh\necho Listening\nexec sleep 600\n', { mode: 0o755 });
   const PORTA = 4423;
   const s = spawn(process.execPath, ['server.mjs'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PATH: `${BIN}:${process.env.PATH}`, NEXUS_CERVELLO: path.join(CASA, 'cervello'), NEXUS_PORT: String(PORTA), NEXUS_BROWSER_PORT: '8933', NEXUS_CDP_PORT: '9335', NEXUS_NO_OPEN: '1', ELEVENLABS_API_KEY: '' } });
+    env: { ...process.env, PATH: `${BIN}:${process.env.PATH}`, NEXUS_CERVELLO: path.join(CASA, 'cervello'), NEXUS_PORT: String(PORTA), NEXUS_BROWSER_PORT: '8933', NEXUS_CDP_PORT: '9335', NEXUS_NO_OPEN: '1' } });
   let log = ''; s.stdout.on('data', (x) => { log += x; }); s.stderr.on('data', (x) => { log += x; });
   for (let i = 0; i < 50 && !log.includes('Nexus online'); i++) await pausa(200);
   const U = `http://127.0.0.1:${PORTA}/api/meteo`, J = { 'content-type': 'application/json' };

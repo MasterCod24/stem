@@ -19,7 +19,10 @@ const RESUME_MS = 2 * 3600_000;
 // effort: quello di --effort negli args. Ogni domanda può chiederne un altro: lo cambio prima del turno con
 // apply_flag_settings, che non costa la cache (misurato il 12/11). Dentro un turno già partito invece non vale:
 // l'effort si fissa all'inizio del turno, e un cambio a metà conta solo dal turno dopo.
-export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () => {} }) {
+// impronta: della persona passata con --append-system-prompt. Claude Code registra il prompt di sistema al primo messaggio di
+// una conversazione e ogni ripresa riusa quello (--system-prompt-snapshot, attivo di base; provato il 22/11): con una persona
+// cambiata, riprendere vorrebbe dire continuare con quella vecchia. Allora si apre una conversazione nuova.
+export function createBrain({ cwd, args, sessionFile, effort = null, impronta = null, onLog = () => {} }) {
   let effortOra = effort;
   let child = null, buf = '', stderr = '';
   let turn = null;          // turno in corso
@@ -28,8 +31,14 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
 
   let bornAt = 0, fails = 0;
   let sessionId = null, resume = true; // se il processo muore riparte nella stessa conversazione (tranne dopo un reset)
-  try { const s = JSON.parse(fs.readFileSync(sessionFile, 'utf8')); if (Date.now() - s.at < RESUME_MS) sessionId = s.id; } catch {}
-  const saveSession = () => { try { fs.writeFileSync(sessionFile, JSON.stringify({ id: sessionId, at: Date.now() })); } catch {} };
+  try {
+    const s = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+    if (Date.now() - s.at < RESUME_MS) {
+      if (impronta && s.impronta !== impronta) onLog('[cervello] la persona è cambiata: comincio una conversazione nuova');
+      else sessionId = s.id;
+    }
+  } catch {}
+  const saveSession = () => { try { fs.writeFileSync(sessionFile, JSON.stringify({ id: sessionId, at: Date.now(), impronta })); } catch {} };
   function start() {
     if (child) return;
     bornAt = Date.now();
@@ -49,9 +58,9 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
       if (gone) return; gone = true;
       onLog(`[cervello] fermo (${why}) ${stderr.trim().slice(-300)}`);
       if (child === c) child = null;
-      // Ucciso da me per un'interruzione lenta: non è la conversazione rotta, e si riprende sempre. Il 17/11 sera una domanda
-      // di Telegram e due dell'HUD in 11 s hanno fatto uccidere due volte il cervello, la seconda mentre ripartiva: contato
-      // come «morto subito», ha aperto una conversazione nuova e perso quella della sera (20 domande).
+      // Ucciso da me per un'interruzione lenta: non è la conversazione rotta, e si riprende sempre. Il 17/11 sera tre domande
+      // in 11 s hanno fatto uccidere due volte il cervello, la seconda mentre ripartiva: contato come «morto subito», ha
+      // aperto una conversazione nuova e perso quella della sera (20 domande).
       const quick = Date.now() - bornAt < 20000 && !c.uccisoDaMe;
       // Ripreso e morto subito (conversazione sparita o rovinata): riparto da una nuova, se no riproverei la stessa all'infinito
       if (quick && extra.length && sessionId) { onLog('[cervello] non riesco a riprendere la conversazione: ne apro una nuova'); sessionId = null; }
@@ -153,13 +162,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, onLog = () 
   function endTurn({ error } = {}) {
     const T = turn;
     if (!T) return;
-    if (!T.ignored && !T.interrupted) {
-      speakable(true);
-      // Tutto il testo del turno da leggere, per Telegram: senza i segnali ma col resto intatto. Il parlato toglie anche
-      // _ * # ` > e un indirizzo come wiki/Torre_Eiffel ne usciva rotto.
-      const testo = T.text.replace(TAG, ' ').replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-      if (testo) T.emit({ t: 'testo', s: testo });
-    }
+    if (!T.ignored && !T.interrupted) speakable(true);
     if (error && !T.interrupted) T.emit({ t: 'error', s: error });
     if (sessionFile && sessionId) saveSession(); // anche l'ora dell'ultima risposta: dice se dopo un riavvio vale la pena riprenderla
     turn = null;

@@ -363,7 +363,6 @@ const SBAGLIATI = [
   ['vista con sezione su un asse sconosciuto', con(sc('base'), { vista: { sezione: { asse: 'w', posizione: 0 } } }), 'vista: sezione.asse'],
   ['vista con verso della sezione sbagliato', con(sc('base'), { vista: { sezione: { asse: 'x', posizione: 0, verso: 2 } } }), 'vista: sezione.verso'],
   ['vista che seleziona un pezzo inesistente', con(sc('base'), { vista: { selezionato: 'fantasma' } }), 'vista: selezionato'],
-  ['vista con rotazione_auto non booleana', con(sc('base'), { vista: { rotazione_auto: 1 } }), 'vista: rotazione_auto'],
   ['modello che non è un oggetto', 'mostrami un motore', 'modello'],
 ];
 for (const [nome, m, campo] of SBAGLIATI) {
@@ -415,7 +414,7 @@ titolo('5b. Casi giusti: nessun errore, predefiniti applicati');
     [P.motore.misure.scala === 1000 && P.motore.misure.centra === true, 'file: scala e centra'],
     [Math.abs(Math.hypot(...M.carichi[0].direzione) - 1) < 1e-15 && M.carichi[0].direzione[0] === 0.6, 'direzione del carico normalizzata'],
     [M.vincoli[0].tipo === 'incastro', "tipo del vincolo predefinito 'incastro'"],
-    [M.vista.esploso === 0.5 && M.vista.modo === 'ologramma' && M.vista.sezione.verso === 1 && M.vista.selezionato === null && M.vista.rotazione_auto === false, 'vista completata con i predefiniti'],
+    [M.vista.esploso === 0.5 && M.vista.modo === 'ologramma' && M.vista.sezione.verso === 1 && M.vista.selezionato === null && !('rotazione_auto' in M.vista), 'vista completata con i predefiniti, senza rotazione_auto'],
     [r.avvisi.some((a) => a.includes('«motore»') && a.includes('calcolo')), "avviso: un pezzo 'file' non entra nel calcolo"],
     [r.avvisi.some((a) => a.includes('«staffa»') && a.includes('ripetut')), 'avviso: punti ripetuti tolti'],
   ];

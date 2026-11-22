@@ -463,7 +463,6 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
     if (v.sezione) r.push(`sezione ${v.sezione.asse} a ${mm(v.sezione.posizione)} mm, verso ${v.sezione.verso > 0 ? '+' : '−'}`);
     if (v.selezionato) r.push(`selezionato «${v.selezionato}»`);
     if (v.isolato) r.push(`isolato «${v.isolato}»`);
-    if (v.rotazione_auto) r.push('rotazione automatica');
     return r.join(', ');
   }
 

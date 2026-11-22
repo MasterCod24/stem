@@ -2,11 +2,11 @@
 
 ![Nexus](public/icona.png)
 
-Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con voce ElevenLabs, naviga su Google, usa le app e lo schermo al posto tuo.
+Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con Kokoro, una voce che gira tutta sul Mac, naviga su Google, usa le app e lo schermo al posto tuo.
 
 ## Avvio
-- **App Nexus:** doppio clic su `STEM.app`, che cambierà nome col trasloco della cartella (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: le particelle si raccolgono nella sfera, poi gli anelli si disegnano. Se Nexus è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), Nexus si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria. Con Telegram acceso invece resta acceso, per risponderti dal telefono.
-- **Da Terminale:** `./avvia.command`, utile anche la prima volta per inserire la chiave ElevenLabs. Ctrl-C o chiudere la finestra spegne tutto.
+- **App Nexus:** doppio clic su `STEM.app`, che cambierà nome col trasloco della cartella (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: le particelle si raccolgono nella sfera, poi gli anelli si disegnano. Se Nexus è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), Nexus si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
+- **Da Terminale:** `./avvia.command`, che la prima volta installa anche la voce (circa 500 MB). Ctrl-C o chiudere la finestra spegne tutto.
 
 ## Parlare con Nexus
 L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il vecchio nome non lo sveglia più.
@@ -59,28 +59,17 @@ L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il 
 - **Memoria:** quando una conversazione finisce (3 minuti di silenzio, o chiudi l'HUD), Nexus la rilegge e si segna quello che varrà ancora tra un mese: persone, gusti, abitudini, correzioni. Niente salute, soldi o password, a meno che tu non glielo chieda. Se riapri Nexus entro 2 ore, riprende la conversazione da dove eravate. Puoi chiedergli «cosa ricordi di me?» o dirgli «dimentica…».
 - **Orologio e agenda:** sa sempre che ore sono. Se gli chiedi qualcosa per dopo («ricordami alle 18 di chiamare la mamma», «tra un'ora guarda se è uscito il trailer di GTA 6»), se lo segna e all'ora giusta parla lui per primo, anche se nel frattempo Nexus si è riavviato. Funziona solo con Nexus acceso e il Mac sveglio: se a quell'ora era spento o in stop, te lo dice appena si riaccende. A batteria il Mac va in stop dopo un po' che nessuno lo tocca, e parlargli non conta: per una sveglia, attaccalo alla corrente.
 
-## Dal telefono, su Telegram
-Scrivi a Nexus su Telegram e ti risponde lo stesso Nexus del Mac: stesso cervello, stessa conversazione, stessa memoria. Se a casa gli hai chiesto un film, dal telefono sa di cosa parli. Puoi anche mandargli un vocale o una foto.
-- **Cosa fa:** risponde per scritto, coi link che puoi toccare; cerca in rete, usa le app del Mac e si segna i promemoria. I promemoria ti arrivano sempre anche su Telegram: se l'HUD è aperto li dice pure a voce, ma tu potresti non essere in casa. Per un compito lungo prima ti scrive una frase («Te lo cerco.»), poi il risultato. Se gli scrivi mentre sta ancora rispondendo, lascia la risposta vecchia e passa alla nuova, come a voce.
-- **Vocali e foto:** i vocali li trascrive il Mac stesso, con Whisper, e l'audio non va a nessuno: Nexus legge il testo e ti risponde per scritto. La trascrizione può sbagliare qualche parola, e lui lo sa. Le foto le vede davvero: chiedigli cos'è una cosa, leggigli un cartello, fagli vedere un errore sullo schermo. Le foto entrano nella conversazione, ma non vengono salvate come file.
-- **Cosa no, per ora:** file, video, sticker e posizioni; a quelli risponde con una frase fissa. Ologrammi, meteo a schermo e report restano sullo schermo del Mac, quindi da fuori te li dice per scritto.
-- **Quando funziona:** solo con il Mac acceso, sveglio e con Nexus avviato. A batteria il Mac va in stop dopo una decina di minuti senza tocchi; a coperchio chiuso ci va subito, se non è collegato a un monitor. I messaggi scritti intanto aspettano su Telegram fino a 24 ore: Nexus li legge appena il Mac si sveglia, e sa da quanto aspettavano. Col Mac bloccato, quello che passa dallo schermo (schermate, clic) non può funzionare.
-- **Chi può scrivergli:** solo tu. Il bot risponde a un numero di Telegram, il tuo, e scarta tutti gli altri. Il Mac va a prendere i messaggi da Telegram, quindi nessuno può entrare nel Mac da fuori. Il prezzo: le conversazioni col bot passano dai server di Telegram, che non le cifrano da un capo all'altro.
-- **Prepararlo, una volta sola:**
-  1. Su Telegram apri **@BotFather**, scrivi `/newbot` e scegli un nome e un nome utente che finisca in `bot`. BotFather ti dà un token: è la chiave del bot, non mandarla a nessuno.
-  2. Nel file `.env` della cartella di Nexus scrivi `TELEGRAM_BOT_TOKEN=` seguito dal token, poi riavvia Nexus.
-  3. Scrivi un messaggio qualsiasi al tuo bot: non risponde, ma in `runtime/server.log` compare una riga col tuo numero («utente non autorizzato (id …)»).
-  4. Nel `.env` scrivi `TELEGRAM_CHAT_ID=` seguito da quel numero, e riavvia Nexus di nuovo.
-
 ## La voce
-- ElevenLabs con il modello `eleven_v4_turbo` (il più espressivo e veloce, mezzo credito a carattere). Ogni risposta usa **una sola voce** dall'inizio alla fine.
-- Quando i crediti finiscono Nexus passa alla voce del Mac per tutta la risposta, e torna a ElevenLabs da solo quando si rinnovano. Con il piano gratuito (10.000 caratteri al mese) bastano poche decine di risposte.
-- La voce del Mac è quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata.
+- Kokoro, con la voce italiana maschile `im_nicola`. Gira sul Mac: niente crediti, niente rete, la stessa voce tutto il mese. «Guardo subito.» esce in circa 0,4 s, contro 0,8–1,4 s della voce del Mac.
+- Si cambia in `.env`: `NEXUS_VOCE` sceglie la voce, anche una miscela come `im_nicola:0.7+bm_george:0.3` (un po' di accento britannico), e `NEXUS_VOCE_VELOCITA` il ritmo (1 è quello del modello). Poi si riavvia Nexus.
+- Kokoro in italiano ha una sola voce maschile, addestrata con poco audio: niente clonazione, quindi niente voce di un attore. Il tono da maggiordomo lo fanno soprattutto le parole.
+- Se Kokoro non c'è o si ferma, Nexus usa la voce del Mac per tutta la risposta, e riparte da solo. La voce del Mac è quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata.
+- Si installa una volta con `./installa-kokoro.sh`, in `runtime/kokoro`.
 
 ## Come funziona
 - `server.mjs`: avvio, finestre, pannello del browser (screencast), voce e cervello.
 - `brain.mjs`: un processo Claude Code sempre acceso (stream-json), interrotto quando arriva una domanda nuova.
-- `voice.mjs`: ElevenLabs o Mac, uno per risposta.
+- `voice.mjs` e `voce-kokoro.py`: Kokoro sempre acceso, o la voce del Mac, una per risposta.
 - `media.mjs`: GIF e animazioni.
 - `orologio.mjs`: l'ora, data al cervello a ogni domanda, e l'agenda (`runtime/agenda.json`).
 - `ologramma.mjs`: lo stato degli ologrammi; `fisica/`: il calcolo degli sforzi.

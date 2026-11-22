@@ -112,7 +112,7 @@ function liberaColonne(scritte) {
 let micPeak = 0, ultimoStato = null, statoFalliti = 0;
 async function pollStatus() {
   try {
-    const q = new URLSearchParams({ hud: 1, ear: ear, lock: earLock ? 1 : 0, rec: rec ? 'ear' : '-', mic: micPeak.toFixed(3), mode: S.mode });
+    const q = new URLSearchParams({ hud: 1, ear: ear, lock: earLock ? 1 : 0, mic: micPeak.toFixed(3), mode: S.mode });
     micPeak = 0;
     const st = await (await fetch('/api/status?' + q)).json();
     ultimoStato = st; statoFalliti = 0; allarme('server', 0);
@@ -341,7 +341,9 @@ function creaMani() { // una volta sola, anche con due aperture di fila
     mappaMani = mappa;
     // ?debug&mani=immagine: la foto di prova al posto della fotocamera, a 30 Hz come lei, per misurare
     const prova = maniProva ? { sorgente: 'immagine', immagine: await telaProva(), hz: 30 } : {};
-    return (mani = createMani({ ...prova, onGesto: gestoMani, onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); faseMani('spente'); } }));
+    // ?debug&delegato=CPU: MediaPipe sulla CPU invece che sulla GPU, per confrontarli (prove/mani-delegato.mjs)
+    const delegato = DEBUG && params.get('delegato') === 'CPU' ? 'CPU' : 'GPU';
+    return (mani = createMani({ ...prova, delegato, onGesto: gestoMani, onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); faseMani('spente'); } }));
   })().catch((e) => { maniPronte = null; throw e; });
   return maniPronte;
 }
@@ -397,7 +399,7 @@ function showMedia(m) {
 }
 function hideMedia() { $('media').classList.remove('on'); }
 
-// ---------- Audio: una coda, una sola voce (il server decide ElevenLabs o Mac per l'intera risposta) ----------
+// ---------- Audio: una coda, una sola voce (il server decide Kokoro o Mac per l'intera risposta) ----------
 let ctx = null, outAnalyser = null, micAnalyser = null, sfx = null, micLivello = 0; // micLivello: rms del microfono, per i dB a raggiera
 const buf = new Uint8Array(1024);
 async function ensureAudio() {
@@ -427,7 +429,7 @@ function rms(an) {
 const PAGE = crypto.randomUUID(); // la stessa risposta non si confonde con quelle di un HUD ricaricato
 let generation = 0, queue = [], playing = false, streamDone = true, currentSource = null, ttsAbort = new AbortController();
 let spokeThisAnswer = false;
-// Mai più di 2 sintesi insieme: il piano di ElevenLabs ne accetta 2
+// Al massimo 2 sintesi insieme: Kokoro le fa una alla volta, così la seconda frase è pronta quando finisce la prima
 let ttsActive = 0;
 const ttsWaiting = [];
 const ttsSlot = () => new Promise((go) => { if (ttsActive < 2) { ttsActive++; go(); } else ttsWaiting.push(go); });
@@ -817,7 +819,7 @@ function aggiornaBordi() {
   scrivi($('fondo-dx'), `FRAME ${nQuadri}  ·  T+${due(Math.floor(su / 3600))}:${due(Math.floor(su / 60) % 60)}:${due(su % 60)}`);
   // I valori a raggiera
   const v = ultimoStato?.voice;
-  scrivi($('d-voce').lastChild, !v ? '—' : v.provider === 'eleven' ? `ELEVENLABS${Number.isFinite(v.credits) ? ` · ${v.credits.toLocaleString('it-IT')} CR` : ''}` : `MAC · ${String(v.mac || 'SISTEMA').toUpperCase().slice(0, 22)}`);
+  scrivi($('d-voce').lastChild, !v ? '—' : `${v.provider === 'kokoro' ? 'KOKORO' : 'MAC'} · ${String(v.voce || 'SISTEMA').toUpperCase().slice(0, 22)}`);
   scrivi($('d-latenza').lastChild, latenza === null ? '—' : `${latenza.toFixed(1).replace('.', ',')} S`);
   const db = micLivello > 0 ? Math.max(-60, Math.round(20 * Math.log10(micLivello))) : null;
   scrivi($('d-ascolto').lastChild, ear !== 'on' ? EAR_TEXT[ear].toUpperCase() : db === null ? 'IN ATTESA' : `${db} DB`);

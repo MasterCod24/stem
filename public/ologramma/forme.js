@@ -46,7 +46,7 @@ export const PREDEFINITI = congela({
     ingranaggio: { foro: 0 }, // 0: senza foro
     file: { scala: 1, centra: true },
   },
-  vista: { esploso: 0, sezione: null, modo: 'ologramma', selezionato: null, isolato: null, rotazione_auto: false },
+  vista: { esploso: 0, sezione: null, modo: 'ologramma', selezionato: null, isolato: null },
 });
 // esplodi null vuol dire direzione non detta: la sceglie la scena. gruppo null: il pezzo esplode da solo.
 // materiale_vero e fattura null: non detti. colore null: il ciano dell'ologramma.
@@ -1093,10 +1093,6 @@ export function normalizzaVista(v, idValidi, base) {
       if (v[k] === undefined) continue;
       if (v[k] === null || (typeof v[k] === 'string' && (!ids || ids.has(v[k])))) vista[k] = v[k];
       else C.err(k, `${mostra(v[k])} non è un pezzo${ids ? ': i pezzi sono ' + elenco(ids) : ''}`);
-    }
-    if (v.rotazione_auto !== undefined) {
-      const r = leggiBooleano(C, v.rotazione_auto, 'rotazione_auto', undefined);
-      if (r !== undefined) vista.rotazione_auto = r;
     }
   }
   if (ids) for (const k of ['selezionato', 'isolato']) {

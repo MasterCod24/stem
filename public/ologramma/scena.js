@@ -948,7 +948,6 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
         else if (k === 'sezione') impostaSezione(vs.sezione);
         else if (k === 'selezionato') seleziona(vs.selezionato);
         else if (k === 'isolato') isola(vs.isolato);
-        else if (k === 'rotazione_auto') vista.rotazione_auto = vs.rotazione_auto;
       }
       vistaServer = vs;
     }
@@ -1190,7 +1189,6 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
       case 'ruota': if (valore && typeof valore === 'object') ruota(Number(valore.dx), Number(valore.dy)); break;
       case 'zoom': zoom(Number(valore)); break;
       case 'reset': reimposta(); break;
-      case 'rotazione_auto': if (typeof valore === 'boolean') vista.rotazione_auto = valore; break;
     }
     aggiornaBarra();
   }
