@@ -1,18 +1,18 @@
-// Il cervello di Nexus: un solo processo Claude Code sempre acceso (stream-json in ingresso e in uscita).
+// Il cervello di O.S.C.A.R.: un solo processo Claude Code sempre acceso (stream-json in ingresso e in uscita).
 // Niente avvio a ogni domanda: dalla seconda in poi il primo testo arriva in circa un secondo invece di tre.
 // Una domanda nuova interrompe quella in corso (control_request interrupt) senza uccidere il processo.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Segnali che Nexus scrive nel testo e che non vanno letti ad alta voce:
+// Segnali che O.S.C.A.R. scrive nel testo e che non vanno letti ad alta voce:
 //   [ignora]        la frase non era per lui: nessuna risposta
 //   [[mostra]]      compito complesso: apri il pannello del browser nell'HUD
 //   [gif: parole]   GIF simpatica (GIPHY)      [anim: words]   animazione che spiega (Wikimedia Commons)
 //   [[pensa]]       compito complesso: il server lo rilancia subito con l'effort alto (server.mjs, /api/ask)
 const TAG = /\[\[?\s*([a-zà-ù]+)\s*(?::\s*([^\]]*?))?\s*\]\]?/gi;
 
-// Dopo un riavvio di Nexus riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
+// Dopo un riavvio di O.S.C.A.R. riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
 // riaprendo l'HUD poco dopo, "e il secondo film che mi hai detto?" ha ancora senso. Più in là vale la memoria.
 const RESUME_MS = 2 * 3600_000;
 
@@ -22,7 +22,8 @@ const RESUME_MS = 2 * 3600_000;
 // impronta: della persona passata con --append-system-prompt. Claude Code registra il prompt di sistema al primo messaggio di
 // una conversazione e ogni ripresa riusa quello (--system-prompt-snapshot, attivo di base; provato il 22/11): con una persona
 // cambiata, riprendere vorrebbe dire continuare con quella vecchia. Allora si apre una conversazione nuova.
-export function createBrain({ cwd, args, sessionFile, effort = null, impronta = null, onLog = () => {} }) {
+export function createBrain({ cwd, args, sessionFile, effort = null, impronta = null, onLog = () => {},
+  avvisoMs = 45_000, inattivoMs = 180_000, strumentoMs = 420_000, interruzioneMs = 4000, terminaMs = 2000 }) {
   let effortOra = effort;
   let child = null, buf = '', stderr = '';
   let turn = null;          // turno in corso
@@ -50,7 +51,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
     child = c;
     resume = true;
     buf = ''; stderr = '';
-    c.stdout.on('data', (d) => { if (child === c) onData(d); }); // righe arrivate dopo la morte: non devono riscrivere sessionId
+    c.stdout.on('data', (d) => { if (child === c && !c.uccisoDaMe) onData(d); });
     c.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
     c.stdin.on('error', () => {}); // EPIPE se il processo è appena morto: non deve far cadere il server
     let gone = false;
@@ -67,7 +68,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
       fails = quick ? fails + 1 : 0; // se muore appena nato, aspetto sempre di più (prima di endTurn, che può farlo ripartire)
       if (turn) endTurn({ error: 'Il cervello si è fermato.' });
       clearTimeout(respawnTimer);
-      if (!child) respawnTimer = setTimeout(start, Math.min(60000, 1500 * 2 ** fails));
+      if (!child && !c.chiusura) respawnTimer = setTimeout(start, Math.min(60000, 1500 * 2 ** fails));
     };
     c.on('error', (e) => died(e.message));
     c.on('exit', (code, signal) => died(code ?? signal));
@@ -84,7 +85,20 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
       if (!line.trim()) continue;
       let o; try { o = JSON.parse(line); } catch { continue; }
       if (o.session_id) sessionId = o.session_id;
-      if (!turn) continue;
+      if (!turn || (turn.interrupted && o.type !== 'result')) continue;
+      // keep_alive e conferme dei comandi di controllo provano solo che il processo è vivo.
+      // Gli strumenti possono tacere a lungo (anche compilazione Swift + azione sul Mac).
+      const tipo = o.event?.type;
+      const progresso = o.type === 'stream_event' && (tipo?.startsWith('content_block_') || tipo?.startsWith('message_'));
+      if (progresso || o.type === 'assistant' || o.type === 'user') {
+        if (tipo === 'message_start') turn.strumenti.clear(); // nuovo messaggio del modello dopo i risultati
+        const blocchi = o.message?.content;
+        for (const blocco of (Array.isArray(blocchi) ? blocchi : [o.event?.content_block])) {
+          if (blocco?.type === 'tool_use') turn.strumenti.add(blocco.id);
+          if (blocco?.type === 'tool_result') turn.strumenti.delete(blocco.tool_use_id);
+        }
+        sorveglia();
+      }
       if (o.type === 'stream_event') {
         const e = o.event;
         if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') { turn.text += e.delta.text; speakable(false); }
@@ -141,7 +155,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
       if (c.input?.url) { try { detail = new URL(c.input.url).hostname.replace(/^www\./, ''); } catch {} }
       T.browserActions++;
       T.emit({ t: 'tool', name, detail });
-      // Rete di sicurezza: se Nexus non ha detto [[mostra]] ma sta facendo una ricerca lunga, il pannello si apre lo stesso
+      // Rete di sicurezza: se O.S.C.A.R. non ha detto [[mostra]] ma sta facendo una ricerca lunga, il pannello si apre lo stesso
       if (T.browserActions === 4) T.emit({ t: 'show' });
     } else if (c.name === 'mcp__mac__mostra_report') { // il report va all'HUD così com'è: lo strumento serve solo a dargli una forma
       T.emit({ t: 'report', titolo: c.input?.titolo, blocchi: c.input?.blocchi });
@@ -162,6 +176,8 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
   function endTurn({ error } = {}) {
     const T = turn;
     if (!T) return;
+    clearTimeout(T.avviso); clearTimeout(T.scadenza); clearTimeout(T.stopTimer);
+    if (T.inAttesa) T.emit({ t: 'attesa', attiva: false });
     if (!T.ignored && !T.interrupted) speakable(true);
     if (error && !T.interrupted) T.emit({ t: 'error', s: error });
     if (sessionFile && sessionId) saveSession(); // anche l'ora dell'ultima risposta: dice se dopo un riavvio vale la pena riprenderla
@@ -176,8 +192,24 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
       send({ type: 'control_request', request_id: `effort-${Date.now()}`, request: { subtype: 'apply_flag_settings', settings: { effortLevel: w.effort } } });
       effortOra = w.effort;
     }
-    turn = { emit: w.onEvent, resolve: w.resolve, text: '', used: 0, speech: '', spoke: false, ignored: false, interrupted: false, browserActions: 0 };
+    turn = { emit: w.onEvent, resolve: w.resolve, text: '', used: 0, speech: '', spoke: false, ignored: false, interrupted: false, browserActions: 0, strumenti: new Set() };
+    sorveglia();
     send({ type: 'user', message: { role: 'user', content: w.text } });
+  }
+
+  function sorveglia() {
+    const T = turn;
+    clearTimeout(T.avviso); clearTimeout(T.scadenza);
+    if (T.inAttesa) { T.inAttesa = false; T.emit({ t: 'attesa', attiva: false }); }
+    T.avviso = setTimeout(() => {
+      T.inAttesa = true;
+      T.emit({ t: 'attesa', attiva: true });
+    }, avvisoMs);
+    T.scadenza = setTimeout(() => {
+      onLog('[cervello] turno senza progressi: interrompo');
+      T.emit({ t: 'error', causa: 'inattivo', s: 'Ho interrotto la richiesta per inattività. Puoi farmi una nuova domanda.' });
+      interrupt();
+    }, T.strumenti.size ? strumentoMs : inattivoMs);
   }
 
   // Una domanda nuova: se ce n'è una in corso la interrompo, poi parto appena il processo ha chiuso il turno
@@ -197,13 +229,27 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
     turn.interrupted = true;
     send({ type: 'control_request', request_id: `stop-${Date.now()}`, request: { subtype: 'interrupt' } });
     const T = turn;
-    setTimeout(() => { if (turn === T && child) { onLog('[cervello] interruzione lenta: riavvio'); child.uccisoDaMe = true; child.kill('SIGTERM'); } }, 4000);
+    clearTimeout(T.avviso); clearTimeout(T.scadenza);
+    const c = child;
+    T.stopTimer = setTimeout(() => {
+      if (turn !== T || child !== c) return;
+      onLog('[cervello] interruzione lenta: riavvio');
+      termina(c);
+    }, interruzioneMs);
   }
 
   function stop() { if (waiting) { waiting.resolve({ interrotto: true }); waiting = null; } interrupt(); }
+  function termina(c) {
+    c.uccisoDaMe = true;
+    c.kill('SIGTERM');
+    setTimeout(() => { if (child === c) c.kill('SIGKILL'); }, terminaMs).unref();
+  }
   function kill(reset = false) {
+    clearTimeout(respawnTimer);
+    if (waiting) { waiting.resolve({ interrotto: true }); waiting = null; }
     if (reset) { resume = false; sessionId = null; try { fs.unlinkSync(sessionFile); } catch {} }
-    child?.kill('SIGTERM');
+    if (child) { child.chiusura = !reset; termina(child); }
+    else if (reset) start();
   }
   function notify(ev) { turn?.emit(ev); } // eventi esterni (es. il sito cambiato) verso la domanda in corso
 

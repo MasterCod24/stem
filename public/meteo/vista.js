@@ -1,4 +1,4 @@
-// Nexus — la vista meteo a schermo intero: il globo col radar al centro, vento e pressione a sinistra, profilo termico a destra,
+// O.S.C.A.R. — la vista meteo a schermo intero: il globo col radar al centro, vento e pressione a sinistra, profilo termico a destra,
 // avvisi e condizioni per spostarsi sotto, timeline in basso. I dati arrivano dal server (meteo.mjs, evento 'meteo'), il radar da
 // RainViewer (radar.js), il globo lo disegna globo.js nel renderer dell'HUD. Una linea del tempo sola comanda tutto: scorrendola
 // (mani, mouse, frecce) i moduli mostrano il tempo a quell'ora, il globo la mappa del radar di quell'ora (se è nelle ultime due)
@@ -431,7 +431,7 @@ export function createVistaMeteo({ contenitore, prima = null, renderer, strato, 
   for (const t of ['pointerup', 'pointercancel']) area.addEventListener(t, () => { scorre = false; });
   area.addEventListener('dblclick', () => scegli(null));
 
-  // ---------------------------------------------------------------- mani (gesti.js, via nexus.js)
+  // ---------------------------------------------------------------- mani (gesti.js, via oscar.js)
   const dentro = (el, x, y) => { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
   function sottoA(x, y) {
     if (dentro(riquadro, x, y)) return 'radar';

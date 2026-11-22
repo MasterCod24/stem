@@ -701,7 +701,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
     scheda.classList.toggle('on', !!R && aperto);
     if (R) {
       const p = R.p, M = MATERIALI[p.materiale], righe = [];
-      // materiale_vero e fattura vengono dalla ricerca di Nexus sul pezzo vero; la chiave `materiale` è solo quella del
+      // materiale_vero e fattura vengono dalla ricerca di O.S.C.A.R. sul pezzo vero; la chiave `materiale` è solo quella del
       // calcolo, e accanto a un materiale vero si dichiara come tale. La fonte per pezzo è stata tolta l'11/11 (reggeva 2 su 5).
       const chiave = p.materiale === 'generico' ? '' : `${M.nome} · ${numero(M.densita, 0)} kg/m³${M.affidabile ? '' : ' · non isotropo'}`;
       righe.push(['materiale', p.materiale_vero ? p.materiale_vero + (chiave ? ` · calcolato come ${chiave}` : '') : chiave || 'non detto (si disegna, non si calcola)']);
@@ -991,7 +991,7 @@ export function createOlogramma({ renderer, strato, contenitore, sfx = null, onT
   // Le mani escono senza un gesto che lo dica: gesti.js smette di mandare 'cursore'. Dopo 400 ms (12 rilevazioni a 30 Hz)
   // il cursore si spegne e il pezzo sotto non resta evidenziato; una presa senza mani è finita.
   function spegniCursore() { ultimoCursore = 0; sopra = null; presa = null; cursore.classList.remove('on', 'presa'); }
-  // Le fasi di gesti.js, più 'spente' da nexus.js quando le mani si fermano. A riposo il cursore si spegne subito: nessun
+  // Le fasi di gesti.js, più 'spente' da oscar.js quando le mani si fermano. A riposo il cursore si spegne subito: nessun
   // gesto arriva finché Tony non mostra il palmo, e la barra glielo dice; senza, sembrerebbe che le mani non vadano più.
   const TESTI_MANI = { riposo: 'mani: mostra il palmo', pronto: 'mani pronte', azione: 'mani pronte' };
   function impostaFaseMani(fase) {

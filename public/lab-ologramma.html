@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nexus lab ologramma</title>
+<title>O.S.C.A.R. lab ologramma</title>
 <!-- Laboratorio dell'ologramma con la stessa catena dell'HUD (nucleo.js: composer con stencil, bloom con soglia 0,18)
      e i due modelli di demo.js, senza server: lo stato finto è fatto qui come lo farebbe ologramma.mjs.
      ?demo=turbofan|staffa  ?modo=…  ?suoni (suoni al primo clic). Tasti: 1–5 modi, E esploso, S sezione,
@@ -159,7 +159,7 @@ try {
   }
   requestAnimationFrame(loop);
 
-  // ---- tastiera e mouse, come li girerebbe nexus.js
+  // ---- tastiera e mouse, come li girerebbe oscar.js
   for (const tipo of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dblclick']) $('gl').addEventListener(tipo, (e) => holo.puntatore(e));
   $('gl').addEventListener('wheel', (e) => holo.puntatore(e), { passive: false });
   const MODI = ['ologramma', 'solido', 'raggi-x', 'densita', 'sforzi'];
@@ -197,7 +197,7 @@ try {
     ruota: (dx, dy) => holo.comando('ruota', { dx, dy }),
     seleziona: (id) => { holo.comando('seleziona', id); return holo.info().vista.selezionato; },
     info: () => holo.info(),
-    // per prove/ologramma-pezzi.mjs: comandi, gesti e mouse come li manda nexus.js, e il centro di ogni pezzo sullo schermo
+    // per prove/ologramma-pezzi.mjs: comandi, gesti e mouse come li manda oscar.js, e il centro di ogni pezzo sullo schermo
     comando: (n, v) => holo.comando(n, v),
     gesto: (g) => holo.gesto(g),
     puntatore: (e) => holo.puntatore(e),

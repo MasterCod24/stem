@@ -1,6 +1,6 @@
-// oggetto-vero.mjs — prova guarda_oggetto_vero e il confronto col vero, senza Nexus né cervello: parla con mac/mac-mcp.mjs
+// oggetto-vero.mjs — prova guarda_oggetto_vero e il confronto col vero, senza O.S.C.A.R. né cervello: parla con mac/mac-mcp.mjs
 // su stdio come il cervello, con un finto /api/ologramma che risponde con una foto dell'HUD finta.
-//   node prove/oggetto-vero.mjs     circa 20 s, vuole la rete (Wikimedia) e Blender in /Applications (o NEXUS_BLENDER)
+//   node prove/oggetto-vero.mjs     circa 20 s, vuole la rete (Wikimedia) e Blender in /Applications (o OSCAR_BLENDER)
 // Controlla: i rifiuti (http, Mac, rete di casa, pagine, foto oltre 2000 px), le anteprime che passano intatte,
 // le foto rimesse accanto a quella dell'HUD (fuori alla prima vista, dentro ai raggi X e in sezione, mai su un ologramma
 // nuovo senza foto nuove) e il confronto delle misure in costruisci_in_blender, anche in scala.
@@ -35,7 +35,7 @@ const finto = http.createServer((req, res) => {
 await new Promise((ok) => finto.listen(0, '127.0.0.1', ok));
 
 const BASE = path.join(ROOT, 'runtime', `prova-vero-${process.pid}`);
-const CARTELLA = path.join(BASE, 'Documents', 'Nexus-Blender');
+const CARTELLA = path.join(BASE, 'Documents', 'OSCAR-Blender');
 fs.mkdirSync(CARTELLA, { recursive: true });
 const mcp = spawn(process.execPath, [path.join(ROOT, 'mac', 'mac-mcp.mjs'), '--porta', String(finto.address().port), '--blender', CARTELLA], { stdio: ['pipe', 'pipe', 'inherit'] });
 const attese = new Map();
@@ -93,7 +93,7 @@ try {
   // Previsione: l'originale grande è rifiutato col consiglio dell'anteprima; l'anteprima da 1280 passa intatta in meno di 5 s
   const api = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=10' +
     '&gsrsearch=' + encodeURIComponent('turbofan engine cutaway filetype:bitmap') + '&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=1280';
-  const pagine = Object.values((await (await fetch(api, { headers: { 'user-agent': 'Nexus/1.0 (prova)' } })).json()).query?.pages ?? {});
+  const pagine = Object.values((await (await fetch(api, { headers: { 'user-agent': 'OSCAR/1.0 (prova)' } })).json()).query?.pages ?? {});
   const infos = pagine.map((p) => p.imageinfo?.[0]).filter((i) => i?.mime === 'image/jpeg' && i.width > VERO_LATO_PROVA && i.thumburl);
   const [grande, altra] = infos;
   if (!esito(!!grande && !!altra, 'Wikimedia dà due jpg grandi con l\'anteprima', grande ? `${grande.width}×${grande.height}, ${(grande.size / 2 ** 20).toFixed(1)} MB` : 'niente')) throw new Error('senza foto di prova');
@@ -105,7 +105,7 @@ try {
 
   // Larga ma leggera: rifiutata dai pixel dell'intestazione, non dal peso. Poi un'anteprima png: intestazione png letta
   const cerca = async (q, w) => Object.values((await (await fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=20' +
-    '&gsrsearch=' + encodeURIComponent(q) + `&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=${w}`, { headers: { 'user-agent': 'Nexus/1.0 (prova)' } })).json()).query?.pages ?? {}).map((p) => p.imageinfo?.[0]);
+    '&gsrsearch=' + encodeURIComponent(q) + `&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=${w}`, { headers: { 'user-agent': 'OSCAR/1.0 (prova)' } })).json()).query?.pages ?? {}).map((p) => p.imageinfo?.[0]);
   const larga = (await cerca('engine diagram filetype:bitmap', 800)).find((i) => i?.mime === 'image/jpeg' && i.width > 2100 && i.size < 3 * 2 ** 20);
   if (esito(!!larga, 'Wikimedia dà un jpg largo ma leggero', larga ? `${larga.width}×${larga.height}, ${(larga.size / 2 ** 20).toFixed(1)} MB` : 'niente')) {
     r = await strumento('guarda_oggetto_vero', { oggetto: 'larga', foto: [{ url: larga.url, cosa: 'fuori' }] });

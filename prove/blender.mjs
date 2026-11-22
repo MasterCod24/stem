@@ -1,5 +1,5 @@
-// blender.mjs — prova costruisci_in_blender senza Nexus né cervello: parla con mac/mac-mcp.mjs su stdio come il cervello.
-//   node prove/blender.mjs     circa 20 s, vuole Blender in /Applications (o NEXUS_BLENDER)
+// blender.mjs — prova costruisci_in_blender senza O.S.C.A.R. né cervello: parla con mac/mac-mcp.mjs su stdio come il cervello.
+//   node prove/blender.mjs     circa 20 s, vuole Blender in /Applications (o OSCAR_BLENDER)
 // Controlla gli attrezzi (loft, tappi, rivoluzioni con le punte, raccordi), le coordinate dell'HUD nei file, il rifiuto
 // delle primitive, gli errori dello script, le versioni tenute e la gabbia: rete, localhost, file di Tony, cartelle
 // temporanee, scritture fuori e altri programmi devono essere tutti bloccati. Una riga PASS o FAIL per caso.
@@ -17,7 +17,7 @@ function esito(ok, nome, dettagli = '') {
 }
 // Sotto /Users come la cartella vera (Documenti), così la prova passa dalla stessa regola della gabbia
 const BASE = path.join(ROOT, 'runtime', `prova-blender-${process.pid}`);
-const CARTELLA = path.join(BASE, 'Documents', 'Nexus-Blender');
+const CARTELLA = path.join(BASE, 'Documents', 'OSCAR-Blender');
 fs.mkdirSync(CARTELLA, { recursive: true });
 const SEGRETO = path.join(BASE, 'segreto.txt');
 fs.writeFileSync(SEGRETO, 'non deve uscire');
@@ -94,7 +94,7 @@ try {
   r = await costruisci('prova', 'bm = bmesh.new()\nbmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=8, radius=5)');
   esito(r.errore && /bmesh\.ops\.create_/.test(r.testo), 'anche una primitiva di bmesh');
   // 17/11: un profilo chiuso con un tratto sull'asse faceva fallire l'export GLB con «NaN to integer» (4 volte su 7).
-  // Il NaN nasce dal raccordo (Bevel) sulle facce di area zero lungo l'asse: oggetto() col raccordo di serie, come Nexus.
+  // Il NaN nasce dal raccordo (Bevel) sulle facce di area zero lungo l'asse: oggetto() col raccordo di serie, come O.S.C.A.R.
   r = await costruisci('asse', `
 bm = bmesh.new()
 rivoluzione(bm, [(0, 0), (27, 0), (28, 4), (26, 12), (20, 24), (10, 33), (0, 37)], 40, True)

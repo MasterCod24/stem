@@ -1,7 +1,7 @@
 // Il radar della vista meteo: le piogge vere di RainViewer (ultime 2 ore, una mappa ogni 10 minuti) ricolorate coi colori
 // dell'HUD a fasce di 5 dBZ con il bordo acceso, come curve di livello. È riflettività (dove piove e quanto), non Doppler:
 // RainViewer non dà la velocità del vento. Le mattonelle arrivano dirette da RainViewer (CORS aperto, cache di 2 giorni):
-// l'unica cosa che la vista chiede fuori da Nexus.
+// l'unica cosa che la vista chiede fuori da O.S.C.A.R.
 // Qui solo i dati: quali mattonelle servono alla vista del globo, scaricarle, ricolorarle, l'eco attorno al luogo e il giro
 // delle ultime 2 ore. Ogni mappa pronta è un canvas in Mercatore (fr.tela) con il suo riquadro (fr.s): globo.js la proietta
 // sulla sfera. Fino al 12/11 qui c'era anche il disegno del radar piatto.

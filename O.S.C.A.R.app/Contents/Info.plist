@@ -6,25 +6,27 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>O.S.C.A.R.</string>
 	<key>CFBundleExecutable</key>
 	<string>applet</string>
 	<key>CFBundleIconFile</key>
 	<string>applet</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.oscar.assistant</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>STEM</string>
+	<string>O.S.C.A.R.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<key>CFBundleSignature</key>
-	<string>aplt</string>
 	<key>LSMinimumSystemVersionByArchitecture</key>
 	<dict>
+		<key>arm64</key>
+		<string>11.0</string>
 		<key>x86_64</key>
-		<string>10.6</string>
+		<string>10.13</string>
 	</dict>
-	<key>LSRequiresCarbon</key>
-	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>This script needs to control other applications to run.</string>
 	<key>NSAppleMusicUsageDescription</key>
@@ -47,7 +49,5 @@
 	<string>This script needs access to Siri to run.</string>
 	<key>NSSystemAdministrationUsageDescription</key>
 	<string>This script needs access to administer this system to run.</string>
-	<key>OSAAppletShowStartupScreen</key>
-	<false/>
 </dict>
 </plist>

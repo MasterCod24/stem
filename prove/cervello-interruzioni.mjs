@@ -1,4 +1,4 @@
-// cervello-interruzioni.mjs — un cervello ucciso da Nexus per un'interruzione lenta riprende sempre la stessa conversazione,
+// cervello-interruzioni.mjs — un cervello ucciso da O.S.C.A.R. per un'interruzione lenta riprende sempre la stessa conversazione,
 // anche se lo si uccide mentre sta ancora ripartendo. Il 17/11 sera tre domande in 11 s l'hanno fatto
 // uccidere due volte; la seconda contava come «morto appena nato», e brain.mjs ha aperto una conversazione nuova.
 // Un claude finto (bin/claude nella cartella della prova) non chiude mai il turno e ignora le interruzioni, e scrive i

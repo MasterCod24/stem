@@ -20,7 +20,7 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4491, CDP = 9591, ORIGINE = `http://localhost:${PORTA}`;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const MODELLI = path.join(ROOT, 'runtime', 'modelli');
-const LAVORO = fs.mkdtempSync(path.join(process.argv[2] || os.tmpdir(), 'nexus-mani-foto-'));
+const LAVORO = fs.mkdtempSync(path.join(process.argv[2] || os.tmpdir(), 'oscar-mani-foto-'));
 
 // nome sul disco → [cosa mostra, indirizzi da provare]
 const MP = (n) => [`https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/${n}`, `https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/mediapipe/tasks/testdata/vision/${n}`];
@@ -56,7 +56,7 @@ for (const [nome, [, indirizzi]] of Object.entries(FOTO)) {
   let preso = false;
   for (const u of indirizzi) {
     try {
-      const r = await fetch(u, { headers: { 'user-agent': 'Nexus-prove/1.0 (banco delle mani, uso personale)' }, signal: AbortSignal.timeout(15000) });
+      const r = await fetch(u, { headers: { 'user-agent': 'OSCAR-prove/1.0 (banco delle mani, uso personale)' }, signal: AbortSignal.timeout(15000) });
       const b = Buffer.from(await r.arrayBuffer());
       if (r.ok && b.length > 1000 && b.length < 5e6 && b[0] === 0xff && b[1] === 0xd8) { fs.writeFileSync(f, b); preso = true; break; }
     } catch { /* il prossimo indirizzo, o niente */ }

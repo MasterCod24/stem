@@ -1,5 +1,5 @@
-// STEM — aiutante nativo per il controllo del Mac: mouse, tastiera, app, permessi.
-// Lo compila mac-mcp.mjs con /usr/bin/swiftc in runtime/stem-mac. Ogni comando stampa una riga JSON e esce.
+// O.S.C.A.R. — aiutante nativo per il controllo del Mac: mouse, tastiera, app, permessi.
+// Lo compila mac-mcp.mjs con /usr/bin/swiftc in runtime/oscar-mac. Ogni comando stampa una riga JSON e esce.
 // Coordinate sempre in punti dello schermo (origine in alto a sinistra dello schermo principale).
 import AppKit
 import ApplicationServices

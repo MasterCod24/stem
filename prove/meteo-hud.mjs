@@ -1,4 +1,4 @@
-// meteo-hud.mjs — prova la vista meteo nell'HUD vero (index.html, nexus.js, meteo/vista.js e globo.js), in un Chrome headless
+// meteo-hud.mjs — prova la vista meteo nell'HUD vero (index.html, oscar.js, meteo/vista.js e globo.js), in un Chrome headless
 // sulla GPU. Il server finto qui dentro serve i file come server.mjs e dà a GET /api/meteo le previsioni vere di Open-Meteo
 // (Milano), poi le stesse con tre avvisi aggiunti a mano. Il radar è quello vero di RainViewer: la prova vuole la rete.
 // Fa le foto, prova il globo (giro e discesa sul luogo, città vicine, il mondo intero, texture che non crescono), mouse,
@@ -19,8 +19,8 @@ import { H } from '../public/meteo/dati.js';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4432, CDP = 9563, ORIGINE = `http://localhost:${PORTA}`, W = 1470, Hh = 956;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const LAVORO = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-meteo-hud-'));
-const FOTO = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-meteo-foto-'));
+const LAVORO = fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-meteo-hud-'));
+const FOTO = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-meteo-foto-'));
 fs.mkdirSync(FOTO, { recursive: true });
 
 let passati = 0, falliti = 0;
@@ -107,7 +107,7 @@ async function ev(e) {
 }
 async function vai(url) {
   await cdp('Page.navigate', { url });
-  if (!(await attendi(() => ev("document.body?.classList.contains('ready') && typeof window.nexusMeteo === 'function'").catch(() => false), 25000, 200))) throw new Error(`l'HUD non è pronto: ${url}`);
+  if (!(await attendi(() => ev("document.body?.classList.contains('ready') && typeof window.oscarMeteo === 'function'").catch(() => false), 25000, 200))) throw new Error(`l'HUD non è pronto: ${url}`);
 }
 async function foto(nome) {
   const r = await cdp('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: Hh, scale: 0.5 } });
@@ -127,11 +127,11 @@ async function tasto(k) {
   await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
   await pausa(80);
 }
-const info = () => ev('nexusVistaMeteo()?.info()');
+const info = () => ev('oscarVistaMeteo()?.info()');
 const centro = (sel) => ev(`(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.width, r.height, r.left]; })()`);
-const gesto = (g) => ev(`nexusVistaMeteo().gesto(${JSON.stringify(g)})`);
+const gesto = (g) => ev(`oscarVistaMeteo().gesto(${JSON.stringify(g)})`);
 // un pizzico breve: afferra e lascia nello stesso fotogramma, come li manda gesti.js
-const pizzico = (x, y) => ev(`(() => { const v = nexusVistaMeteo(); v.gesto(${JSON.stringify({ tipo: 'afferra', x, y })}); v.gesto({ tipo: 'lascia' }); })()`);
+const pizzico = (x, y) => ev(`(() => { const v = oscarVistaMeteo(); v.gesto(${JSON.stringify({ tipo: 'afferra', x, y })}); v.gesto({ tipo: 'lascia' }); })()`);
 
 try {
   await connetti();
@@ -142,7 +142,7 @@ try {
   titolo('Apertura con le previsioni vere di Milano e il radar vero');
   await vai(`${ORIGINE}/?debug`);
   const t0 = Date.now();
-  await ev('nexusMeteo()');
+  await ev('oscarMeteo()');
   await pausa(1300);
   await foto('meteo-1-entrata');
   const atterrato = await attendi(async () => { const i = await info(); const c = i?.radar?.camera; return c && !c.volo && Math.abs(c.raggio - 150) < 1 && i; }, 9000, 100);
@@ -167,7 +167,7 @@ try {
   esito(/DBZ|NIENTE|NESSUNA ECO/.test(dom.eco) && /FA/.test(dom.radarOra), 'riga del radar: ora della mappa ed eco più vicina', `${dom.radarOra} | ${dom.eco}`);
   esito(dom.bordi === '0', 'i micro-dati ai bordi si spengono, come col report');
   const fuori = [...host.keys()].filter((h) => h !== `localhost:${PORTA}`);
-  esito(fuori.every((h) => /^(api|tilecache)\.rainviewer\.com$/.test(h)), "fuori da Nexus l'HUD chiede solo a RainViewer", fuori.map((h) => `${h} ×${host.get(h)}`).join(', '));
+  esito(fuori.every((h) => /^(api|tilecache)\.rainviewer\.com$/.test(h)), "fuori da O.S.C.A.R. l'HUD chiede solo a RainViewer", fuori.map((h) => `${h} ×${host.get(h)}`).join(', '));
 
   titolo('Mouse e tastiera');
   const [rx, ry] = await centro('.m-globo'), prima = (await info()).radar;
@@ -226,12 +226,12 @@ try {
   await gesto({ tipo: 'afferra', x: rx / W, y: ry / Hh }); await pausa(400);
   await gesto({ tipo: 'lancia', x: rx / W, y: ry / Hh, vx: 1.2, vy: 0 });
   await pausa(600);
-  const chiusa = await ev("({ aperta: nexusVistaMeteo().aperto, classe: document.body.classList.contains('meteo'), vista: getComputedStyle(document.getElementById('meteo')).display })");
+  const chiusa = await ev("({ aperta: oscarVistaMeteo().aperto, classe: document.body.classList.contains('meteo'), vista: getComputedStyle(document.getElementById('meteo')).display })");
   esito(!chiusa.aperta && !chiusa.classe && chiusa.vista === 'none', 'prendi e lancia: la vista si chiude', JSON.stringify(chiusa));
 
   titolo('Avvisi: calo di pressione, temporale e raffiche');
   DATI = conAvvisi;
-  await ev('nexusMeteo()');
+  await ev('oscarMeteo()');
   await attendi(async () => (await ev("document.querySelectorAll('.m-avviso').length")) > 0, 3000);
   await pausa(1200);
   await foto('meteo-5-avvisi');
@@ -246,7 +246,7 @@ try {
   titolo('Fotogrammi con le mani accese (foto di prova al posto della fotocamera)');
   DATI = vero.dati;
   await vai(`${ORIGINE}/?debug&mani=immagine`);
-  await ev('nexusMeteo()');
+  await ev('oscarMeteo()');
   const mani = await attendi(() => ev('window.__misure.mani?.attive'), 30000, 250);
   esito(Boolean(mani), 'le mani partono con la meteo aperta');
   await attendi(async () => { const i = await info(); return i?.radar?.scaricate >= i?.radar?.n && i.radar.n > 0; }, 20000, 250);

@@ -1,6 +1,6 @@
 // ologramma-pezzi.mjs — prova le regole di Tony del 16/11 sulla scena vera (scena.js) in un Chrome headless sulla GPU:
 // l'ologramma si muove solo quando lo muove lui, i pezzi spostati restano dove li lascia, e tornano a posto solo col gesto
-// dei due pugni ('ricomponi'). Gira su public/lab-ologramma.html col turbofan di prova, senza server di Nexus né cervello.
+// dei due pugni ('ricomponi'). Gira su public/lab-ologramma.html col turbofan di prova, senza server di O.S.C.A.R. né cervello.
 //   node prove/ologramma-pezzi.mjs      circa 20 s, porte 4433 e 9564
 // Una riga PASS o FAIL per caso; esce con 0 solo se passa tutto.
 import { spawn } from 'node:child_process';
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4433, CDP = 9564, W = 1470, H = 956;
-const CHROME = process.env.NEXUS_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.OSCAR_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 let passati = 0, falliti = 0;
 function esito(ok, nome, dettagli = '') {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${nome}${dettagli ? '  —  ' + dettagli : ''}`);
@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(f).pipe(res);
 }).listen(PORTA, '127.0.0.1');
 
-const profilo = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-pezzi-'));
+const profilo = fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-pezzi-'));
 fs.writeFileSync(path.join(profilo, 'Local State'), JSON.stringify({ performance_tuning: { battery_saver_mode: { state: 0 } } }));
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${profilo}`, '--mute-audio', '--no-first-run',
   '--no-default-browser-check', `--window-size=${W},${H}`, '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
