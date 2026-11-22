@@ -6,7 +6,7 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
 - **Vero:** il modello 3D a schermo intero nell'HUD, con aspetto olografico, vista esplosa, sezione piena, raggi X, densità dei materiali e sforzi calcolati davvero. Si comanda con la voce (attraverso il cervello), con mouse e tastiera, e con le mani davanti alla fotocamera.
 - **Calcolo degli sforzi:** elasticità lineare, statica, su voxel (`fisica/voxel-fea.mjs`, provato contro la trave a sbalzo). Calcola pezzi pieni fatti di primitive. I pezzi che si toccano sono considerati incollati: niente contatti, bulloni, plasticità, instabilità, fatica né dinamica. Un «impatto» è una forza statica equivalente.
 - **Non si fa, perché sarebbe finto:** fisica molecolare, flussi di energia simulati, surriscaldamento senza sorgenti di calore, feedback aptico, precisione millimetrica delle mani (MediaPipe sbaglia di circa 1 cm). I «flussi» sui cavi sono un disegno di dati dichiarati, e si dice così.
-- **Sicurezza:** il cervello descrive il modello solo con dati dichiarativi. Niente `eval`, niente `new Function`, niente `innerHTML` e niente shader che arrivano da fuori. I testi entrano nell'HUD solo con `textContent`, e i numeri passano da `Number.isFinite` più un limite. L'HUD è un telecomando di Nexus (`/api/ask`), quindi non carica codice da internet.
+- **Sicurezza:** il cervello descrive il modello solo con dati dichiarativi. Niente `eval`, niente `new Function`, niente `innerHTML` e niente shader che arrivano da fuori. I testi entrano nell'HUD solo con `textContent`, e i numeri passano da `Number.isFinite` più un limite. L'HUD è un telecomando di O.S.C.A.R. (`/api/ask`), quindi non carica codice da internet.
 
 ## File e chi li usa
 | file | dove gira | cosa fa |
@@ -153,7 +153,7 @@ Il calcolo rifiuta `generico` e segnala `affidabile: false` con un avviso. Una c
 - `GET /api/ologramma/campo?v=<versione>` restituisce un `Float32Array` di nx·ny·nz valori, in ordine `i + nx·(j + ny·k)`. Ogni valore è il fattore di sicurezza del voxel; −1 vuol dire vuoto, e 1e6 sicurezza enorme.
 - Il colore lo calcola l'HUD: `rischio = clamp(1/fs, 0, 1)`, cioè lo sforzo diviso lo snervamento: cresce in proporzione ed è rosso da fs 1 in giù. Con la scala di prima, `log(3/fs)/log(3)`, tutto quello che reggeva con fs ≥ 3 era blu e non si vedeva dove il pezzo lavora.
 - `ologramma.mjs` salva lo stato in `runtime/ologramma.json` con tmp+rename, e il campo in `runtime/ologramma-campo.bin`: un'intestazione Float64 [versione di base, n], poi vm (Float32) e voxel_pezzo (Uint16). fs non si salva: all'avvio si rifà uguale bit per bit. Il server è l'unico scrittore.
-- Dopo un riavvio, un'analisi rimasta 'in-corso' diventa 'errore' («interrotta da un tuo riavvio: chiedi di nuovo l'analisi», detto al cervello, che si chiama Nexus) e il calcolo non riparte da solo.
+- Dopo un riavvio, un'analisi rimasta 'in-corso' diventa 'errore' («interrotta da un tuo riavvio: chiedi di nuovo l'analisi», detto al cervello, che si chiama O.S.C.A.R.) e il calcolo non riparte da solo.
 
 ## Le azioni: `POST /api/ologramma` (JSON)
 Dal processo MCP, cioè dagli strumenti del cervello:
@@ -178,12 +178,12 @@ Dall'HUD arrivano solo `{azione:'togli'|'rimetti', id, modello}` e `{azione:'chi
 - Un report del cervello con almeno un blocco, `[[mostra]]` o la quarta azione nel browser coprono l'ologramma: il server lo chiude anche lui («Ologramma chiuso.», versione +1), così il cervello non riceve la foto di un ologramma che Tony non vede.
 - Un'azione che non cambia niente non alza la versione e non avvisa l'HUD.
 
-Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lancia con `node mac/mac-mcp.mjs --porta <NEXUS_PORT>`, perché le variabili di `.env` non arrivano ai processi figli. Per le prove c'è `NEXUS_CERVELLO` (sotto, «Il server e le prove»).
+Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lancia con `node mac/mac-mcp.mjs --porta <OSCAR_PORT>`, perché le variabili di `.env` non arrivano ai processi figli. Per le prove c'è `OSCAR_CERVELLO` (sotto, «Il server e le prove»).
 
 ### Risposte agli strumenti
 - In caso di successo: `{ ok: true, versione, testo, foto? }`. `testo` è in italiano e serve al cervello: pezzi, ingombro, massa, risultati dell'analisi e avvisi. `foto` è il PNG in base64 della vista dopo il cambio.
 - La massa nel testo e nell'HUD ha una regola sola, `massaTesto` di `forme.js`: tre cifre significative, in g sotto 1 kg e in mg sotto 1 g.
-- **La riga dei materiali** (dopo la massa) dice cosa manca alla ricerca sui pezzi, con gli id tagliati come gli altri elenchi: «Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: … Senza fattura: …». Un pezzo ha il materiale con `materiale_vero` o con una chiave diversa da `generico`; la fattura si chiede solo a chi ha `materiale_vero`; i pezzi tolti contano. Quando non manca niente la riga non c'è, quindi un pezzo che Tony progetta in PLA non la fa comparire. Dice cosa manca e non come trovarlo: il modo di lavorare sta in `nexus-persona.md`.
+- **La riga dei materiali** (dopo la massa) dice cosa manca alla ricerca sui pezzi, con gli id tagliati come gli altri elenchi: «Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: … Senza fattura: …». Un pezzo ha il materiale con `materiale_vero` o con una chiave diversa da `generico`; la fattura si chiede solo a chi ha `materiale_vero`; i pezzi tolti contano. Quando non manca niente la riga non c'è, quindi un pezzo che Tony progetta in PLA non la fa comparire. Dice cosa manca e non come trovarlo: il modo di lavorare sta in `oscar-persona.md`.
 - La prima riga dice com'è andato il calcolo quando la risposta parte: «Analisi degli sforzi avviata.» o «Ricalcolo degli sforzi avviato.» solo se è ancora in corso; se la risposta porta già i numeri, «finita» o «ricalcolati». Dopo la scorciatoia della lega la riga dei voxel dice che il campo viene dal calcolo di prima, col tempo vero della scorciatoia.
 - Per la foto il server aspetta, se l'HUD è collegato (visto negli ultimi 15 s), fino a 8 s dopo mostra o se ci sono pezzi `file`, fino a 4 s dopo le altre modifiche: l'entrata di un modello nuovo dura circa 3 s. Senza foto, il testo lo dice («l'HUD non è acceso», «non l'ha mandata entro N s»). Se non è cambiato niente torna l'ultima foto di quella versione, o «Foto: nessuna nuova».
 - In caso di errori: `400 { ok: false, errori: [string] }`, con messaggi chiari perché il cervello possa correggere.
@@ -194,7 +194,7 @@ Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lanci
 - Del calcolo (`fisica/struttura.mjs`): `tempo_max_s` ferma il risolutore solo col residuo già sotto 1e-2, se no il limite è il timeout del worker; un pezzo senza voxel non va in `esclusi` ma ha un avviso suo; un pezzo staccato solo in parte resta, con «N voxel su M sono staccati»; le frazioni dei voxel di bordo vengono da 64 campioni su una griglia ruotata; il risultato ha anche `tempi` e gli avvisi «il carico cade per il N% su nodi incastrati» e «modello largo e quasi vuoto».
 
 ### La foto
-L'HUD, dopo aver mostrato una versione nuova (file caricati e animazioni ferme, al massimo 3 s dopo), manda `POST /api/ologramma/foto {modello, versione, png}`: base64 di un PNG largo al massimo 960 px e grande al massimo 1,5 MB. Lo strumento la restituisce al cervello come immagine, così Nexus vede quello che ha fatto prima di dire «fatto».
+L'HUD, dopo aver mostrato una versione nuova (file caricati e animazioni ferme, al massimo 3 s dopo), manda `POST /api/ologramma/foto {modello, versione, png}`: base64 di un PNG largo al massimo 960 px e grande al massimo 1,5 MB. Lo strumento la restituisce al cervello come immagine, così O.S.C.A.R. vede quello che ha fatto prima di dire «fatto».
 - Il server risponde 204 se l'accetta, 409 se non è della versione attuale o l'ologramma è chiuso, 400 se non è un PNG valido (anche alto più di 4096 px).
 - `GET /api/ologramma/campo`: 404 se non c'è, 409 se `v` non è la versione del campo.
 - I MB dei corpi sono MiB: 1 MiB per `/api/ologramma`, 2 MiB per la foto. Un corpo JSON che non è un oggetto vale `{}`.
@@ -217,11 +217,11 @@ export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, o
   mostra(stato),        // apre o aggiorna: costruisce solo i pezzi cambiati
   chiudi(),             // dissolvenza, libera geometrie e texture
   get aperto(),
-  fotogramma(t, dt),    // dal loop di nexus.js, a ogni fotogramma, prima del render dell'HUD
+  fotogramma(t, dt),    // dal loop di oscar.js, a ogni fotogramma, prima del render dell'HUD
   dopoRender(),         // subito dopo il render, nello stesso fotogramma: qui si legge il canvas per la foto (preserveDrawingBuffer è false)
   comando(nome, valore),// 'esploso' 0..1 | 'sezione' {asse, posizione, verso}|null | 'modo' | 'seleziona' id | 'isola' id | 'ruota' {dx, dy} | 'zoom' fattore | 'reset'
   puntatore(ev),        // eventi del mouse: trascina per ruotare, rotella per lo zoom, clic per selezionare
-  gesto(g),             // i gesti di gesti.js; {tipo:'stato', fase} mostra «mani: mostra il palmo» (riposo) o «mani pronte» nella barra, e 'spente' (da nexus.js) la svuota
+  gesto(g),             // i gesti di gesti.js; {tipo:'stato', fase} mostra «mani: mostra il palmo» (riposo) o «mani pronte» nella barra, e 'spente' (da oscar.js) la svuota
   ridimensiona(),
   info(),               // per le prove: lo stato locale, senza riferimenti interni; montaggi conta le geometrie montate
   colori(),             // per le prove: per pezzo i colori lineari dello shader, le intensità e il centro sullo schermo in px
@@ -302,7 +302,7 @@ Gesto =
 - **3.3 il tempo di ricarica di 300 ms**: niente timer. Ogni lancio vuole una presa nuova, cioè un pizzico riaperto e fermo per 350 ms: due lanci di fila non possono stare a meno di 350 ms più un fotogramma. Il più vicino trovato è a 567 ms (corsa di 3 fotogrammi a 1,5 m/s, scansione del revisore dell'11/11 su velocità, corse e attese); le sequenze di `prove/gesti.mjs` danno 667 ms.
 
 ### Le misure d'uso vero (`misure()`, solo numeri)
-Servono a tarare sulle mani di Tony le soglie di oggi; `mani.js` le passa a `nexus.js`, che le manda con l'azione `misura`. Dall'apertura (o da `azzeraMisure()`): `secondi` con almeno una mano stabile; `tremolio` e `tremolio_n`, lo scarto quadratico medio fra la punta dell'indice grezza e quella filtrata del fotogramma prima, nei fotogrammi col palmo sotto 0,05 altezze al secondo, in altezze d'immagine (`mani.js` aggiunge `tremolio_px`); `buchi`, mani riviste dopo almeno un fotogramma mancante; `gesti_persi`, mani sparite oltre `assente_ms` con un gesto in corso; `inneschi` e `scaduti`; `pizzichi`, `pizzico_min` (mediana della distanza minima pollice-indice in U: dice se il 10% di Tony è raggiungibile) e `pizzichi_profilo`; `lanci`; `prese_sparite_veloci` (prese chiuse dall'assenza mentre la mano correva oltre la soglia del lancio: lanci forse persi per il mosso); `salti` (fotogrammi in cui la punta di pollice o indice si sposta di più di 0,5 U rispetto al palmo); `profilo`, la frazione dei fotogrammi di profilo. `azzera()` dimentica le mani ma tiene le misure.
+Servono a tarare sulle mani di Tony le soglie di oggi; `mani.js` le passa a `oscar.js`, che le manda con l'azione `misura`. Dall'apertura (o da `azzeraMisure()`): `secondi` con almeno una mano stabile; `tremolio` e `tremolio_n`, lo scarto quadratico medio fra la punta dell'indice grezza e quella filtrata del fotogramma prima, nei fotogrammi col palmo sotto 0,05 altezze al secondo, in altezze d'immagine (`mani.js` aggiunge `tremolio_px`); `buchi`, mani riviste dopo almeno un fotogramma mancante; `gesti_persi`, mani sparite oltre `assente_ms` con un gesto in corso; `inneschi` e `scaduti`; `pizzichi`, `pizzico_min` (mediana della distanza minima pollice-indice in U: dice se il 10% di Tony è raggiungibile) e `pizzichi_profilo`; `lanci`; `prese_sparite_veloci` (prese chiuse dall'assenza mentre la mano correva oltre la soglia del lancio: lanci forse persi per il mosso); `salti` (fotogrammi in cui la punta di pollice o indice si sposta di più di 0,5 U rispetto al palmo); `profilo`, la frazione dei fotogrammi di profilo. `azzera()` dimentica le mani ma tiene le misure.
 
 ### I numeri (`node prove/gesti.mjs`, mani sintetiche; `node prove/mani-foto.mjs`, foto vere)
 - Filtro, con rumore σ 0,004 a mano ferma: tremolio ÷2,84, ritardo 17,6 ms a 0,5 m/s; con la zona morta 23,5 ms (raggio/velocità aggiunge 5,9 ms). Gli 80,5 ms che la prova dava il 10/11 erano un errore della prova: supponeva la mappa lineare.
@@ -318,23 +318,23 @@ Servono a tarare sulle mani di Tony le soglie di oggi; `mani.js` le passa a `nex
 - MediaPipe `@mediapipe/tasks-vision` **0.10.35**, servito in locale da `/mediapipe/`. Il modello `hand_landmarker.task` (float16, 7.819.105 B) sta in `runtime/modelli/` e si serve da `/modelli/hand_landmarker.task`. Lo scarica `mani.js` con fetch, controlla i byte e lo passa come `modelAssetBuffer`; la GPU ripiega sulla CPU.
 - La fotocamera è accesa solo con l'ologramma aperto e le mani attive. Quando si chiude, le tracce si fermano. I fotogrammi non escono dall'HUD.
 - Il rilevatore resta fra un'apertura e l'altra: si chiude solo se si guasta, e il prossimo avvio lo rifà. Ricrearlo a ogni apertura riscaricava 19,3 MB e bloccava l'entrata del modello.
-- Anche `gesti.js` resta fra un avvio e l'altro (si rifà solo se cambiano le proporzioni dell'immagine): `ferma()` dimentica le mani, ma le misure contano tutta l'apertura anche se Tony spegne e riaccende col tasto M. `azzeraMisure()` azzera i tempi di MediaPipe e le misure dei gesti; `nexus.js` lo chiama a ogni apertura.
+- Anche `gesti.js` resta fra un avvio e l'altro (si rifà solo se cambiano le proporzioni dell'immagine): `ferma()` dimentica le mani, ma le misure contano tutta l'apertura anche se Tony spegne e riaccende col tasto M. `azzeraMisure()` azzera i tempi di MediaPipe e le misure dei gesti; `oscar.js` lo chiama a ogni apertura.
 - A ogni avvio manda subito la fase di partenza ('riposo'), senza aspettare la prima rilevazione.
 - `misure.gesti`: le misure di `gesti.js`, più `tremolio_px` (il tremolio per l'altezza vera dell'immagine), o null se le mani non sono mai partite.
 - Il lato è scambiato rispetto a MediaPipe: 'Right' è la mano destra di chi sta davanti alla fotocamera.
 - In più rispetto al contratto: `onErrore`, `azzeraMisure()`, le opzioni `delegato`, `hz`, `gesti`, `sorgente: 'immagine'`, le esportazioni `MEDIAPIPE` e `MODELLO_MANI`.
 - **Soglia per collegarle** (decisione di Tony del 5/11): l'HUD con l'ologramma e le mani deve restare sopra 45 fps sul suo M2. Se non regge, le mani restano spente. La misura nelle condizioni vere arriva da sola nel registro del server, con l'azione `misura`.
-- Nell'HUD (`nexus.js`): i pallini di pollice e indice usano la stessa `mappa()` del cursore, e a riposo sono più tenui (`#dita.riposo`). Quando le mani si fermano (Esc, tasto M, errore) `nexus.js` manda a `scena.js` `{tipo:'stato', fase:'spente'}`. Nessun suono per l'innesco: in `sfx.js` non c'è un suono leggero adatto, e i suoni nuovi non si fanno.
+- Nell'HUD (`oscar.js`): i pallini di pollice e indice usano la stessa `mappa()` del cursore, e a riposo sono più tenui (`#dita.riposo`). Quando le mani si fermano (Esc, tasto M, errore) `oscar.js` manda a `scena.js` `{tipo:'stato', fase:'spente'}`. Nessun suono per l'innesco: in `sfx.js` non c'è un suono leggero adatto, e i suoni nuovi non si fanno.
 
-## Nell'HUD (`nexus.js`)
+## Nell'HUD (`oscar.js`)
 - Report e browser chiudono l'ologramma nell'HUD subito; nel server lo chiude il server (vedi sopra). Solo Esc lo dice al server come «chiuso da Tony».
-- Con l'ologramma aperto vale il filtro di sempre (dal 12/11, scelta di Tony): il nome («Nexus, esplodilo»), oppure una frase cominciata nei 15 s dopo che Nexus ha parlato. I verbi dell'ologramma da soli non bastano più.
+- Con l'ologramma aperto vale il filtro di sempre (dal 12/11, scelta di Tony): il nome («O.S.C.A.R., esplodilo»), oppure una frase cominciata nei 15 s dopo che O.S.C.A.R. ha parlato. I verbi dell'ologramma da soli non bastano più.
 - `window.__misure.fps`: mediana, p10 e minimo dei fotogrammi contati in ognuno degli ultimi 20 secondi interi, più i conti uno per uno. Gli intervalli di requestAnimationFrame davano 59,9 fps contro i 55 della traccia.
-- Con `?debug`: `nexusAsk`, `nexusReport`, `nexusSente(frase)` (una frase finita, come dal riconoscimento), `nexusOlo`, `nexusOlogramma(stato)` e `nexusOlogrammaDemo(nome)`.
+- Con `?debug`: `oscarAsk`, `oscarReport`, `oscarSente(frase)` (una frase finita, come dal riconoscimento), `oscarOlo`, `oscarOlogramma(stato)` e `oscarOlogrammaDemo(nome)`.
 
 ## Il server e le prove
-- `NEXUS_CERVELLO=<cartella>` sposta lì, oltre al `cwd` del cervello, cervello.json, mcp.json, ologramma.json e .bin e ascolto.log; le cartelle dei documenti diventano le sue sottocartelle (Desktop, Documents…).
+- `OSCAR_CERVELLO=<cartella>` sposta lì, oltre al `cwd` del cervello, cervello.json, mcp.json, ologramma.json e .bin e ascolto.log; le cartelle dei documenti diventano le sue sottocartelle (Desktop, Documents…).
 - Le variabili d'ambiente date a mano vincono su `.env`.
 - Il controllo di `sec-fetch-site` vale su `/api/*`, `/mediapipe/*` e `/modelli/*` con ogni metodo. Le pagine hanno `x-frame-options: SAMEORIGIN` e `frame-ancestors 'self'`: l'HUD non si apre dentro un'altra origine.
-- All'avvio, un ologramma salvato come aperto si chiude (versione +1, chiuso da Nexus) e si riapre a voce.
+- All'avvio, un ologramma salvato come aperto si chiude (versione +1, chiuso da O.S.C.A.R.) e si riapre a voce.
 - Gli strumenti: `mostra_ologramma` prende i campi del modello al primo livello, non dentro `{modello}`; `modifica_ologramma` ha `chiudi: true`, da solo; carichi e vincoli sono descritti per intero solo in `analizza_struttura`, la vista solo in `modifica_ologramma` e il pezzo solo in `mostra_ologramma`.

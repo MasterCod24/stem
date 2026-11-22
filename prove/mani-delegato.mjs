@@ -2,8 +2,8 @@
 // La domanda viene dalle sessioni vere: dopo il 12/11, con gli ologrammi Blender aperti, il detect è salito da 7–17 a 16–22 ms
 // e il p10 è sceso sotto 45. L'ipotesi: sulla GPU detectForVideo aspetta, sul thread principale, che la GPU finisca anche
 // il disegno dell'ologramma; sulla CPU non c'è quell'attesa, ma c'è il conto sul thread.
-// L'HUD vero (index.html, nexus.js) in un Chrome headless sulla GPU del Mac, con la ventola Blender da 290 mila triangoli
-// (~/Documents/Nexus-Blender/ventola: disco, ogiva, nervature e 18 pale) e la foto di prova al posto della fotocamera, 30 Hz.
+// L'HUD vero (index.html, oscar.js) in un Chrome headless sulla GPU del Mac, con la ventola Blender da 290 mila triangoli
+// (~/Documents/OSCAR-Blender/ventola: disco, ogiva, nervature e 18 pale) e la foto di prova al posto della fotocamera, 30 Hz.
 // Tre casi a giri alterni, due giri: mani spente, mani sulla GPU (?debug), mani sulla CPU (?debug&delegato=CPU).
 // Ogni caso: 4 s per assestarsi, poi 20 secondi interi contati da window.__misure, e i tempi di detectForVideo.
 // node prove/mani-delegato.mjs → una riga per caso e il confronto. Porte 4435 (HTTP) e 9566 (CDP). Circa 3 minuti.
@@ -17,8 +17,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORTA = 4435, CDP = 9566, ORIGINE = `http://localhost:${PORTA}`, W = 1470, H = 956;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const VENTOLA = path.join(os.homedir(), 'Documents/Nexus-Blender/ventola');
-const LAVORO = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-delegato-'));
+const documenti = path.join(os.homedir(), 'Documents');
+const nuovaVentola = path.join(documenti, 'OSCAR-Blender', 'ventola');
+const VENTOLA = fs.existsSync(nuovaVentola) ? nuovaVentola : path.join(documenti, 'Nexus-Blender', 'ventola');
+const LAVORO = fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-delegato-'));
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 async function attendi(fn, ms, passo = 200) { const fine = Date.now() + ms; for (;;) { const v = await fn().catch(() => false); if (v || Date.now() > fine) return v; await pausa(passo); } }
 
@@ -91,10 +93,10 @@ await cdp('Runtime.enable');
 
 async function caso(nome, mani, delegato) {
   await cdp('Page.navigate', { url: `${ORIGINE}/?debug&mani=immagine${delegato === 'CPU' ? '&delegato=CPU' : ''}` });
-  if (!(await attendi(() => ev("document.body?.classList.contains('ready') && typeof window.nexusOlogramma === 'function'"), 30_000))) throw new Error(`${nome}: l'HUD non è pronto`);
-  await ev(`localStorage.setItem('nexus-mani', '${mani ? '1' : '0'}'), true`);
-  await ev(`nexusOlogramma(${JSON.stringify(STATO)}), true`);
-  const caricato = await attendi(() => ev('nexusOlo.info().triangoli >= 280000 && nexusOlo.info().triangoli'), 30_000);
+  if (!(await attendi(() => ev("document.body?.classList.contains('ready') && typeof window.oscarOlogramma === 'function'"), 30_000))) throw new Error(`${nome}: l'HUD non è pronto`);
+  await ev(`localStorage.setItem('oscar-mani', '${mani ? '1' : '0'}'), true`);
+  await ev(`oscarOlogramma(${JSON.stringify(STATO)}), true`);
+  const caricato = await attendi(() => ev('oscarOlo.info().triangoli >= 280000 && oscarOlo.info().triangoli'), 30_000);
   if (mani && !(await attendi(() => ev('window.__misure.mani?.attive && window.__misure.mani.rilevazioni >= 30'), 30_000))) throw new Error(`${nome}: le mani non partono`);
   await pausa(4000);
   const prima = await ev('window.__misure.mani?.rilevazioni ?? 0');

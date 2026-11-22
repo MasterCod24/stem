@@ -22,7 +22,7 @@ const CARTELLE = [];
 // Anche se la prova cade a metà: le cartelle temporanee non devono restare
 process.on('exit', () => { for (const d of CARTELLE) fs.rmSync(d, { recursive: true, force: true }); });
 function cartella() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-ologramma-'));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-ologramma-'));
   CARTELLE.push(d);
   return d;
 }

@@ -156,7 +156,7 @@ titolo('Dati sporchi e testo per il cervello');
 // ---------------------------------------------------------------- con la rete
 if (RETE) {
   titolo('Open-Meteo vero (meteo.mjs)');
-  const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-meteo-'));
+  const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-meteo-'));
   const m = createMeteo({ cartella });
   const t0 = performance.now(), r = await m.mostra({ luogo: 'Milano' }), ms = Math.round(performance.now() - t0);
   esito(r.ok && r.dati.ore.length >= 18 && r.dati.quarti.length >= 50 && r.dati.giorni.length === 3, 'Milano: ore, quarti e tre giorni', r.ok ? `${r.dati.ore.length} ore, ${r.dati.quarti.length} quarti, in ${ms} ms` : r.errori.join('; '));
@@ -167,7 +167,7 @@ if (RETE) {
   esito(amb.ok && amb.dati.luogo.codice_paese === 'US', '«paese» sceglie fra i posti con lo stesso nome', amb.ok ? `${amb.dati.luogo.nome}, ${amb.dati.luogo.regione}` : amb.errori.join(''));
   const no = await m.mostra({ luogo: 'Qwzxjkvbnm' });
   esito(!no.ok && no.codice === 404 && /non trovo/.test(no.errori[0]), 'un posto che non esiste: 404 con cosa fare', no.errori?.[0]);
-  const vuota = createMeteo({ cartella: fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-meteo-')) });
+  const vuota = createMeteo({ cartella: fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-meteo-')) });
   const senza = await vuota.mostra({});
   esito(!senza.ok && senza.codice === 400 && /chiedi a Tony/.test(senza.errori[0]), 'senza luogo e senza ultimo: chiedere a Tony', senza.errori?.[0]);
 
@@ -181,18 +181,18 @@ if (RETE) {
   esito(z8.byte === 1370, 'lo zoom 8 è ancora «Zoom Level Not Supported» (radar.js si ferma a 7)', `${z8.byte} B a zoom 8`);
 
   titolo('Server vero e strumento mostra_meteo (porta 4423, cervello e Playwright finti)');
-  const CASA = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-meteo-server-')), BIN = path.join(CASA, 'bin');
+  const CASA = fs.mkdtempSync(path.join(os.tmpdir(), 'oscar-meteo-server-')), BIN = path.join(CASA, 'bin');
   fs.mkdirSync(BIN);
   fs.writeFileSync(path.join(BIN, 'claude'), '#!/bin/sh\nexec cat > /dev/null\n', { mode: 0o755 }); // legge e tace: nessun modello
   fs.writeFileSync(path.join(BIN, 'npx'), '#!/bin/sh\necho Listening\nexec sleep 600\n', { mode: 0o755 });
   const PORTA = 4423;
   const s = spawn(process.execPath, ['server.mjs'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PATH: `${BIN}:${process.env.PATH}`, NEXUS_CERVELLO: path.join(CASA, 'cervello'), NEXUS_PORT: String(PORTA), NEXUS_BROWSER_PORT: '8933', NEXUS_CDP_PORT: '9335', NEXUS_NO_OPEN: '1' } });
+    env: { ...process.env, PATH: `${BIN}:${process.env.PATH}`, OSCAR_CERVELLO: path.join(CASA, 'cervello'), OSCAR_PORT: String(PORTA), OSCAR_BROWSER_PORT: '8933', OSCAR_CDP_PORT: '9335', OSCAR_NO_OPEN: '1' } });
   let log = ''; s.stdout.on('data', (x) => { log += x; }); s.stderr.on('data', (x) => { log += x; });
-  for (let i = 0; i < 50 && !log.includes('Nexus online'); i++) await pausa(200);
+  for (let i = 0; i < 50 && !log.includes('O.S.C.A.R. online'); i++) await pausa(200);
   const U = `http://127.0.0.1:${PORTA}/api/meteo`, J = { 'content-type': 'application/json' };
   try {
-    esito(log.includes('Nexus online'), 'server di prova acceso');
+    esito(log.includes('O.S.C.A.R. online'), 'server di prova acceso');
     const daHud = await fetch(U, { method: 'POST', headers: { ...J, origin: `http://localhost:${PORTA}` }, body: '{"luogo":"Roma"}' });
     esito(daHud.status === 403, 'dall\'HUD (con origin) POST /api/meteo è vietato', `${daHud.status}`);
     const prima = await fetch(U);

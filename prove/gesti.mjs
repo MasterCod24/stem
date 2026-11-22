@@ -59,7 +59,7 @@ function mano({ x, y, r = 1.2, lato = 'Right', rumore = 0, imb = 0, bec = 0, pug
   }) };
 }
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const schermo = (q) => ({ x: clamp01(mappa(q.x)), y: clamp01(mappa(q.y)) }); // la stessa mappa di gesti.js e di nexus.js
+const schermo = (q) => ({ x: clamp01(mappa(q.x)), y: clamp01(mappa(q.y)) }); // la stessa mappa di gesti.js e di oscar.js
 const puntaN = (s) => mano({ ...s, rumore: 0 }).punti[8];   // la punta dell'indice vera, normalizzata, senza filtro
 const punta = (s) => schermo(puntaN(s));                   // il cursore vero, senza filtro né zona morta
 // l'inversa della mappa (bisezione: è monotona), per tornare dallo schermo all'immagine
@@ -117,7 +117,7 @@ const MODI = [['sempre pronti', SEMPRE, 0], ['predefinite, con l\'innesco', unde
     centro < 1 && bordo > 1 && Math.abs(centro - (1 - P.curva)) < 1e-6 && Math.abs(bordo - (1 + 2 * P.curva)) < 1e-2 && Math.abs(fuori - (1 + 2 * P.curva)) < 1e-6 &&
     Math.abs(mappa(P.margine)) < 1e-12 && Math.abs(mappa(1 - P.margine) - 1) < 1e-12 && Math.abs(mappa(0.5) - 0.5) < 1e-12 && monotona && salto < 3 * lin * 1e-4,
     `guadagno sul lineare: centro ${centro.toFixed(4)}, bordo ${bordo.toFixed(4)}, fuori ${fuori.toFixed(4)}; mappa(${P.margine}) = ${mappa(P.margine).toFixed(6)}, mappa(${1 - P.margine}) = ${mappa(1 - P.margine).toFixed(6)}; passo massimo ${salto.toExponential(2)} su 1e-4`);
-  // il cursore di gesti.js è proprio clamp(mappa(punta)): senza filtro e senza zona morta coincide coi pallini di nexus.js
+  // il cursore di gesti.js è proprio clamp(mappa(punta)): senza filtro e senza zona morta coincide coi pallini di oscar.js
   const stati = seq({ x: 0.2, y: 0.8, r: 1.2 }, [8, {}], [40, { x: 0.8, y: 0.5 }]);
   const cur = gira(unaMano(stati), { ...SEMPRE, mincutoff: 1e6, zona_morta: 0 }).ev.filter((e) => e.tipo === 'cursore');
   const err = Math.max(...cur.map((e) => { const v = punta(stati[e.i]); return Math.hypot(e.x - v.x, e.y - v.y); }));

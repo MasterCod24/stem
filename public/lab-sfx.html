@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nexus · laboratorio suoni</title>
+<title>O.S.C.A.R. · laboratorio suoni</title>
 <style>
   :root { --bg: #070b17; --bg2: #0b1226; --ink: #cfe8ff; --dim: #6f8fb3; --az: #2fa8ff; --or: #ff8a1e; }
   * { box-sizing: border-box; }
@@ -28,7 +28,7 @@
 </head>
 <body>
 <main>
-  <h1>NEXUS · SUONI</h1>
+  <h1>O.S.C.A.R. · SUONI</h1>
   <p>Ogni suono è sintetizzato al volo (public/sfx.js). «Ascolta» lo suona; «WAV» lo rende offline e lo scarica.</p>
   <div id="list"></div>
   <canvas id="wave" width="1520" height="140"></canvas>
@@ -114,7 +114,7 @@ for (const [name, sc] of Object.entries(SCENES)) {
   r.onclick = async () => {
     const res = await renderScene(name);
     const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(res.wav), c => c.charCodeAt(0))], { type: 'audio/wav' }));
-    const a = document.createElement('a'); a.href = url; a.download = `nexus-${name}.wav`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `oscar-${name}.wav`; a.click();
     log(`${name}: picco ${res.peakDb.toFixed(1)} dBFS, rms ${res.rmsDb.toFixed(1)} dBFS`);
   };
   btns.append(r);

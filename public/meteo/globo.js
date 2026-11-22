@@ -1,4 +1,4 @@
-// Nexus — il globo al centro della vista meteo: la Terra scura coi continenti a esagoni ciano, il radar vero di RainViewer
+// O.S.C.A.R. — il globo al centro della vista meteo: la Terra scura coi continenti a esagoni ciano, il radar vero di RainViewer
 // proiettato sulla curva, il luogo che pulsa, il vento che scorre sopra la zona, le città vicine quando si è vicini, sei anelli
 // che girano attorno all'asse. Disegna nello stesso renderer dell'HUD, prima del bagliore (strato di nucleo.js, come
 // l'ologramma): niente secondo contesto WebGL, e brilla come il resto.

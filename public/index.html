@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nexus</title>
+<title>O.S.C.A.R.</title>
 <link rel="icon" href="/icona.png">
 <style>
   /* Stile JARVIS: nero, ciano dominante, arancione e rosso solo per le anomalie (S.allarme), caratteri di sistema
@@ -38,7 +38,7 @@
       linear-gradient(var(--s) 0 0) right bottom / 13px 1.5px, linear-gradient(var(--s) 0 0) right bottom / 1.5px 13px;
     background-repeat: no-repeat; filter: drop-shadow(0 0 3px var(--s)); }
 
-  /* ---------- Attorno al nucleo: scritta di stato e dati a raggiera (nexus.js li mette sugli anelli) ---------- */
+  /* ---------- Attorno al nucleo: scritta di stato e dati a raggiera (oscar.js li mette sugli anelli) ---------- */
   #fili { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; transition: opacity .5s; }
   #fili polyline { fill: none; stroke: var(--ciano); stroke-width: 1; opacity: .55; filter: drop-shadow(0 0 2px var(--ciano)); }
   #fili circle { fill: var(--ciano); opacity: .9; }
@@ -207,6 +207,13 @@
   #dita.riposo i.on { opacity: .35; } /* a riposo le mani si vedono ma non comandano: gesti.js aspetta un palmo aperto */
 
   /* Avvisi: ciano le notizie, arancione e rosso solo le anomalie */
+  #promemoria { position: fixed; z-index: 8; top: 10vh; left: 50%; transform: translateX(-50%);
+    width: min(32rem, 90vw); max-height: 38vh; overflow: auto; padding: 14px 18px;
+    color: var(--testo); background: #071419; border: 1px solid var(--ciano-tenue); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+  #promemoria header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px;
+    color: var(--ciano); font: 12px var(--mono); }
+  #promemoria button { background: transparent; border: 1px solid var(--ciano-tenue); padding: 4px 8px; color: var(--testo); cursor: pointer; }
+  #promemoria p { margin-top: 4px; }
   #warn { position: fixed; left: 50%; top: 6.5vh; transform: translateX(-50%); display: none; padding: 7px 14px; font: 400 10px/1 var(--mono);
     letter-spacing: .22em; color: var(--ciano); text-shadow: var(--bagliore); text-transform: uppercase; white-space: nowrap;
     background: linear-gradient(90deg, transparent, rgba(62, 230, 255, .08), transparent); }
@@ -231,7 +238,7 @@
   <div class="dato sinistra" id="d-sistemi"><b>SYSTEMS</b><span></span></div>
   <div class="dato sinistra" id="d-grafica"><b>RENDER</b><span></span></div>
 
-  <div class="bordo" id="cima"><span><b>NEXUS</b> // NEURAL CORE</span><span id="cima-ora"></span><span id="cima-dati"></span></div>
+  <div class="bordo" id="cima"><span><b>O.S.C.A.R.</b> // NEURAL CORE</span><span id="cima-ora"></span><span id="cima-dati"></span></div>
   <div class="bordo" id="colonna-sx"><pre id="esa"></pre></div>
   <div class="bordo" id="colonna-dx"><pre id="eventi"></pre></div>
   <div class="bordo" id="fondo"><span id="fondo-sx"></span><span class="linea"></span><span id="fondo-dx"></span></div>
@@ -255,8 +262,12 @@
     </div>
   </div>
 
+  <aside id="promemoria" aria-label="Promemoria" hidden>
+    <header>Promemoria<button type="button">Chiudi</button></header>
+    <div role="status"><strong></strong><p></p></div>
+  </aside>
   <div id="warn"></div>
 
-  <script type="module" src="/nexus.js"></script>
+  <script type="module" src="/oscar.js"></script>
 </body>
 </html>

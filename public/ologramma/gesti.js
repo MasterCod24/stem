@@ -75,7 +75,7 @@ const MINIMI_MAX = 2000; // pizzichi tenuti per la mediana della distanza minima
 const alfa = (fc, dt) => 1 / (1 + 1 / (2 * Math.PI * fc * dt));
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
-// La mappa dalla mano allo schermo, una sola per cursore, gesti e pallini delle dita (nexus.js). n è una coordinata
+// La mappa dalla mano allo schermo, una sola per cursore, gesti e pallini delle dita (oscar.js). n è una coordinata
 // normalizzata 0..1 dell'immagine; ne esce la posizione sullo schermo, 0..1 dentro la fascia margine…1−margine e oltre
 // fuori (chi vuole un punto sullo schermo la limita). Con u da −1 a 1 la posizione lineare, f(u) = (1−c)·u + c·u³:
 // al centro il guadagno è 1−c (più preciso), ai bordi 1+2c, e i bordi restano dove sono. Fuori da ±1 prosegue dritta con
@@ -425,7 +425,7 @@ export function createGesti(opzioni) {
   }
 
   // Le misure d'uso vero, dall'inizio: solo numeri (o null dove non c'è ancora un campione). Servono a tarare sulle
-  // mani di Tony le soglie che oggi sono numeri non misurati; mani.js le passa a nexus.js, che le manda al registro.
+  // mani di Tony le soglie che oggi sono numeri non misurati; mani.js le passa a oscar.js, che le manda al registro.
   function misure() {
     const v = [...M.minimi].sort((a, b) => a - b);
     return {

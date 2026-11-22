@@ -1,4 +1,4 @@
-// Nexus — server locale: HUD, cervello (Claude Code sempre acceso), voce, browser (Playwright MCP), controllo del Mac.
+// O.S.C.A.R. — server locale: HUD, cervello (Claude Code sempre acceso), voce, browser (Playwright MCP), controllo del Mac.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,10 +6,12 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { env } from './config.mjs';
 import { createBrain } from './brain.mjs';
 import { createVoice } from './voice.mjs';
 import { createMedia } from './media.mjs';
-import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
+import { apriAgenda, ATTESA_RICEVUTA } from './agenda.mjs';
+import { adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
 import { createMeteo } from './meteo.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
@@ -20,34 +22,26 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, 'runtime');
 fs.mkdirSync(RUNTIME, { recursive: true });
 
-// .env minimale: CHIAVE=valore, una per riga. Le variabili date a mano vincono: una prova con NEXUS_PORT=4422
-// non deve finire sulla porta del Nexus vero perché .env dice 4321.
-const env = { ...process.env };
-const envFile = path.join(ROOT, '.env');
-if (fs.existsSync(envFile)) {
-  for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !line.trim().startsWith('#') && !(m[1] in process.env)) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-  }
-}
-// NEXUS_CERVELLO (solo per le prove): un Nexus di prova che vive tutto in quella cartella. Il cervello ci lavora, il server
+// OSCAR_CERVELLO (solo per le prove): un O.S.C.A.R. di prova che vive tutto in quella cartella. Il cervello ci lavora, il server
 // ci scrive i suoi file (conversazione, mcp.json, ologramma, ascolto.log) e le cartelle dei documenti sono le sue
 // sottocartelle: così una prova non scrive nella memoria vera, non riprende la sua conversazione e non legge i file di Tony.
-const PROVA = env.NEXUS_CERVELLO ? path.resolve(env.NEXUS_CERVELLO) : null;
+const PROVA = env.OSCAR_CERVELLO ? path.resolve(env.OSCAR_CERVELLO) : null;
 const STATO = PROVA || RUNTIME;
 if (PROVA) fs.mkdirSync(PROVA, { recursive: true });
 
-const PORT = Number(env.NEXUS_PORT || 4321);
-const PW_PORT = Number(env.NEXUS_BROWSER_PORT || 8931);
+let archivio;
+const archivioAgenda = () => archivio ??= apriAgenda(STATO);
+const PORT = Number(env.OSCAR_PORT || 4321);
+const PW_PORT = Number(env.OSCAR_BROWSER_PORT || 8931);
 // Sonnet 5.5, scelta di Tony del 12/11. Due effort, chiesti da Tony lo stesso giorno: low per la voce (prima parola in
 // 0,6–0,7 s di mediana), high per i compiti che il cervello annuncia con [[pensa]]: ologrammi, ricerche a più passaggi,
 // report, sforzi. Le misure di prove/latenza.mjs stanno nel CLAUDE.md. L'effort va scelto qui: se no il cervello eredita
 // quello di Claude Code di Tony (per programmare).
-const MODEL = env.NEXUS_MODEL || 'claude-sonnet-5-5';
-const EFFORT = env.NEXUS_EFFORT || 'low';
-const EFFORT_PENSA = env.NEXUS_EFFORT_PENSA || 'high';
+const MODEL = env.OSCAR_MODEL || 'claude-sonnet-5-5';
+const EFFORT = env.OSCAR_EFFORT || 'low';
+const EFFORT_PENSA = env.OSCAR_EFFORT_PENSA || 'high';
 const effortDi = (e) => (e === 'default' ? undefined : e);
-// La riga [sentito: …] che precede ogni frase di Tony: perché l'HUD l'ha fatta passare (nexus.js, addressed)
+// La riga [sentito: …] che precede ogni frase di Tony: perché l'HUD l'ha fatta passare (oscar.js, addressed)
 const SENTITO = { nome: 'col nome', conversazione: 'senza nome, cominciata nei 15 secondi dopo che hai finito di parlare' };
 // Il secondo tempo di un compito annunciato con [[pensa]]: lo stesso turno di Tony, con l'effort alto
 const PENSA_TEXT = '[pensa] Adesso hai più tempo per ragionare: fai il compito che hai appena annunciato, senza ripetere la frase che hai già detto.';
@@ -57,23 +51,26 @@ const CONFRONTO_TEXT = '[confronto] Prima di chiudere, rimetti a confronto la fo
   'forma, proporzioni, curve, pezzi mancanti o fuori posto. Trova le tre differenze più grandi e correggi le due più grandi, rifacendo i pezzi con ' +
   'mcp__mac__costruisci_in_blender e aggiornandoli con mcp__mac__modifica_ologramma. Se l\'oggetto ha un dentro, guardalo anche in raggi-x contro la foto «dentro». ' +
   'Poi di\' a Tony in una frase cosa hai corretto, senza ripetere quello che hai già detto.';
-const PERSONA = fs.readFileSync(path.join(ROOT, 'nexus-persona.md'), 'utf8');
+const PERSONA = fs.readFileSync(path.join(ROOT, 'oscar-persona.md'), 'utf8');
 
-// File del Mac: Nexus legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
+// File del Mac: O.S.C.A.R. legge, crea e modifica solo nelle cartelle dei documenti. Fuori restano i file nascosti (.ssh, .config…),
 // la Libreria (portachiavi, cookie) e la cartella del progetto (chiave, profili). Niente Terminale.
 const HOME = process.env.HOME;
 const FILE_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', 'Library/Mobile Documents/com~apple~CloudDocs']
   .map((d) => path.join(PROVA || HOME, d)).filter((d) => fs.existsSync(d));
 const DOCUMENTI = path.join(PROVA || HOME, 'Documents');
-// Cartella di lavoro del cervello: vuota e FUORI dalla repository, così Nexus ha una memoria sua
-// e non mescola i suoi ricordi con quelli delle sessioni di sviluppo (prima condividevano ~/STEM)
-const BRAIN = PROVA || path.join(HOME, 'Library', 'Application Support', 'Nexus', 'cervello');
+// Cartella di lavoro del cervello: vuota e FUORI dalla repository, così O.S.C.A.R. ha una memoria sua
+// e non mescola i suoi ricordi con quelli delle sessioni di sviluppo (prima condividevano la cartella del progetto)
+const support = path.join(HOME, 'Library', 'Application Support');
+const precedente = path.join(support, 'Nexus', 'cervello');
+// Claude associa la memoria al percorso assoluto: una cartella nuova nasconderebbe i ricordi esistenti.
+const BRAIN = PROVA || (fs.existsSync(precedente) ? precedente : path.join(support, 'O.S.C.A.R.', 'cervello'));
 fs.mkdirSync(BRAIN, { recursive: true });
 
 // --- Finestre: HUD a sinistra, Google a destra ---
-const CHROME = env.NEXUS_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const CDP_PORT = Number(env.NEXUS_CDP_PORT || 9333);
-const launched = []; // Chrome avviati da Nexus, da chiudere all'uscita
+const CHROME = env.OSCAR_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CDP_PORT = Number(env.OSCAR_CDP_PORT || 9333);
+const launched = []; // Chrome avviati da O.S.C.A.R., da chiudere all'uscita
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function launchChrome(args) {
@@ -167,8 +164,9 @@ fs.writeFileSync(MCP_CONFIG, JSON.stringify({
     playwright: { type: 'http', url: `http://localhost:${PW_PORT}/mcp` },
     // app, schermo, mouse, tastiera e ologrammi; la porta dagli argomenti, perché .env non arriva ai processi figli
     // --blender: dove costruisci_in_blender scrive i GLB, dentro Documenti perché l'HUD apre i file solo dalle cartelle di Tony
-    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath, args: [MAC_MCP, '--porta', String(PORT),
-      ...(FILE_DIRS.includes(DOCUMENTI) ? ['--blender', path.join(DOCUMENTI, 'Nexus-Blender')] : [])] } }),
+    ...(fs.existsSync(MAC_MCP) && { mac: { command: process.execPath,
+      env: { OSCAR_CERVELLO: STATO, ...(env.OSCAR_BLENDER && { OSCAR_BLENDER: env.OSCAR_BLENDER }) }, args: [MAC_MCP, '--porta', String(PORT),
+      ...(FILE_DIRS.includes(DOCUMENTI) ? ['--blender', path.join(DOCUMENTI, 'OSCAR-Blender')] : [])] } }),
   },
 }));
 const browser = spawn('npx', [
@@ -208,7 +206,7 @@ const brain = createBrain({
 const media = createMedia({ giphyKey: env.GIPHY_API_KEY || '', onLog: (l) => console.error(l) });
 
 // --- Voce: quella del Mac (voice.mjs) ---
-const voice = createVoice({ macVoice: env.NEXUS_MAC_VOICE });
+const voice = createVoice({ macVoice: env.OSCAR_MAC_VOICE });
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
 const LOG_FILE = path.join(STATO, 'ascolto.log');
@@ -231,18 +229,14 @@ function noteHud(q) {
   if (now !== micState) { appendLog(now === 'muto' ? 'microfono: silenzio totale da 30 s (nessun segnale)' : `microfono: arriva suono (picco ${mic.toFixed(3)})`); micState = now; }
 }
 
-// --- Agenda: i compiti che il cervello si è segnato con «ricorda» (orologio.mjs) ---
-// L'HUD chiede /api/status ogni 5 s: quando un compito è arrivato all'ora e Nexus è fermo, chiede /api/ask con agenda:true
-// e Nexus parla per primo. Il messaggio contiene tutto il compito, perché dopo un riavvio il cervello non ricorda di averlo segnato.
-function agendaText(due) {
+// --- Agenda: i compiti che il cervello si è segnato con «ricorda» (agenda.mjs) ---
+// L'HUD chiede /api/status ogni 5 s: quando un compito è arrivato all'ora e O.S.C.A.R. è fermo, chiede /api/ask con agenda:true
+// e O.S.C.A.R. parla per primo. Il messaggio contiene tutto il compito, perché dopo un riavvio il cervello non ricorda di averlo segnato.
+function agendaText(voce) {
   const now = Date.now();
-  const righe = due.map((x) => {
-    const tardi = now - x.quando > 2 * 60_000
-      ? `, in ritardo di ${traQuanto(x.quando - now).replace(/ fa$/, '')} perché eri spento o il Mac era in stop` : ''; // al cervello, che lo può ripetere a voce: niente nome
-    return `- per ${quandoIt(x.quando, now)}${tardi}: ${x.cosa}`;
-  });
-  const quali = due.length === 1 ? 'un compito che ti eri segnato' : 'alcuni compiti che ti eri segnato';
-  return `[agenda] È l'ora di ${quali}. Tony non ha detto niente: parli tu per primo.\n${righe.join('\n')}`;
+  const tardi = now - voce.quando > 2 * 60_000
+    ? `, in ritardo di ${traQuanto(voce.quando - now).replace(/ fa$/, '')} perché eri spento o il Mac era in stop` : '';
+  return `[agenda] È l'ora di un compito che ti eri segnato. Tony non ha detto niente: parli tu per primo.\n- per ${quandoIt(voce.quando, now)}${tardi}: ${voce.cosa}`;
 }
 
 // --- Memoria: dopo 3 minuti di silenzio, o appena l'HUD si chiude, il cervello rilegge la conversazione e salva quello che vale ---
@@ -266,14 +260,14 @@ async function rememberNow() {
   memoryBusy = false;
 }
 
-// --- Avviato dall'app Nexus (in background): quando chiudi l'HUD, Nexus si spegne da solo ---
+// --- Avviato dall'app O.S.C.A.R. (in background): quando chiudi l'HUD, O.S.C.A.R. si spegne da solo ---
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
-if (env.NEXUS_APP) {
+if (env.OSCAR_APP) {
   setInterval(() => { // 15 giri da 10 s senza notizie dall'HUD: è chiuso
     hudMissed++;
     if (hudMissed >= 2) rememberNow(); // 20 s senza HUD: la conversazione è finita, faccio memoria (anche di un compito che finisce dopo)
     const memoryPending = memoryBusy || memoryDue;
-    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo Nexus'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
+    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo O.S.C.A.R.'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
   }, 10000);
 }
 
@@ -302,9 +296,10 @@ async function rispondi(text, onEvent) {
   // sua foto non c'è confronto). Un giro solo, con l'effort alto, nella stessa risposta; mai dopo un'interruzione.
   if (guardato && !ignored && !interrotto && holoOra.aperto && holoOra.modello !== modelloPrima && Date.now() - hudSeen < 15_000) {
     console.error('[cervello] confronto col vero');
-    await brain.ask(`[adesso: ${adesso()}]\n${CONFRONTO_TEXT}`, ev, { effort: effortDi(EFFORT_PENSA) });
+    interrotto = (await brain.ask(`[adesso: ${adesso()}]\n${CONFRONTO_TEXT}`, ev, { effort: effortDi(EFFORT_PENSA) })).interrotto;
   }
-  if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
+  if (!ignored) conversationTurn(); // una frase non per O.S.C.A.R. non è conversazione: niente memoria da fare
+  return !ignored && !interrotto;
 }
 
 // --- Ologramma: lo stato sta solo qui (ologramma.mjs). Gli strumenti del cervello (mac-mcp.mjs) e l'HUD lo cambiano con
@@ -319,7 +314,7 @@ const holo = createOlogramma({
 });
 holo.carica();
 holoOra = riassunto(holo.stato());
-// Un ologramma rimasto aperto quando Nexus si è spento non riappare da solo all'avvio dopo: resta, chiuso, e si riapre a voce
+// Un ologramma rimasto aperto quando O.S.C.A.R. si è spento non riappare da solo all'avvio dopo: resta, chiuso, e si riapre a voce
 if (holoOra.aperto) holo.esegui({ azione: 'chiudi' });
 
 // --- Meteo (meteo.mjs): lo strumento mostra_meteo chiede qui le previsioni di un luogo; i dati vanno all'HUD dentro il turno
@@ -443,7 +438,7 @@ const MIME = {
 };
 const PUBLIC = path.join(ROOT, 'public'), THREE = path.join(ROOT, 'node_modules', 'three'), MP = path.join(ROOT, 'node_modules', '@mediapipe', 'tasks-vision');
 
-// Le pagine di Nexus non si aprono dentro una pagina di un'altra origine: l'HUD è il telecomando di Nexus, e in un iframe di
+// Le pagine di O.S.C.A.R. non si aprono dentro una pagina di un'altra origine: l'HUD è il telecomando di O.S.C.A.R., e in un iframe di
 // un sito qualsiasi partirebbe lo stesso, con microfono e fotocamera già permessi (provato l'8/11). Stessa origine sì:
 // lab-mani.html mette lab-ologramma.html in un iframe.
 const NIENTE_CORNICI = { 'x-frame-options': 'SAMEORIGIN', 'content-security-policy': "frame-ancestors 'self'" };
@@ -480,7 +475,7 @@ const json = (res, codice, dati) => res.writeHead(codice, { 'content-type': 'app
 // i browser mandano sempre sec-fetch-site, curl e i processi locali no
 const daFuori = (req) => req.headers['sec-fetch-site'] !== undefined && req.headers['sec-fetch-site'] !== 'same-origin';
 
-const server = http.createServer(async (req, res) => {
+async function gestisci(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = url.pathname;
   if (req.headers.host !== `localhost:${PORT}` && req.headers.host !== `127.0.0.1:${PORT}`) return res.writeHead(403).end(); // niente DNS rebinding
@@ -496,7 +491,7 @@ const server = http.createServer(async (req, res) => {
     return f ? serveFile(res, f) : res.writeHead(403).end();
   }
 
-  // Le POST accettano solo l'HUD e i processi locali: una pagina web qualsiasi non deve poter comandare Nexus
+  // Le POST accettano solo l'HUD e i processi locali: una pagina web qualsiasi non deve poter comandare O.S.C.A.R.
   let body = {};
   if (req.method === 'POST') {
     const origin = req.headers.origin;
@@ -514,7 +509,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && p === '/api/log') { // diagnostica di «Nexus», solo locale
+  if (req.method === 'POST' && p === '/api/log') { // diagnostica di «O.S.C.A.R.», solo locale
     const { line } = body;
     if (line) appendLog(String(line).slice(0, 200));
     return res.writeHead(204).end();
@@ -522,8 +517,14 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/api/status') {
     if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; noteHud(url.searchParams); }
-    return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ voice: voice.status, browser: browserReady, gifs: media.gifs, agenda: agenda.due().length, ologramma: holoOra.versione }));
+    // Durante un aggiornamento una finestra vecchia può essere ancora aperta.
+    const puoConfermare = !url.searchParams.has('hud') || url.searchParams.get('ricevute') === '1';
+    let pronti = 0, erroreAgenda = false;
+    if (puoConfermare && !brain.busy) {
+      try { pronti = archivioAgenda().disponibili(); } catch { erroreAgenda = true; }
+    }
+    return json(res, 200, { voice: voice.status, browser: browserReady, gifs: media.gifs, ricevuteAgenda: true,
+      agenda: pronti, erroreAgenda, ologramma: holoOra.versione });
   }
 
   if (req.method === 'GET' && p === '/api/ologramma') return json(res, 200, holo.stato());
@@ -587,14 +588,19 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, testo: r.testo + spento });
   }
 
+  if (req.method === 'POST' && p === '/api/agenda/conferma') {
+    if (!Number.isSafeInteger(body.id) || typeof body.gettone !== 'string') return res.writeHead(400).end();
+    archivioAgenda().conferma(body.id, body.gettone); // una conferma ripetuta o superata non tocca altre consegne
+    return res.writeHead(204).end();
+  }
+
   if (req.method === 'POST' && p === '/api/ask') {
-    let text = String(body.text || '').trim();
-    if (body.agenda) { // li tolgo dall'agenda subito: un secondo HUD, o il giro dopo, non li ripete
-      const due = agenda.due();
-      if (!due.length) return res.writeHead(200, { 'content-type': 'application/x-ndjson' }).end(JSON.stringify({ t: 'done' }) + '\n');
-      agenda.remove(due.map((x) => x.id));
-      console.error(`[agenda] parlo per primo: ${due.length} ${due.length === 1 ? 'compito' : 'compiti'}`);
-      text = agendaText(due);
+    let text = String(body.text || '').trim(), voce = null;
+    const agenda = body.agenda ? archivioAgenda() : null;
+    if (body.agenda) {
+      voce = !brain.busy && agenda.prendi();
+      if (!voce) return res.writeHead(200, { 'content-type': 'application/x-ndjson' }).end(JSON.stringify({ t: 'done' }) + '\n');
+      text = agendaText(voce);
     }
     if (!text) return res.writeHead(400).end();
     // Perché la frase è passata dal filtro dell'HUD: senza nome può essere la TV o Tony che parla con altri, e la persona
@@ -614,15 +620,40 @@ const server = http.createServer(async (req, res) => {
         if (ev.t === 'show' || (ev.t === 'report' && Array.isArray(ev.blocchi) && ev.blocchi.length)) holo.esegui({ azione: 'chiudi' });
         return;
       }
-      pending++; // GIF e animazioni: le cerco mentre Nexus parla, arrivano quando sono pronte
+      pending++; // GIF e animazioni: le cerco mentre O.S.C.A.R. parla, arrivano quando sono pronte
       media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
     };
-    await rispondi(text, onEvent);
+    if (voce) {
+      // Una risposta già preparata si riconsegna senza un altro turno né comandi sul Mac.
+      const rinnovo = setInterval(() => {
+        try { agenda.rinnova(voce); } catch (e) { console.error('[agenda] rinnovo fallito', e.code); }
+      }, ATTESA_RICEVUTA / 3);
+      try {
+        let risposta = voce.risposta;
+        if (risposta === null) {
+          const frasi = [];
+          const completato = await rispondi(text, (ev) => {
+            if (ev.t === 'say') frasi.push(ev.s);
+            onEvent(ev);
+          });
+          if (completato) risposta = frasi.join(' ') || 'Il compito ha terminato il suo turno.';
+        }
+        if (risposta !== null && agenda.salva(voce, risposta) && open) {
+          write({ t: 'promemoria', id: voce.id, gettone: voce.gettone, cosa: voce.cosa, risposta, rileggi: voce.risposta !== null });
+        } else {
+          agenda.rilascia(voce);
+        }
+      } finally {
+        clearInterval(rinnovo);
+      }
+    } else {
+      await rispondi(text, onEvent);
+    }
     finished = true; close();
     return;
   }
 
-  if (req.method === 'POST' && p === '/api/hud') { // l'app Nexus, se Nexus è già acceso, riapre l'HUD solo se non ce n'è uno
+  if (req.method === 'POST' && p === '/api/hud') { // l'app O.S.C.A.R., se O.S.C.A.R. è già acceso, riapre l'HUD solo se non ce n'è uno
     if (!hudOpening && Date.now() - hudSeen > 12000) openHud();
     return res.writeHead(204).end();
   }
@@ -649,18 +680,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   res.writeHead(404).end();
-});
+}
+
+const server = http.createServer((req, res) => gestisci(req, res).catch((e) => {
+  console.error('[server] richiesta fallita', e.code || e.name);
+  if (res.headersSent) res.destroy();
+  else json(res, 500, { ok: false, errori: ['Richiesta non completata.'] });
+}));
 
 server.on('error', async (e) => {
   if (e.code !== 'EADDRINUSE') throw e;
-  console.log(`Porta ${PORT} occupata: Nexus è già acceso, riapro il suo HUD.`);
+  console.log(`Porta ${PORT} occupata: O.S.C.A.R. è già acceso, riapro il suo HUD.`);
   await fetch(`http://127.0.0.1:${PORT}/api/hud`, { method: 'POST', headers: { 'content-type': 'application/json' } }).catch(() => {});
   process.exit(0);
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Nexus online su http://localhost:${PORT}`);
-  if (env.NEXUS_NO_OPEN) return;
+  console.log(`O.S.C.A.R. online su http://localhost:${PORT}`);
+  if (env.OSCAR_NO_OPEN) return;
   // Prima il Chrome di Google, poi l'HUD: l'ultima finestra aperta prende il fuoco, e deve essere l'HUD a schermo intero
   hudOpening = true; // anche mentre aspetto Chrome: un secondo clic sull'app non apre un altro HUD
   ensureBrowserWindow().finally(openHud);
@@ -678,6 +715,6 @@ function openHud() {
 // All'uscita, per qualunque motivo (Ctrl-C, finestra del Terminale chiusa, crash), spengo tutto quello che ho acceso
 process.on('exit', () => {
   brain.kill();
-  for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di Nexus
+  for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di O.S.C.A.R.
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));

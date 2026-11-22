@@ -1,8 +1,8 @@
-// Nexus: il nucleo. Una sfera-cervello a strati dentro anelli concentrici.
+// O.S.C.A.R.: il nucleo. Una sfera-cervello a strati dentro anelli concentrici.
 // Dall'esterno all'interno: guscio di particelle (il bordo luminoso, sente il microfono), gomitolo di filamenti
 // (pensa: impulsi che corrono), nucleo al centro (pulsa con la voce). Intorno, anelli a velocità e versi diversi:
 // barre dei dati, tratteggi, segmenti spessi con buchi, quadrante coi gradi, arco che scansiona, micro-dati.
-// Contratto con nexus.js: TIMING e createScene(canvas, S) → { frame, anchor, assembling, renderer, strato }.
+// Contratto con oscar.js: TIMING e createScene(canvas, S) → { frame, anchor, assembling, renderer, strato }.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -635,7 +635,7 @@ export async function createScene(canvas, S) {
     composer.render(dt);
   }
 
-  // centro, raggio della sfera e dell'anello esterno, in pixel CSS: lì nexus.js appoggia le scritte
+  // centro, raggio della sfera e dell'anello esterno, in pixel CSS: lì oscar.js appoggia le scritte
   function anchor() {
     const ppu = H * k;
     return { x: W / 2 + lay.x * ppu, y: H / 2 - lay.y * ppu, r: RS * lay.s * ppu, R: RO * lay.s * ppu };

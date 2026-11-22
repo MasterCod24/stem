@@ -1,6 +1,6 @@
-// La voce di Nexus: quella del Mac, con `say`. È la voce scelta in Impostazioni → Accessibilità → Contenuti letti, se è
+// La voce di O.S.C.A.R.: quella del Mac, con `say`. È la voce scelta in Impostazioni → Accessibilità → Contenuti letti, se è
 // italiana (anche una voce di Siri, che non ha un nome da passare a "say -v": si usa solo come voce di sistema); altrimenti la
-// migliore italiana installata. NEXUS_MAC_VOICE la scavalca.
+// migliore italiana installata. OSCAR_MAC_VOICE la scavalca.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import os from 'node:os';
@@ -32,7 +32,7 @@ export function createVoice({ macVoice } = {}) {
 
   // Una frase in WAV: say scrive un file, che si legge e si cancella
   async function speak(text) {
-    const file = path.join(os.tmpdir(), `nexus-voce-${crypto.randomUUID()}.wav`); // nome unico: due frasi insieme non si pestano
+    const file = path.join(os.tmpdir(), `oscar-voce-${crypto.randomUUID()}.wav`); // nome unico: due frasi insieme non si pestano
     const v = await scegli();
     await run('/usr/bin/say', [...(v ? ['-v', v] : []), '-r', '185', '-o', file, '--data-format=LEI16@24000', '--', text]); // "--": una frase che inizia con "-" non è un'opzione
     const data = fs.readFileSync(file);

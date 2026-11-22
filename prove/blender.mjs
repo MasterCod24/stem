@@ -1,5 +1,5 @@
-// blender.mjs — prova costruisci_in_blender senza Nexus né cervello: parla con mac/mac-mcp.mjs su stdio come il cervello.
-//   node prove/blender.mjs     circa 20 s, vuole Blender in /Applications (o NEXUS_BLENDER)
+// blender.mjs — prova costruisci_in_blender senza O.S.C.A.R. né cervello: parla con mac/mac-mcp.mjs su stdio come il cervello.
+//   node prove/blender.mjs     circa 20 s, vuole Blender in /Applications (o OSCAR_BLENDER)
 // Controlla gli attrezzi (loft, tappi, rivoluzioni con le punte, raccordi), le coordinate dell'HUD nei file, il rifiuto
 // delle primitive, gli errori dello script, le versioni tenute e la gabbia: rete, localhost, file di Tony, cartelle
 // temporanee, scritture fuori e altri programmi devono essere tutti bloccati. Una riga PASS o FAIL per caso.
@@ -17,7 +17,7 @@ function esito(ok, nome, dettagli = '') {
 }
 // Sotto /Users come la cartella vera (Documenti), così la prova passa dalla stessa regola della gabbia
 const BASE = path.join(ROOT, 'runtime', `prova-blender-${process.pid}`);
-const CARTELLA = path.join(BASE, 'Documents', 'Nexus-Blender');
+const CARTELLA = path.join(BASE, 'Documents', 'OSCAR-Blender');
 fs.mkdirSync(CARTELLA, { recursive: true });
 const SEGRETO = path.join(BASE, 'segreto.txt');
 fs.writeFileSync(SEGRETO, 'non deve uscire');

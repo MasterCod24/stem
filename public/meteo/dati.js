@@ -77,7 +77,7 @@ export function durata(ms) {
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const r1 = (v) => Math.round(v * 10) / 10;
 
-// ---------------------------------------------------------------- dalla risposta di Open-Meteo ai dati di Nexus
+// ---------------------------------------------------------------- dalla risposta di Open-Meteo ai dati di O.S.C.A.R.
 // Solo numeri finiti (il resto diventa null) e tempi in ms. raw è la risposta con timeformat=unixtime.
 const fin = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 export function normalizza(raw, luogo, preso) {
