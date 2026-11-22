@@ -3,10 +3,10 @@
 Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive un modulo rispetta i nomi, le unità e le forme dei dati scritti qui. Se un punto non si può rispettare, lo si dice e si cambia questo file, non il codice da solo.
 
 ## Cosa è vero e cosa no
-- **Vero:** il modello 3D a schermo intero nell'HUD, con aspetto olografico, vista esplosa, sezione piena, raggi X, densità dei materiali e sforzi calcolati davvero. Si comanda con la voce (attraverso il cervello), con mouse e tastiera, e con le mani davanti alla fotocamera.
+- **Vero:** il modello 3D in una finestra di Blender davanti a Tony (dal 22/11, richiesta sua: prima stava nell'HUD), con vista esplosa, sezione, raggi X, densità dei materiali, sforzi calcolati davvero, misure in mm e cm e la scheda di ogni pezzo, che Tony cambia lì. Si comanda con la voce (attraverso il cervello), con le mani davanti alla fotocamera (le vede l'HUD, che passa i gesti) e con Blender stesso.
 - **Calcolo degli sforzi:** elasticità lineare, statica, su voxel (`fisica/voxel-fea.mjs`, provato contro la trave a sbalzo). Calcola pezzi pieni fatti di primitive. I pezzi che si toccano sono considerati incollati: niente contatti, bulloni, plasticità, instabilità, fatica né dinamica. Un «impatto» è una forza statica equivalente.
 - **Non si fa, perché sarebbe finto:** fisica molecolare, flussi di energia simulati, surriscaldamento senza sorgenti di calore, feedback aptico, precisione millimetrica delle mani (MediaPipe sbaglia di circa 1 cm). I «flussi» sui cavi sono un disegno di dati dichiarati, e si dice così.
-- **Sicurezza:** il cervello descrive il modello solo con dati dichiarativi. Niente `eval`, niente `new Function`, niente `innerHTML` e niente shader che arrivano da fuori. I testi entrano nell'HUD solo con `textContent`, e i numeri passano da `Number.isFinite` più un limite. L'HUD è un telecomando di O.S.C.A.R. (`/api/ask`), quindi non carica codice da internet.
+- **Sicurezza:** il cervello descrive il modello solo con dati dichiarativi. Blender parte con `--factory-startup` e `-Y` (niente script dentro i .blend, che li ha scritti il cervello: il suo codice gira solo nella gabbia di `costruisci_in_blender`), ascolta solo su 127.0.0.1 e solo righe col gettone che il server gli dà all'avvio. I file da aprire li controlla il server (vedi «File 3D»). Dall'HUD arrivano solo gesti di tipi noti con numeri finiti.
 
 ## File e chi li usa
 | file | dove gira | cosa fa |
@@ -17,8 +17,9 @@ Questo file è il contratto fra i pezzi dell'abilità «ologrammi». Chi scrive 
 | `fisica/voxel-fea.mjs` | worker | risolutore (spostato da `prove/fea/`) |
 | `fisica/struttura.mjs` | worker | dal modello ai voxel, a carichi e vincoli, fino ai risultati per pezzo |
 | `fisica/lavoratore.mjs` | worker | ingresso del `worker_threads`, perché il calcolo non blocchi il server |
-| `public/ologramma/geometrie.js` | HUD | geometrie three.js dalle stesse misure di `forme.js` |
-| `public/ologramma/scena.js` | HUD | l'ologramma: materiali, vista esplosa, sezione, modi, selezione, etichette, quote in mm, foto |
+| `public/ologramma/geometrie.js` | server | geometrie three.js dalle stesse misure di `forme.js`: le mesh delle forme native che vanno a Blender |
+| `blender.mjs` | server | apre e chiude Blender con l'ologramma, gli manda stato, mesh, percorsi dei cavi, scheda e campo, i gesti e la richiesta della foto; riceve le modifiche di Tony |
+| `mac/blender/vivo.py` | Blender | l'ologramma: pezzi, esploso, modi, sezione, misure in mm e cm, scheda modificabile, flussi sui cavi, gesti, foto |
 | `public/ologramma/gesti.js` | HUD e Node | i gesti calcolati dai punti delle mani, senza DOM: si prova in Node |
 | `public/ologramma/mani.js` | HUD | fotocamera, MediaPipe 0.10.35 in locale, punti verso `gesti.js` |
 
@@ -101,7 +102,7 @@ Vincolo: { pezzo: id, faccia: '+x'|'-x'|'+y'|'-y'|'+z'|'-z', tipo: 'incastro' }
   isolato: id|null
 }
 ```
-La vista la cambiano il cervello (attraverso il server) e l'HUD, ma in locale. I cambi fatti nell'HUD con mani, mouse o tastiera non tornano al server: solo togliere e rimettere un pezzo ci tornano. L'HUD applica solo i campi della vista che il server ha cambiato, così un modo scelto a mano resta.
+La vista la cambiano il cervello (attraverso il server) e Tony in Blender, ma lì resta: i cambi fatti in Blender con mani, mouse o scheda della vista non tornano al server. Tornano solo i pezzi lanciati via (togli) e i campi della scheda del pezzo (cambia). Blender applica solo i campi della vista che il server ha cambiato, così un modo scelto da Tony resta.
 
 ## Materiali (`materiali.js`)
 ```js
@@ -170,7 +171,7 @@ Dal processo MCP, cioè dagli strumenti del cervello:
 - `{azione:'analizza', carichi?, vincoli?}`: calcola gli sforzi.
 - `{azione:'chiudi'}`
 
-Dall'HUD arrivano solo `{azione:'togli'|'rimetti', id, modello}` e `{azione:'chiudi', modello}`, così il cervello sa che Tony l'ha chiuso con Esc. Se `modello` non è quello attuale, il server risponde 409 con lo stato. Dall'HUD non arriva mai testo libero.
+Dall'HUD arrivano solo `{azione:'togli'|'rimetti', id, modello}` e `{azione:'chiudi', modello}` (Esc nell'HUD); il server usa le stesse azioni per il lancio di un pezzo in Blender e per Blender chiuso da Tony, così il cervello sa che l'ha chiuso lui. Se `modello` non è quello attuale, il server risponde 409 con lo stato. Dall'HUD non arriva mai testo libero.
 - L'HUD si riconosce dalle intestazioni `origin` o `sec-fetch-site`, che una pagina non può togliere; il processo MCP non le manda. Le altre azioni dall'HUD ricevono 403.
 - Risposte all'HUD: 200 `{ok, versione}` senza testo; 409 `{ok: false, errori, stato}` se il modello è vecchio; 400 o 403 `{ok: false, errori}`.
 - `{azione:'misura', secondi, fps: {mediana, p10, minimo}, detect_ms, prova?, gesti?}`: alla chiusura dell'ologramma, se le mani sono state accese almeno 10 secondi interi. Solo numeri nei loro limiti (secondi interi da 10 a 86400, fps da 0 a 1000, detect da 0 a 10000 ms o null, prova booleano): il server risponde 204 e scrive una riga sola nel suo registro, «[ologramma] mani accese 42 s: fps mediana 55, p10 48, minimo 46, detect 21 ms», con «(foto di prova al posto della fotocamera)» se prova è true. Altrimenti 400.
@@ -182,7 +183,7 @@ Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lanci
 
 ### Risposte agli strumenti
 - In caso di successo: `{ ok: true, versione, testo, foto? }`. `testo` è in italiano e serve al cervello: pezzi, ingombro, massa, risultati dell'analisi e avvisi. `foto` è il PNG in base64 della vista dopo il cambio.
-- La massa nel testo e nell'HUD ha una regola sola, `massaTesto` di `forme.js`: tre cifre significative, in g sotto 1 kg e in mg sotto 1 g.
+- La massa nel testo e nella scheda di Blender ha una regola sola, `massaTesto` di `forme.js`: tre cifre significative, in g sotto 1 kg e in mg sotto 1 g.
 - **La riga dei materiali** (dopo la massa) dice cosa manca alla ricerca sui pezzi, con gli id tagliati come gli altri elenchi: «Materiali: 4 pezzi su 6 hanno il materiale. Senza materiale: … Senza fattura: …». Un pezzo ha il materiale con `materiale_vero` o con una chiave diversa da `generico`; la fattura si chiede solo a chi ha `materiale_vero`; i pezzi tolti contano. Quando non manca niente la riga non c'è, quindi un pezzo che Tony progetta in PLA non la fa comparire. Dice cosa manca e non come trovarlo: il modo di lavorare sta in `oscar-persona.md`.
 - La prima riga dice com'è andato il calcolo quando la risposta parte: «Analisi degli sforzi avviata.» o «Ricalcolo degli sforzi avviato.» solo se è ancora in corso; se la risposta porta già i numeri, «finita» o «ricalcolati». Dopo la scorciatoia della lega la riga dei voxel dice che il campo viene dal calcolo di prima, col tempo vero della scorciatoia.
 - Per la foto il server aspetta, se l'HUD è collegato (visto negli ultimi 15 s), fino a 8 s dopo mostra o se ci sono pezzi `file`, fino a 4 s dopo le altre modifiche: l'entrata di un modello nuovo dura circa 3 s. Senza foto, il testo lo dice («l'HUD non è acceso», «non l'ha mandata entro N s»). Se non è cambiato niente torna l'ultima foto di quella versione, o «Foto: nessuna nuova».
@@ -194,10 +195,9 @@ Gli strumenti MCP sanno la porta del server dagli argomenti: `mcp.json` li lanci
 - Del calcolo (`fisica/struttura.mjs`): `tempo_max_s` ferma il risolutore solo col residuo già sotto 1e-2, se no il limite è il timeout del worker; un pezzo senza voxel non va in `esclusi` ma ha un avviso suo; un pezzo staccato solo in parte resta, con «N voxel su M sono staccati»; le frazioni dei voxel di bordo vengono da 64 campioni su una griglia ruotata; il risultato ha anche `tempi` e gli avvisi «il carico cade per il N% su nodi incastrati» e «modello largo e quasi vuoto».
 
 ### La foto
-L'HUD, dopo aver mostrato una versione nuova (file caricati e animazioni ferme, al massimo 3 s dopo), manda `POST /api/ologramma/foto {modello, versione, png}`: base64 di un PNG largo al massimo 960 px e grande al massimo 1,5 MB. Lo strumento la restituisce al cervello come immagine, così O.S.C.A.R. vede quello che ha fatto prima di dire «fatto».
-- Il server risponde 204 se l'accetta, 409 se non è della versione attuale o l'ologramma è chiuso, 400 se non è un PNG valido (anche alto più di 4096 px).
+Dopo ogni versione nuova `blender.mjs` chiede a Blender una foto della vista (esploso già al suo posto, PNG largo al massimo 960 px), e lo strumento la restituisce al cervello come immagine, così O.S.C.A.R. vede quello che ha fatto prima di dire «fatto». Il server aspetta 5 s dopo una modifica, 10 s dopo un mostra o con pezzi da file, 25 s se Blender sta ancora partendo; senza foto il testo lo dice («Blender non l'ha mandata entro N s»). Se non è cambiato niente torna l'ultima foto di quella versione. Una richiesta di foto senza risposta si lascia dopo 15 s.
 - `GET /api/ologramma/campo`: 404 se non c'è, 409 se `v` non è la versione del campo.
-- I MB dei corpi sono MiB: 1 MiB per `/api/ologramma`, 2 MiB per la foto. Un corpo JSON che non è un oggetto vale `{}`.
+- I MB dei corpi sono MiB: 1 MiB per `/api/ologramma`. Un corpo JSON che non è un oggetto vale `{}`.
 
 ### Avvisi all'HUD
 - A ogni cambio il server chiama `brain.notify({t:'holo', v: versione})`, se c'è un turno in corso.
@@ -205,48 +205,27 @@ L'HUD, dopo aver mostrato una versione nuova (file caricati e animazioni ferme, 
 - L'HUD rilegge lo stato solo se v è maggiore di quella che mostra. Se lo stato dice `aperto: false`, chiude.
 
 ### File 3D
-`GET /api/ologramma/file/<modello>/<id>` serve solo il file del pezzo citato nello stato attuale, mai un percorso scelto dall'HUD:
-- solo se il percorso, dopo `realpath`, sta dentro una delle cartelle di Tony (FILE_DIRS), con il confine `path.sep`;
-- solo se è un file regolare con un'estensione ammessa e non sta in una cartella nascosta;
-- solo fino a 200 MB, mandato in stream;
-- con le intestazioni `nosniff` e `cross-origin-resource-policy: same-origin`, e solo con `sec-fetch-site` uguale a same-origin o assente.
+Blender apre i pezzi `file` dal disco, quindi li controlla il server prima di mandarglieli (`fileConsentito` in `server.mjs`), con le regole che prima valevano per servirli all'HUD:
+- il percorso, dopo `realpath`, sta dentro una delle cartelle di Tony (FILE_DIRS), con il confine `path.sep`: un collegamento verso fuori non passa;
+- è un file regolare con un'estensione ammessa (glb, stl, obj, 3mf, ply) e non sta in una cartella nascosta;
+- è al massimo di 200 MB.
 
-## Il modulo dell'HUD (`scena.js`)
-```js
-export function createOlogramma({ renderer, strato, contenitore, sfx, onTogli, onFoto, scarica? }) → {  // scarica: al posto di fetch, per le prove
-  mostra(stato),        // apre o aggiorna: costruisce solo i pezzi cambiati
-  chiudi(),             // dissolvenza, libera geometrie e texture
-  get aperto(),
-  fotogramma(t, dt),    // dal loop di oscar.js, a ogni fotogramma, prima del render dell'HUD
-  dopoRender(),         // subito dopo il render, nello stesso fotogramma: qui si legge il canvas per la foto (preserveDrawingBuffer è false)
-  comando(nome, valore),// 'esploso' 0..1 | 'sezione' {asse, posizione, verso}|null | 'modo' | 'seleziona' id | 'isola' id | 'ruota' {dx, dy} | 'zoom' fattore | 'reset'
-  puntatore(ev),        // eventi del mouse: trascina per ruotare, rotella per lo zoom, clic per selezionare
-  gesto(g),             // i gesti di gesti.js; {tipo:'stato', fase} mostra «mani: mostra il palmo» (riposo) o «mani pronte» nella barra, e 'spente' (da oscar.js) la svuota
-  ridimensiona(),
-  info(),               // per le prove: lo stato locale, senza riferimenti interni; montaggi conta le geometrie montate
-  colori(),             // per le prove: per pezzo i colori lineari dello shader, le intensità e il centro sullo schermo in px
-}
-// onFoto(png, versione, modello); export anche angoloTesta(W, H), rischio(fs), TAPPE_FS, mmTesto(mm) e tinta(hex, L)
-```
-- `createScene` di `nucleo.js` (la sfera e gli anelli che hanno preso il posto di `humanoid.js`) restituisce anche `renderer` e `strato`. `strato(scene, camera)` è l'aggancio. Inserisce un RenderPass (clear false, clearDepth true) subito dopo quello dell'HUD e prima del bloom. Il composer dell'HUD usa un render target con `stencilBuffer: true`, perché la sezione piena funzioni (misurato).
-- Il nucleo va nell'angolo come col report (`S.dockTarget`, `dockX`, `dockY`), e la camera dell'ologramma lascia libero quell'angolo.
-- **Palette**, la stessa dell'HUD (variabili di `index.html`):
-  - ciano dominante. Gli spigoli sono il ciano scalato alla luminanza dell'azzurro di prima, perché l'aspetto è tarato sulla soglia del bloom (0,18). Gli interni ai raggi X sono verde acqua;
-  - densità dal blu petrolio (leggero) al ciano (denso), con la luminanza sotto la soglia del bloom come il solido;
-  - flussi tutti nei freddi, distinti per colore, velocità e forma dell'impulso: elettrico scintille bianco-ciano corte e veloci, fluido onde blu lunghe e lente, aria soffi ciano pallido, dati trattini verde acqua fitti;
-  - **arancione e rosso solo per le anomalie:** il rosso della scala degli sforzi (fs ≤ 1), `.cede` sul pezzo o sulla nota con fs sotto 1, `.attenzione` su un calcolo fallito, un campo che non arriva o un file che non si apre. Nient'altro è caldo, con un'eccezione decisa da Tony;
-  - **l'eccezione, il `colore` di un pezzo:** è il colore dell'oggetto vero (l'ossigeno rosso di una molecola), anche rosso o arancione, e vale solo nei modi ologramma e solido. In densità e sforzi resta la scala dei dati e ai raggi X restano ciano e verde acqua, identici a prima. Un pezzo senza colore ha gli uniform di prima. `tinta(hex, L)` di `scena.js` tiene la tinta e porta la luminanza (quella del bagliore, 0,299 R + 0,587 G + 0,114 B in lineare) nella fascia del colore che sostituisce: riempimento come l'azzurro (0,226), bordo e spigoli come il ciano chiaro (0,472), corpo del solido come il solido (0,172, sotto la soglia del bloom). Dentro la fascia conta la chiarezza del colore, con un pavimento del 16% perché un nero resti visibile, e nessun canale supera 0,9, perché nel solido un canale tagliato all'uscita cancella l'ombreggiatura. Nel solido gli spigoli restano scuri. Selezione e pezzi interni si riconoscono come prima: sono gli stessi fattori, applicati al colore.
-  - Testi: «Helvetica Neue» sottile per titoli e valori, Menlo per etichette e numeri piccoli (`--sottile`, `--mono`), con un ripiego per il laboratorio, che le variabili non le ha. La scheda è un modulo trasparente: gli angoli a staffa li disegna `index.html`.
-- **Quote in millimetri**, come in un disegno tecnico: linee di riferimento staccate dal pezzo, linea di quota con trattini a 45° e un testo `.holo-quota` per asse («1.240 MM», «12,5 MM»: `mmTesto`, punto per le migliaia e una cifra decimale sotto 100 mm).
-  - Il pezzo scelto (clic, presa o selezione) ha le tre quote dell'ingombro lungo gli assi del mondo, dove sta adesso, esploso compreso. Senza pezzo scelto si vede l'ingombro del modello intero, più tenue, che si spegne nell'esploso. Un file non ancora aperto non ha misure, né nelle quote né nella scheda.
-  - Per ogni asse si prova la quota su ognuno dei quattro spigoli paralleli, uscendo lungo uno dei due assi perpendicolari. Vince un posto col testo libero, e fra questi quello più lontano dal centro sullo schermo, cioè sul contorno; quello di prima vale il 12% in più, così la quota non salta mentre il modello gira. Un asse più corto di 18 px sullo schermo non si quota.
-  - I testi stanno sotto la barra e dentro i margini, mai sull'angolo del nucleo né su scheda, legenda e descrizione (le registra `ostacolo`); le etichette dei gruppi evitano anche le quote. Un testo senza posto si spegne con le sue linee.
-  - Le linee sono un solo `LineSegments` additivo senza test di profondità, con un buffer di 30 vertici che va alla GPU solo quando cambia.
-  - Le linee di livello a passo vero in mm non ci sono (scelta del 10/11, mai provate). Le righe sul modello sono scansioni che scorrono: con un passo tondo non diventerebbero misure, e la misura la danno già le quote.
-- Le etichette sono nodi DOM dentro `contenitore`, riempiti con `textContent`. La legenda di densità e sforzi usa la stessa funzione colore dello shader, con abbastanza tappe da non far vedere la differenza fra sRGB e lineare. Le tappe scritte degli sforzi sono fs 4, 2, 1,33 e ≤ 1, a un quarto, a metà, a tre quarti e in fondo.
-- Gli sforzi si colorano per pixel: una texture 3D del rischio (8 bit per voxel, 255 = vuoto), letta trilineare sui soli voxel pieni, guardando dentro il pezzo lungo la normale (0,5, 1, 1,6, 2,4 e 0,2 h). Con la sezione, il tappo mostra il campo del materiale tagliato. Se un lato del campo supera `MAX_3D_TEXTURE_SIZE`, la legenda dice «campo non disponibile».
-- Un pezzo `file` si sceglie (clic, presa, cursore) dal suo ingombro, non triangolo per triangolo: su un milione di triangoli il raycast costava 60 ms ogni 90 ms. Un file si carica fino a 1 milione di triangoli (`TRIANGOLI_MAX` di `geometrie.js`): con le mani, 1 milione dà 50,7 fps e 2 milioni 33,3.
-- Il cursore delle mani, e l'evidenziazione del pezzo sotto, si spengono 400 ms dopo l'ultimo gesto 'cursore': un gesto «mani uscite» non c'è.
+A Blender va il percorso vero; un file che non passa arriva senza percorso e col motivo, e la scheda lo dice. Un GLB con un `modello.blend` accanto (quelli di `costruisci_in_blender`) si apre dal .blend, coi quadrilateri e i raccordi veri; gli altri si importano. Blender non ha un importatore per il 3mf: quel pezzo non si apre, e la scheda lo dice.
+
+## Blender (`mac/blender/vivo.py`, dal 22/11)
+Il server resta l'unico padrone dello stato: Blender lo mostra e manda indietro solo le modifiche di Tony.
+- **Il canale:** `blender.mjs` lancia `Blender --factory-startup -Y --window-maximized --python mac/blender/vivo.py -- --porta P --gettone G` su una porta libera e si collega in TCP. Righe JSON col gettone: `{tipo:'ologramma', stato, mesh, percorsi, campo, info, materiali, rid}` (lo stato col percorso vero dei file; le mesh delle forme native fatte da `geometrie.js`; i percorsi dei cavi con un flusso; la scheda di ogni pezzo; il campo degli sforzi in un file Float32), i gesti di `gesti.js`, `{tipo:'foto', file, rid}` e `{tipo:'messaggio', testo}`. Risponde `{rid, …}` e manda `{evento:'cambia', id, campi}` e `{evento:'togli', id}`. Se arrivano più stati mentre Blender lavora, va solo l'ultimo.
+- **Quando:** si apre con l'ologramma e si chiude (SIGTERM) quando l'ologramma si chiude, anche per un report o il browser. Se Tony chiude Blender, per il cervello ha chiuso lui l'ologramma.
+- **Coordinate:** lo stato è in coordinate dell'HUD (mm, Y in alto); Blender ha Z in alto: blender = C · hud, con C che porta y in z e z in −y, come l'esportazione GLB di `gabbia.py`. Un pezzo è `C · T · Rx · Ry · Rz · C⁻¹ · (scala, centra) · oggetto del file`.
+- **Vista esplosa:** la stessa a due livelli dell'HUD (gruppi lungo la media degli `esplodi`, poi pezzi dal centro del gruppo); quella chiesta dal server scorre in circa mezzo secondo.
+- **Modi:** solido (il `colore` del pezzo, se no grigio), raggi X, densità (dal blu petrolio al ciano, tre volte più chiara che nell'HUD, se no sotto la luce di Blender è quasi nera), sforzi. `ologramma` vale come solido: l'aspetto olografico non c'è più. Della vista si applica solo quello che il server ha cambiato: un modo o un esploso scelti da Tony in Blender restano.
+- **Sforzi:** colore per vertice (attributo `sforzi`), letto nel campo dentro il pezzo lungo la normale (0,5, 1, 1,6, 2,4 e 0,2 h), con la stessa scala dell'HUD: rischio = 1/fs, rosso solo da fs 1 in giù. Chi è fuori dal calcolo è grigio scuro. La legenda sta in basso a sinistra.
+- **Sezione:** il piano di taglio di Blender. I piani scritti da Python da soli non tagliano (Blender 5.2, provato il 22/11): prima si accende il taglio a riquadro su tutta la vista, poi si sostituisce il suo piano col nostro. Il taglio è aperto: la faccia piena dell'HUD non c'è.
+- **Misure:** sopra la vista, le tre quote dell'ingombro lungo gli assi del pezzo scelto (o del modello intero, più tenui), in mm e cm («122 mm · 12,2 cm»).
+- **La scheda** (pannello «O.S.C.A.R.» a destra): del modello titolo, modo, esploso, sezione, massa e risultati del calcolo; del pezzo scelto nome, materiale vero, fattura, lega del calcolo, colore, misure della forma in mm (con i cm accanto; per un file la scala), ingombro in mm e cm, massa e sforzo. Tutto quello che si scrive lì parte come `cambia` verso il server, che lo valida come una modifica del cervello e ricalcola gli sforzi se serve; la scheda dice «Fatto» o perché no, e una modifica rifiutata torna com'era. Lo stato che torna dal server non fa ripartire altre modifiche.
+- **Flussi sui cavi:** impulsi disegnati lungo il percorso del cavo, con colore, velocità, passo e coda dell'HUD, visibili anche dentro i pezzi: sono dati dichiarati, non simulati.
+- **Gesti:** gli stessi della scena di prima: un pizzico gira la vista, due avvicinano, le mani aperte esplodono, un pizzico fermo prende il pezzo sotto il cursore, che si sposta e resta dove lo si lascia; lanciato via si nasconde e il server lo mette fra i tolti; due pugni rimettono a posto pezzi spostati ed esploso (i tolti restano tolti). Il cursore delle mani è un punto ciano.
+- **Misurato** (`prove/blender-vivo.mjs`, 22/11): Blender a 60 fps di mediana, p10 52–55, 9–14 ms dal gesto al disegno di mediana (p90 fino a 38 ms con i flussi accesi).
 
 ## I gesti (`gesti.js`)
 ```js
@@ -324,16 +303,18 @@ Servono a tarare sulle mani di Tony le soglie di oggi; `mani.js` le passa a `osc
 - Il lato è scambiato rispetto a MediaPipe: 'Right' è la mano destra di chi sta davanti alla fotocamera.
 - In più rispetto al contratto: `onErrore`, `azzeraMisure()`, le opzioni `delegato`, `hz`, `gesti`, `sorgente: 'immagine'`, le esportazioni `MEDIAPIPE` e `MODELLO_MANI`.
 - **Soglia per collegarle** (decisione di Tony del 5/11): l'HUD con l'ologramma e le mani deve restare sopra 45 fps sul suo M2. Se non regge, le mani restano spente. La misura nelle condizioni vere arriva da sola nel registro del server, con l'azione `misura`.
-- Nell'HUD (`oscar.js`): i pallini di pollice e indice usano la stessa `mappa()` del cursore, e a riposo sono più tenui (`#dita.riposo`). Quando le mani si fermano (Esc, tasto M, errore) `oscar.js` manda a `scena.js` `{tipo:'stato', fase:'spente'}`. Nessun suono per l'innesco: in `sfx.js` non c'è un suono leggero adatto, e i suoni nuovi non si fanno.
+- Nell'HUD (`oscar.js`): i pallini di pollice e indice usano la stessa `mappa()` del cursore, e a riposo sono più tenui (`#dita.riposo`). Quando le mani si fermano (Esc, tasto M, errore) `oscar.js` manda a Blender `{tipo:'stato', fase:'spente'}`, che spegne il cursore. Nessun suono per l'innesco.
 
 ## Nell'HUD (`oscar.js`)
-- Report e browser chiudono l'ologramma nell'HUD subito; nel server lo chiude il server (vedi sopra). Solo Esc lo dice al server come «chiuso da Tony».
-- Con l'ologramma aperto vale il filtro di sempre (dal 12/11, scelta di Tony): il nome («O.S.C.A.R., esplodilo»), oppure una frase cominciata nei 15 s dopo che O.S.C.A.R. ha parlato. I verbi dell'ologramma da soli non bastano più.
-- `window.__misure.fps`: mediana, p10 e minimo dei fotogrammi contati in ognuno degli ultimi 20 secondi interi, più i conti uno per uno. Gli intervalli di requestAnimationFrame davano 59,9 fps contro i 55 della traccia.
-- Con `?debug`: `oscarAsk`, `oscarReport`, `oscarSente(frase)` (una frase finita, come dal riconoscimento), `oscarOlo`, `oscarOlogramma(stato)` e `oscarOlogrammaDemo(nome)`.
+- L'HUD non disegna più l'ologramma. Quando lo stato del server dice aperto, accende le mani e smette di disegnare il nucleo: davanti c'è Blender, e due programmi che disegnano insieme si dividono la grafica. Con l'HUD fermo le mani perdono l'11% con Blender che ridisegna (da 30 a 26,6 rilevazioni al secondo), contro il 17% con l'HUD che disegnava (un giro, 22/11).
+- I gesti vanno a `POST /api/blender/gesti {gesti}`, una richiesta alla volta: quelli arrivati nel frattempo partono insieme, riassunti.
+- Esc chiude l'ologramma (e Blender), M accende e spegne le mani. Report e browser lo chiudono nel server.
+- `window.__misure.fps`: mediana, p10 e minimo dei fotogrammi contati in ognuno degli ultimi 20 secondi interi, più i conti uno per uno.
+- Con `?debug`: `oscarAsk`, `oscarReport`, `oscarSente(frase)` e `oscarOlogramma(stato)`, che accende le mani come con un ologramma aperto, senza server né Blender.
 
 ## Il server e le prove
-- `OSCAR_CERVELLO=<cartella>` sposta lì, oltre al `cwd` del cervello, cervello.json, mcp.json, ologramma.json e .bin e ascolto.log; le cartelle dei documenti diventano le sue sottocartelle (Desktop, Documents…).
+- `OSCAR_CERVELLO=<cartella>` sposta lì, oltre al `cwd` del cervello, cervello.json, mcp.json, ologramma.json e .bin, ascolto.log e la cartella di lavoro di Blender; le cartelle dei documenti diventano le sue sottocartelle (Desktop, Documents…).
+- `OSCAR_BLENDER` sceglie il Blender: le prove del server usano `prove/blender-finto.mjs`, che parla come `vivo.py` senza finestre e scrive ogni messaggio in `OSCAR_BLENDER_FINTO`.
 - Le variabili d'ambiente date a mano vincono su `.env`.
 - Il controllo di `sec-fetch-site` vale su `/api/*`, `/mediapipe/*` e `/modelli/*` con ogni metodo. Le pagine hanno `x-frame-options: SAMEORIGIN` e `frame-ancestors 'self'`: l'HUD non si apre dentro un'altra origine.
 - All'avvio, un ologramma salvato come aperto si chiude (versione +1, chiuso da O.S.C.A.R.) e si riapre a voce.

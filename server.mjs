@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { env } from './config.mjs';
 import { createBrain } from './brain.mjs';
@@ -13,6 +12,7 @@ import { createMedia } from './media.mjs';
 import { apriAgenda, ATTESA_RICEVUTA } from './agenda.mjs';
 import { adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
+import { createBlender, gestoValido } from './blender.mjs';
 import { createMeteo } from './meteo.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
@@ -45,9 +45,9 @@ const effortDi = (e) => (e === 'default' ? undefined : e);
 const SENTITO = { nome: 'col nome', conversazione: 'senza nome, cominciata nei 15 secondi dopo che hai finito di parlare' };
 // Il secondo tempo di un compito annunciato con [[pensa]]: lo stesso turno di Tony, con l'effort alto
 const PENSA_TEXT = '[pensa] Adesso hai più tempo per ragionare: fai il compito che hai appena annunciato, senza ripetere la frase che hai già detto.';
-// Il giro di confronto (richiesta di Tony del 17/11): con le foto vere accanto alla foto dell'HUD il cervello diceva «fatto,
+// Il giro di confronto (richiesta di Tony del 17/11): con le foto vere accanto alla foto dell'ologramma il cervello diceva «fatto,
 // stilizzate» senza correggere niente (prova sulle AirPods). Uno solo, dopo la prima vista, come il [pensa]
-const CONFRONTO_TEXT = '[confronto] Prima di chiudere, rimetti a confronto la foto dell\'HUD con le foto vere che ti ha dato mcp__mac__mostra_ologramma: ' +
+const CONFRONTO_TEXT = '[confronto] Prima di chiudere, rimetti a confronto la foto di Blender con le foto vere che ti ha dato mcp__mac__mostra_ologramma: ' +
   'forma, proporzioni, curve, pezzi mancanti o fuori posto. Trova le tre differenze più grandi e correggi le due più grandi, rifacendo i pezzi con ' +
   'mcp__mac__costruisci_in_blender e aggiornandoli con mcp__mac__modifica_ologramma. Se l\'oggetto ha un dentro, guardalo anche in raggi-x contro la foto «dentro». ' +
   'Poi di\' a Tony in una frase cosa hai corretto, senza ripetere quello che hai già detto.';
@@ -292,9 +292,9 @@ async function rispondi(text, onEvent) {
     console.error('[cervello] ci penso a fondo');
     interrotto = (await brain.ask(`[adesso: ${adesso()}]\n${PENSA_TEXT}`, ev, { effort: effortDi(EFFORT_PENSA) })).interrotto;
   }
-  // [confronto]: in questa risposta ha guardato l'oggetto vero e aperto un ologramma nuovo, con l'HUD acceso (senza la
+  // [confronto]: in questa risposta ha guardato l'oggetto vero e aperto un ologramma nuovo, con Blender aperto (senza la
   // sua foto non c'è confronto). Un giro solo, con l'effort alto, nella stessa risposta; mai dopo un'interruzione.
-  if (guardato && !ignored && !interrotto && holoOra.aperto && holoOra.modello !== modelloPrima && Date.now() - hudSeen < 15_000) {
+  if (guardato && !ignored && !interrotto && holoOra.aperto && holoOra.modello !== modelloPrima && blender.attivo) {
     console.error('[cervello] confronto col vero');
     interrotto = (await brain.ask(`[adesso: ${adesso()}]\n${CONFRONTO_TEXT}`, ev, { effort: effortDi(EFFORT_PENSA) })).interrotto;
   }
@@ -302,15 +302,45 @@ async function rispondi(text, onEvent) {
   return !ignored && !interrotto;
 }
 
-// --- Ologramma: lo stato sta solo qui (ologramma.mjs). Gli strumenti del cervello (mac-mcp.mjs) e l'HUD lo cambiano con
-// POST /api/ologramma; l'HUD lo rilegge quando la versione cresce e manda la foto di quello che mostra.
+// --- Ologramma: lo stato sta solo qui (ologramma.mjs). Gli strumenti del cervello (mac-mcp.mjs) lo cambiano con
+// POST /api/ologramma. Dal 22/11 non lo disegna più l'HUD ma Blender (blender.mjs e mac/blender/vivo.py, richiesta di Tony):
+// Blender si apre con l'ologramma, riceve i gesti delle mani dall'HUD e la scheda dove Tony cambia i pezzi, e manda la foto.
 const riassunto = (s) => ({ modello: s.modello, versione: s.versione, aperto: s.aperto, file: s.pezzi.some((x) => x.forma === 'file' && !s.tolti.includes(x.id)) });
 let holoOra = { modello: 0, versione: 0, aperto: false, file: false }; // da onCambio: /api/status non copia tutto lo stato a ogni giro
 const holo = createOlogramma({
   cartella: STATO,
   // 55 s, dentro i 60 che il server aspetta: il cervello riceve sempre un risultato o un errore, non «ancora in corso»
   calcola: (lavoro) => calcolaInWorker(lavoro, { timeout_s: 55 }),
-  onCambio: (s) => { holoOra = riassunto(s); brain.notify({ t: 'holo', v: s.versione }); },
+  onCambio: (s) => { holoOra = riassunto(s); brain.notify({ t: 'holo', v: s.versione }); blender?.stato(s); },
+});
+// Le modifiche che Tony fa in Blender arrivano qui come quelle del cervello, e la scheda dice com'è andata
+function eventoBlender(e) {
+  const o = holo.stato();
+  if (e.evento === 'cambia' && typeof e.id === 'string' && e.campi && typeof e.campi === 'object') {
+    const r = holo.esegui({ azione: 'modifica', cambia: [{ ...e.campi, id: e.id }] });
+    console.error(`[blender] Tony cambia «${e.id}» (${Object.keys(e.campi).join(', ')}): ${r.ok ? 'fatto' : 'rifiutato'}`);
+    if (r.ok) blender.messaggio(r.testo.split('\n').slice(0, 3).join('\n'));
+    else { blender.messaggio(`Non cambiato: ${(r.errori || []).join('; ')}`); blender.stato(holo.stato(), true); } // la scheda torna com'era
+  } else if (e.evento === 'togli' && typeof e.id === 'string') {
+    holo.esegui({ azione: 'togli', id: e.id, modello: o.modello }, { daHud: true });
+  } else if (e.evento === 'chiuso' && o.aperto) {
+    holo.esegui({ azione: 'chiudi', modello: o.modello }, { daHud: true }); // Tony ha chiuso Blender: per il cervello l'ha chiuso lui
+  } else if (e.evento === 'errore') {
+    console.error(`[blender] ${e.testo}`);
+  }
+}
+const blender = createBlender({
+  bin: env.OSCAR_BLENDER || '/Applications/Blender.app/Contents/MacOS/Blender',
+  vivo: path.join(ROOT, 'mac', 'blender', 'vivo.py'),
+  cartella: path.join(STATO, 'blender'),
+  campo: () => holo.campo(),
+  controllaFile: (f) => fileConsentito(f),
+  onEvento: eventoBlender,
+  onFoto: (modello, versione, png) => {
+    holoFoto = { modello, versione, png };
+    for (const a of fotoAttese) if (a.modello === modello && a.versione <= versione) a.risolvi(png);
+  },
+  onLog: (l) => console.error(l),
 });
 holo.carica();
 holoOra = riassunto(holo.stato());
@@ -321,7 +351,7 @@ if (holoOra.aperto) holo.esegui({ azione: 'chiudi' });
 // del cervello (evento 'meteo') e il riassunto torna al cervello. L'HUD aperto li rilegge con GET /api/meteo ogni 5 minuti.
 const meteo = createMeteo({ cartella: STATO, onLog: (l) => console.error(l) });
 
-let holoFoto = null;          // l'ultima foto dell'HUD: { modello, versione, png } in base64
+let holoFoto = null;          // l'ultima foto di Blender: { modello, versione, png } in base64
 const fotoAttese = new Set(); // gli strumenti che aspettano la foto di una versione
 function aspettaFoto(modello, versione, ms) {
   return new Promise((risolvi) => {
@@ -331,26 +361,16 @@ function aspettaFoto(modello, versione, ms) {
   });
 }
 // La foto che accompagna la risposta allo strumento, oppure la riga che dice al cervello perché non c'è.
-// Un modello nuovo aspetta 8 s come i pezzi da file: l'entrata del turbofan finisce a 3,0 s, la foto arrivava a 3,1–3,3 s
-// e una volta a 6,6 s, dopo i 4 s che il cervello aspettava. Dopo una modifica bastano 4 s.
+// La fa Blender dopo aver messo la versione nuova (blender.mjs). Blender che parte ci mette qualche secondo in più.
 async function fotoPer(versione, prima, nuovo = false) {
   const o = holoOra;
   if (!o.aperto) return {};
   if (holoFoto && holoFoto.modello === o.modello && holoFoto.versione >= versione) return { png: holoFoto.png };
   if (versione === prima) return { nota: 'Foto: nessuna nuova, perché non è cambiato niente.' };
-  if (Date.now() - hudSeen > 15_000) return { nota: "Senza foto: l'HUD non è acceso, quindi non puoi vedere il risultato." };
-  const s = o.file || nuovo ? 8 : 4; // i pezzi da file vanno prima scaricati e letti
+  const s = blender.attivo ? (o.file || nuovo ? 10 : 5) : 25;
   const png = await aspettaFoto(o.modello, versione, s * 1000);
-  return png ? { png } : { nota: `Senza foto: l'HUD non l'ha mandata entro ${s} s.` };
+  return png ? { png } : { nota: `Senza foto: Blender non l'ha mandata entro ${s} s.` };
 }
-// Un PNG vero, nei limiti del contratto: al massimo 1,5 MB e 960 px di larghezza
-function pngValido(b) {
-  if (!b || b.length < 33 || b.length > 1.5e6) return false;
-  if (b.readUInt32BE(0) !== 0x89504e47 || b.readUInt32BE(4) !== 0x0d0a1a0a || b.toString('latin1', 12, 16) !== 'IHDR') return false;
-  const w = b.readUInt32BE(16), h = b.readUInt32BE(20);
-  return w >= 1 && w <= 960 && h >= 1 && h <= 4096;
-}
-
 // La misura delle mani nelle condizioni vere (la regola di Tony: mani solo sopra 45 fps sul suo M2), che l'HUD manda alla
 // chiusura dell'ologramma o della meteo (vista: 'meteo') se le mani sono state accese almeno 10 s: la prossima sessione la legge nel registro, senza
 // chiedere a Tony. Dall'HUD arrivano solo numeri, controllati qui; il testo della riga è del server.
@@ -370,34 +390,24 @@ function rigaMani(b) {
     (gesti ?? '; misure dei gesti scartate (storte)');
 }
 
-// GET /api/ologramma/file/<modello>/<id>: solo il file di un pezzo dello stato attuale, mai un percorso scelto dall'HUD.
-// Il file vero (dopo realpath) deve stare in una cartella di Tony, fuori dalle cartelle nascoste, con un'estensione 3D.
-const MIME_3D = { glb: 'model/gltf-binary', stl: 'model/stl', obj: 'model/obj', '3mf': 'model/3mf', ply: 'application/octet-stream' };
+// I file 3D che Blender apre (pezzi 'file'): li apre lui dal disco, quindi il controllo sta qui, come prima stava sul
+// percorso che li serviva all'HUD. Solo dentro le cartelle di Tony dopo realpath (un collegamento verso fuori non passa),
+// file regolari con un'estensione ammessa, fuori dalle cartelle nascoste, al massimo 200 MB. A Blender va il percorso vero.
+const ESTENSIONI_3D = ['glb', 'stl', 'obj', '3mf', 'ply'];
 const FILE_3D_MAX = 200 * 2 ** 20;
 const FILE_VERI = FILE_DIRS.map((d) => { try { return fs.realpathSync(d); } catch { return null; } }).filter(Boolean);
-async function serviFile3D(res, p) {
-  const no = (codice) => res.writeHead(codice, { 'cache-control': 'no-store' }).end();
-  const m = p.match(/^\/api\/ologramma\/file\/(\d+)\/([a-z0-9][a-z0-9_-]{0,39})$/), s = holo.stato();
-  const pezzo = m && Number(m[1]) === s.modello && s.pezzi.find((x) => x.id === m[2] && x.forma === 'file');
-  if (!pezzo) return no(404);
-  let vero, fh;
-  try { vero = await fs.promises.realpath(pezzo.misure.file); } catch { return no(404); }
-  const dir = FILE_VERI.find((d) => vero.startsWith(d + path.sep)), tipo = MIME_3D[path.extname(vero).slice(1).toLowerCase()];
-  if (!dir || !tipo || vero.slice(dir.length + 1).split(path.sep).some((x) => x.startsWith('.'))) return no(403);
-  try {
-    const st = await fs.promises.stat(vero); // prima di aprire: open() su una FIFO resterebbe fermo
-    if (!st.isFile()) return no(403);
-    if (st.size > FILE_3D_MAX) return no(413);
-    fh = await fs.promises.open(vero, 'r');
-    const st2 = await fh.stat(); // lo stesso file di prima, anche se nel frattempo il percorso è cambiato
-    if (!st2.isFile() || st2.size > FILE_3D_MAX) { await fh.close(); return no(403); }
-    res.writeHead(200, { 'content-type': tipo, 'content-length': st2.size, 'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff', 'cross-origin-resource-policy': 'same-origin' });
-    pipeline(fh.createReadStream(), res, () => {}); // chiude il file anche se l'HUD smette di leggere
-  } catch {
-    await fh?.close().catch(() => {});
-    if (res.headersSent) res.destroy(); else no(404);
-  }
+function fileConsentito(percorso) {
+  let vero;
+  try { vero = fs.realpathSync(String(percorso)); } catch { return { errore: 'il file non esiste' }; }
+  const dir = FILE_VERI.find((d) => vero.startsWith(d + path.sep));
+  if (!dir) return { errore: 'il file sta fuori dalle cartelle di Tony' };
+  if (!ESTENSIONI_3D.includes(path.extname(vero).slice(1).toLowerCase())) return { errore: 'estensione non ammessa' };
+  if (vero.slice(dir.length + 1).split(path.sep).some((x) => x.startsWith('.'))) return { errore: 'il file sta in una cartella nascosta' };
+  let st;
+  try { st = fs.statSync(vero); } catch { return { errore: 'il file non si legge' }; }
+  if (!st.isFile()) return { errore: 'non è un file' };
+  if (st.size > FILE_3D_MAX) return { errore: 'il file supera 200 MB' };
+  return { vero };
 }
 
 // --- Le mani: MediaPipe da node_modules e il modello da runtime/modelli, che non è nella repository ---
@@ -440,7 +450,7 @@ const PUBLIC = path.join(ROOT, 'public'), THREE = path.join(ROOT, 'node_modules'
 
 // Le pagine di O.S.C.A.R. non si aprono dentro una pagina di un'altra origine: l'HUD è il telecomando di O.S.C.A.R., e in un iframe di
 // un sito qualsiasi partirebbe lo stesso, con microfono e fotocamera già permessi (provato l'8/11). Stessa origine sì:
-// lab-mani.html mette lab-ologramma.html in un iframe.
+// la pagina di prova dei suoni lo usa.
 const NIENTE_CORNICI = { 'x-frame-options': 'SAMEORIGIN', 'content-security-policy': "frame-ancestors 'self'" };
 function serveFile(res, file) {
   fs.readFile(file, (err, data) => {
@@ -497,7 +507,7 @@ async function gestisci(req, res) {
     const origin = req.headers.origin;
     const sameOrigin = !origin || origin === `http://localhost:${PORT}` || origin === `http://127.0.0.1:${PORT}`;
     if (!sameOrigin || !String(req.headers['content-type'] || '').startsWith('application/json')) return res.writeHead(403).end();
-    body = await readBody(req, p === '/api/ologramma/foto' ? 2 * 2 ** 20 : p === '/api/ologramma' ? 2 ** 20 : 1e5);
+    body = await readBody(req, p === '/api/ologramma' ? 2 ** 20 : 1e5);
     if (body === TROPPO) return res.writeHead(413).end(); // il resto del corpo lo legge e lo butta Node: niente reset a metà risposta
   }
 
@@ -552,13 +562,10 @@ async function gestisci(req, res) {
     return json(res, 200, { ok: true, versione: fine.versione, testo: nota ? `${fine.testo}\n${nota}` : fine.testo, ...(png && { foto: png }) });
   }
 
-  if (req.method === 'POST' && p === '/api/ologramma/foto') { // dall'HUD, dopo aver mostrato una versione nuova
-    const { modello, versione, png } = body, o = holoOra;
-    if (!o.aperto || modello !== o.modello || versione !== o.versione) return json(res, 409, { ok: false, errori: ['la foto non è della versione attuale: rileggi lo stato'] });
-    const b = typeof png === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? Buffer.from(png, 'base64') : null;
-    if (!pngValido(b)) return json(res, 400, { ok: false, errori: ['serve un PNG in base64, largo al massimo 960 px e grande al massimo 1,5 MB'] });
-    holoFoto = { modello, versione, png: b.toString('base64') };
-    for (const a of fotoAttese) if (a.modello === modello && a.versione <= versione) a.risolvi(holoFoto.png);
+  if (req.method === 'POST' && p === '/api/blender/gesti') { // le mani dell'HUD verso Blender: solo gesti noti e numeri finiti
+    const gesti = Array.isArray(body.gesti) ? body.gesti.slice(0, 60).map(gestoValido) : [];
+    if (!gesti.length || gesti.includes(null)) return res.writeHead(400).end();
+    if (holoOra.aperto) for (const g of gesti) blender.gesto(g);
     return res.writeHead(204).end();
   }
 
@@ -570,7 +577,6 @@ async function gestisci(req, res) {
       .end(Buffer.from(c.fs.buffer, c.fs.byteOffset, c.fs.byteLength));
   }
 
-  if (req.method === 'GET' && p.startsWith('/api/ologramma/file/')) return serviFile3D(res, p);
 
   if (req.method === 'GET' && p === '/api/meteo') { // l'HUD aperto: gli ultimi dati, riscaricati se hanno più di 10 minuti
     const d = await meteo.attuale();
@@ -715,6 +721,7 @@ function openHud() {
 // All'uscita, per qualunque motivo (Ctrl-C, finestra del Terminale chiusa, crash), spengo tutto quello che ho acceso
 process.on('exit', () => {
   brain.kill();
+  blender.chiudi();
   for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di O.S.C.A.R.
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));

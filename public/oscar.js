@@ -194,8 +194,8 @@ function openReport(r) {
   evento(`REPORT · ${Array.isArray(r?.blocchi) ? r.blocchi.length : 0} BLOCCHI`);
   Object.assign(S, reportDock()); S.dockTarget = 1;
 }
-function closeReport() { hideReport(); document.body.classList.remove('report'); if (!holo?.aperto && !meteo?.aperto) S.dockTarget = 0; } // con l'ologramma o la meteo il nucleo resta nell'angolo
-addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, holo?.aperto ? dockOlo() : meteo?.aperto ? meteo.dock() : reportDock()); });
+function closeReport() { hideReport(); document.body.classList.remove('report'); if (!meteo?.aperto) S.dockTarget = 0; } // con la meteo il nucleo resta nell'angolo
+addEventListener('resize', () => { if (S.dockTarget) Object.assign(S, meteo?.aperto ? meteo.dock() : reportDock()); });
 
 // ---------- Meteo a schermo intero (meteo/vista.js): i dati dal server con l'evento 'meteo', il radar da RainViewer ----------
 // Come il report e l'ologramma: una vista grande alla volta, il nucleo nell'angolo, e le mani accese come con l'ologramma.
@@ -225,51 +225,49 @@ async function apriMeteo(dati) {
 function chiudiMeteo() {
   if (!meteo?.aperto) return;
   misuraMani('meteo'); meteo.chiudi(); document.body.classList.remove('meteo');
-  if (!holo?.aperto && !document.body.classList.contains('report')) S.dockTarget = 0;
-  if (!holo?.aperto) fermaMani();
+  if (!document.body.classList.contains('report')) S.dockTarget = 0;
+  if (!holoAperto) fermaMani();
 }
 
-// ---------- Ologramma (scena.js): lo stato è del server, qui si mostra. Dall'HUD tornano solo togli, rimetti e chiudi ----------
-// Modi, esploso, sezione e camera cambiano solo qui, con tastiera, mouse e mani: non tornano al server (contratto).
-let OLO = null, holo = null;                       // il modulo e l'ologramma, se scena.js è partito
+// ---------- Ologramma: dal 22/11 lo disegna Blender (blender.mjs e mac/blender/vivo.py), non l'HUD: richiesta di Tony ----------
+// Qui restano le mani. Con un ologramma aperto si accendono e i loro gesti vanno al server, che li passa a Blender; l'HUD,
+// coperto da Blender, smette di disegnare il nucleo, perché due programmi che disegnano insieme si dividono la grafica.
+let holoAperto = false, holoStato = null;
 let holoV = 0, holoAncora = 0, holoLeggo = false;  // l'ultima versione del server letta, e una da leggere appena si può
-let holoStato = null, holoLocale = false, modelloProva = 0; // locale: un ologramma di prova (?debug), senza server
 const post = (url, dati) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(dati) });
 const sfxOlo = new Proxy({}, { get: (_, k) => (...a) => sfx?.[k]?.(...a) }); // sfx nasce più tardi, con l'audio
-const dockOlo = () => { const a = OLO.angoloTesta(); return { dockX: a.dockX, dockY: a.dockY }; };
 
-// Una versione più alta arriva dall'evento 'holo' del cervello o da /api/status: si rilegge lo stato intero, una lettura alla volta.
-// Lo stato del server vince anche su un ologramma di prova.
+// Una versione più alta arriva dall'evento 'holo' del cervello o da /api/status: si rilegge lo stato, una lettura alla volta.
 async function rileggiOlogramma(v) {
   if (!(v > holoV)) return;
-  if (!holo || holoLeggo) { holoAncora = Math.max(holoAncora, v); return; }
+  if (holoLeggo) { holoAncora = Math.max(holoAncora, v); return; }
   holoLeggo = true;
   try {
     const st = await (await fetch('/api/ologramma', { cache: 'no-store' })).json();
-    if (Number.isFinite(st?.versione) && st.versione > holoV) { holoV = st.versione; holoLocale = false; applicaOlogramma(st); }
+    if (Number.isFinite(st?.versione) && st.versione > holoV) { holoV = st.versione; applicaOlogramma(st); }
   } catch {}
   holoLeggo = false;
   const dopo = holoAncora; holoAncora = 0;
   rileggiOlogramma(dopo);
 }
 function applicaOlogramma(st) {
-  const prima = holo.aperto;
-  holo.mostra(st); // scena.js rinormalizza tutto con forme.js e chiude se aperto non è true
-  holoStato = holo.aperto ? st : null;
-  if (holo.aperto && !prima) apriOlo(); else if (!holo.aperto && prima) chiusoOlo();
+  const prima = holoAperto;
+  holoAperto = st?.aperto === true;
+  holoStato = holoAperto ? st : null;
+  if (holoAperto && !prima) apriOlo(); else if (!holoAperto && prima) chiusoOlo();
   allarmeOlogramma(holoStato);
 }
-// Aperto: il nucleo va nell'angolo come col report, report e browser lasciano il posto, le mani si accendono
+// Aperto: report, browser e meteo lasciano il posto, le mani si accendono
 let maniDa = 0; // il secondo in cui si è aperto l'ologramma o la meteo: la misura delle mani conta da lì
 function apriOlo() {
   chiudiMeteo();
   hideReport(); document.body.classList.remove('report'); clearTimeout(screenTimer); document.body.classList.remove('browsing'); S.splitTarget = 0;
-  Object.assign(S, dockOlo()); S.dockTarget = 1;
   document.body.classList.add('olo');
+  evento('HOLO · BLENDER');
   maniDa = Math.floor(performance.now() / 1000); mani?.azzeraMisure();
   avviaMani();
 }
-function chiusoOlo() { misuraMani('ologramma'); holoStato = null; holoLocale = false; document.body.classList.remove('olo'); S.dockTarget = 0; fermaMani(); allarme('calcolo', 0); }
+function chiusoOlo() { misuraMani('ologramma'); holoStato = null; document.body.classList.remove('olo'); fermaMani(); allarme('calcolo', 0); }
 // La regola di Tony: mani solo sopra 45 fps sul suo M2. Alla chiusura, se le mani sono state accese almeno 10 secondi interi,
 // i fotogrammi di quei secondi e il tempo di MediaPipe vanno al registro del server: solo numeri, la riga la scrive lui.
 // Con loro vanno le misure d'uso vero dei gesti (gesti.js, misure()): solo i numeri finiti, quelli senza campioni restano fuori.
@@ -280,52 +278,37 @@ function misuraMani(vista) {
   const gesti = Object.fromEntries(Object.entries(m.gesti || {}).filter(([k, v]) => k !== 'tremolio' && Number.isFinite(v)));
   post('/api/ologramma', { azione: 'misura', secondi: s.length, fps: { mediana: f.mediana, p10: f.p10, minimo: f.minimo }, detect_ms: d, prova: maniProva, gesti, ...(vista === 'meteo' && { vista }) }).catch(() => {});
 }
-// Chiuso dall'HUD. Solo Esc lo dice al server, che al cervello scrive «Tony ha chiuso l'ologramma»: report e browser lo nascondono e basta
-// La risposta porta la versione nuova; un 409 (il cervello ha già fatto un modello nuovo) porta lo stato: si rilegge e si mostra quello
+// Chiuso dall'HUD. Solo Esc lo dice al server, che al cervello scrive «Tony ha chiuso l'ologramma» e chiude Blender: report e
+// browser lo chiudono già nel server. Un 409 (il cervello ha già fatto un modello nuovo) porta lo stato: si rilegge quello.
 const versioneDi = (d) => Number(d?.versione ?? d?.stato?.versione);
 function chiudiOlo(esc = false) {
-  if (!holo?.aperto) return;
-  const corpo = { azione: 'chiudi', modello: holoStato?.modello }, locale = holoLocale;
-  holo.chiudi(); chiusoOlo();
-  if (esc && !locale) post('/api/ologramma', corpo).then((r) => r.json()).then((d) => rileggiOlogramma(versioneDi(d))).catch(() => {});
+  if (!holoAperto) return;
+  const corpo = { azione: 'chiudi', modello: holoStato?.modello };
+  holoAperto = false; chiusoOlo();
+  if (esc) post('/api/ologramma', corpo).then((r) => r.json()).then((d) => rileggiOlogramma(versioneDi(d))).catch(() => {});
 }
-// Togli (il lancio con le mani) e rimetti (Z): al server, poi si rilegge; un ologramma di prova cambia qui
-async function azioneOlo(azione, id) {
-  const s = holoStato, tolti = Array.isArray(s?.tolti) ? s.tolti : [];
-  if (!s || typeof id !== 'string') return;
-  if (holoLocale) return applicaOlogramma({ ...s, versione: s.versione + 1, tolti: azione === 'togli' ? [...new Set([...tolti, id])] : tolti.filter((x) => x !== id) });
-  try { rileggiOlogramma(versioneDi(await (await post('/api/ologramma', { azione, id, modello: s.modello })).json())); } catch {}
+// I gesti verso Blender: una richiesta alla volta. Quelli arrivati nel frattempo partono insieme, riassunti: il cursore conta
+// solo l'ultimo, giri, spostamenti ed esploso si sommano, lo zoom si moltiplica.
+let gestiCoda = [], gestiInVolo = false;
+function gestoOlo(g) {
+  const u = gestiCoda[gestiCoda.length - 1];
+  if (u && u.tipo === g.tipo && g.tipo === 'cursore') gestiCoda[gestiCoda.length - 1] = g;
+  else if (u && u.tipo === g.tipo && (g.tipo === 'ruota' || g.tipo === 'sposta')) { u.dx += g.dx; u.dy += g.dy; }
+  else if (u && u.tipo === g.tipo && g.tipo === 'zoom') u.fattore *= g.fattore;
+  else if (u && u.tipo === g.tipo && g.tipo === 'esplodi') u.delta += g.delta;
+  else gestiCoda.push({ ...g });
+  if (!gestiInVolo) queueMicrotask(inviaGesti);
 }
-
-// Dove sta il modello lungo un asse (mm del mondo, dall'ingombro del server): il taglio parte a metà e si sposta del 2% a colpo
-function asseOlo(a) {
-  const g = holoStato?.ingombro_mm, c = 'xyz'.indexOf(a), lo = g?.min?.[c], hi = g?.max?.[c];
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { lo: -1e5, hi: 1e5, centro: 0, passo: 1 }; // solo pezzi da file
-  return { lo, hi, centro: (lo + hi) / 2, passo: Math.max(0.1, (hi - lo) / 50) };
-}
-// Tasti, solo con l'ologramma aperto. X, D e F tornano all'ologramma se il modo è già quello
-const TASTI_MODO = { x: 'raggi-x', d: 'densita', f: 'sforzi', o: 'ologramma', l: 'solido' };
-function tastoOlo(e) {
-  if (e.metaKey || e.ctrlKey || e.altKey) return false; // Cmd+R ricarica ancora l'HUD
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, freccia = k.startsWith('Arrow'), v = holo.info().vista;
-  if (e.repeat && !freccia) return true; // un tasto tenuto giù non fa avanti e indietro
-  if (TASTI_MODO[k]) holo.comando('modo', 'xdf'.includes(k) && v.modo === TASTI_MODO[k] ? 'ologramma' : TASTI_MODO[k]);
-  else if (k === 'e') holo.comando('esploso', v.esploso > 0.5 ? 0 : 1);
-  else if (k === 's') { // a giro: x, y, z, niente
-    const assi = [null, 'x', 'y', 'z'], a = assi[(assi.indexOf(v.sezione?.asse ?? null) + 1) % 4];
-    holo.comando('sezione', a && { asse: a, posizione: asseOlo(a).centro, verso: 1 });
-  } else if (freccia) {
-    if (!v.sezione) return true;
-    const L = asseOlo(v.sezione.asse), d = k === 'ArrowUp' || k === 'ArrowRight' ? 1 : -1;
-    holo.comando('sezione', { ...v.sezione, posizione: Math.min(L.hi, Math.max(L.lo, v.sezione.posizione + d * L.passo)) });
-  } else if (k === 'r') holo.comando('reset');
-  else if (k === 'm') cambiaMani();
-  else if (k === 'z') { const t = holoStato?.tolti; if (t?.length) azioneOlo('rimetti', t[t.length - 1]); }
-  else return false;
-  return true;
+async function inviaGesti() {
+  if (gestiInVolo || !gestiCoda.length) return;
+  const gesti = gestiCoda.slice(0, 60); gestiCoda = gestiCoda.slice(60);
+  gestiInVolo = true;
+  try { await post('/api/blender/gesti', { gesti }); } catch {}
+  gestiInVolo = false;
+  if (gestiCoda.length) inviaGesti();
 }
 function cambiaMani() { const on = !maniVolute(); vogliMani(on); warn(on ? 'Mani accese' : 'Mani spente'); evento(on ? 'HANDS · ON' : 'HANDS · OFF'); if (on) avviaMani(); else fermaMani(); }
-// Con la meteo aperta: M per le mani come con l'ologramma, il resto lo decide la vista (frecce, + e −, R, 0)
+// Con la meteo aperta: M per le mani, il resto lo decide la vista (frecce, + e −, R, 0)
 function tastoMeteo(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return false;
   if (e.key.toLowerCase() === 'm') { if (!e.repeat) cambiaMani(); return true; }
@@ -333,7 +316,7 @@ function tastoMeteo(e) {
 }
 
 // ---------- Mani: MediaPipe in locale, accese solo con l'ologramma o la meteo aperti. La scelta del tasto M resta fra un avvio e l'altro ----------
-const vistaMani = () => Boolean(holo?.aperto || meteo?.aperto);
+const vistaMani = () => Boolean(holoAperto || meteo?.aperto);
 let mani = null, maniPronte = null, mappaMani = null; // mappaMani: la mappa a S di gesti.js, la stessa del cursore
 const maniProva = DEBUG && params.get('mani') === 'immagine'; // la foto di prova al posto della fotocamera
 const maniVolute = () => { try { return (localStorage.getItem('oscar-mani') ?? localStorage.getItem('nexus-mani')) !== '0'; } catch { return true; } };
@@ -355,19 +338,19 @@ async function avviaMani() {
   try {
     const m = await creaMani();
     if (!vistaMani() || !maniVolute()) return;
-    await m.avvia(); // se MediaPipe o la fotocamera non partono: un avviso, e ologramma e meteo restano col mouse
+    await m.avvia(); // se MediaPipe o la fotocamera non partono: un avviso, e Blender e la meteo restano col mouse
     if (!vistaMani() || !maniVolute()) fermaMani(); // chiusi, o spente col tasto M, mentre partivano
   } catch (e) { warn(String(e?.message || e), 'attenzione'); console.warn(e); }
 }
 function fermaMani() { mani?.ferma(); disegnaDita([]); faseMani('spente'); }
-// La fase delle mani (gesti.js: 'riposo', 'pronto', 'azione'; 'spente' quando si fermano): scena.js la mostra nella barra
-// e spegne il cursore a riposo, qui i pallini delle dita si fanno più tenui. Cambia di rado: nessun costo a fotogramma.
+// La fase delle mani (gesti.js: 'riposo', 'pronto', 'azione'; 'spente' quando si fermano): Blender spegne il cursore a riposo,
+// qui i pallini delle dita si fanno più tenui. Cambia di rado: nessun costo a fotogramma.
 function faseMani(fase) {
   $('dita').classList.toggle('riposo', fase === 'riposo');
-  holo?.gesto({ tipo: 'stato', fase });
+  if (holoAperto) gestoOlo({ tipo: 'stato', fase });
   meteo?.gesto({ tipo: 'stato', fase });
 }
-function gestoMani(g) { if (g.tipo === 'stato') faseMani(g.fase); else if (meteo?.aperto) meteo.gesto(g); else holo?.gesto(g); }
+function gestoMani(g) { if (g.tipo === 'stato') faseMani(g.fase); else if (meteo?.aperto) meteo.gesto(g); else if (holoAperto) gestoOlo(g); }
 async function telaProva() { // come la fotocamera: 640×480, la foto di prova intera su fondo bianco (come lab-mani.html)
   const img = new Image();
   img.src = '/modelli/prova-mani.jpg';
@@ -760,17 +743,10 @@ const ascolto = (() => {
 // ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce e chiude, un clic sblocca l'audio se Chrome lo blocca ----------
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); chiudiMeteo(); }
-  else if (holo?.aperto && tastoOlo(e)) e.preventDefault();
+  else if (holoAperto && e.key.toLowerCase() === 'm' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) { cambiaMani(); e.preventDefault(); }
   else if (meteo?.aperto && tastoMeteo(e)) e.preventDefault();
 });
 addEventListener('pointerdown', () => { ensureAudio(); if (ear !== 'on' && ear !== 'install') prepareEar(); });
-// Mouse sull'ologramma, solo quando è aperto: trascina per ruotare, rotella per lo zoom, clic per scegliere, doppio clic per
-// isolare. Niente stopPropagation: il pointerdown arriva lo stesso alla finestra, che sblocca l'audio.
-for (const tipo of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dblclick', 'wheel']) $('gl').addEventListener(tipo, (e) => {
-  if (!holo?.aperto) return;
-  if (tipo === 'pointerdown') { try { $('gl').setPointerCapture(e.pointerId); } catch {} } // il trascinamento finisce anche fuori dalla finestra
-  holo.puntatore(e);
-}, { passive: tipo !== 'wheel' }); // la rotella vuole preventDefault
 
 // livello: '' per le notizie (ciano), 'attenzione' (arancione) e 'critico' (rosso) solo per le anomalie
 function warn(msg, livello = '') {
@@ -847,34 +823,15 @@ if (DEBUG) { window.oscarAsk = ask; window.oscarReport = openReport; window.osca
 if (DEBUG) { window.oscarMeteo = async (dati) => apriMeteo(dati || await (await fetch('/api/meteo', { cache: 'no-store' })).json()); window.oscarVistaMeteo = () => meteo; }
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
 prepareEar();
-const [{ createScene, TIMING }, modOlo] = await Promise.all([import('./nucleo.js'),
-  import('./ologramma/scena.js').catch((e) => { console.warn('ologramma non disponibile', e); return null; })]);
+const { createScene, TIMING } = await import('./nucleo.js');
 const scene = await createScene($('gl'), S);
 scenaPronta(scene);
 // Se il Mac fa perdere il contesto grafico (sospensione, GPU riavviata) i campi precalcolati vanno rifatti: ricarico l'HUD
 $('gl').addEventListener('webglcontextlost', (e) => e.preventDefault());
 $('gl').addEventListener('webglcontextrestored', () => location.reload());
-// L'ologramma disegna nello stesso renderer, prima del bagliore (strato di nucleo.js). Se non parte, l'HUD va avanti senza
-try {
-  holo = modOlo?.createOlogramma({ renderer: scene.renderer, strato: scene.strato, contenitore: $('holo'), sfx: sfxOlo,
-    onTogli: (id) => azioneOlo('togli', id),
-    onFoto: (png, versione, modello) => { if (!holoLocale) post('/api/ologramma/foto', { modello, versione, png }).catch(() => {}); } }) || null;
-  OLO = modOlo;
-} catch (e) { console.warn('ologramma non disponibile', e); holo = null; }
 rileggiOlogramma(holoAncora); // una versione vista da /api/status prima che la scena fosse pronta
-if (DEBUG && holo) {
-  window.oscarOlo = holo; // per le prove: info(), comando(), gesto()
-  window.oscarOlogramma = (st) => { holoLocale = true; applicaOlogramma(st); if (!holo.aperto) holoLocale = false; return holo.info(); };
-  window.oscarOlogrammaDemo = async (nome = 'turbofan') => { // lo stato come lo farebbe ologramma.mjs, senza server
-    const [{ DEMO_TURBOFAN, DEMO_STAFFA }, F] = await Promise.all([import('./ologramma/demo.js'), import('./ologramma/forme.js')]);
-    const r = F.normalizzaModello(structuredClone(nome === 'staffa' ? DEMO_STAFFA : DEMO_TURBOFAN));
-    if (!r.modello) throw new Error(r.errori.slice(0, 3).join('; '));
-    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-    for (const g of r.modello.pezzi.map(F.ingombro)) if (g) for (let c = 0; c < 3; c++) { min[c] = Math.min(min[c], g.min[c]); max[c] = Math.max(max[c], g.max[c]); }
-    return window.oscarOlogramma({ aperto: true, modello: --modelloProva, versione: 1, ...r.modello, tolti: [], massa_kg: null,
-      ingombro_mm: min[0] <= max[0] ? { min, max } : null, analisi: null });
-  };
-}
+// oscarOlogramma(stato): accende le mani come con un ologramma aperto, senza server né Blender (per le prove delle mani)
+if (DEBUG) window.oscarOlogramma = (st) => { applicaOlogramma(st); return { aperto: holoAperto }; };
 const freeze = params.get('t'); // ?t=3 ferma la formazione a 3 secondi (per le prove)
 const t0 = performance.now();
 let last = t0, revealed = false;
@@ -902,16 +859,17 @@ function statFps(lista) {
 }
 Object.defineProperty(window, '__misure', { get() {
   const ultimi = SECONDI.slice(-20);
-  return { fotogrammi: nQuadri, fps: { ...statFps(ultimi), conti: ultimi.map((x) => x.n) }, ologramma: !!holo?.aperto, mani: mani ? { attive: mani.attivo, ...mani.misure } : null };
+  return { fotogrammi: nQuadri, fps: { ...statFps(ultimi), conti: ultimi.map((x) => x.n) }, ologramma: holoAperto, mani: mani ? { attive: mani.attivo, ...mani.misure } : null };
 } });
 let lastActive = 0, skip = false;
 function loop(now) {
   requestAnimationFrame(loop);
   // In attesa e senza nessuno che parla da 20 s: 20 fotogrammi al secondo bastano, la GPU (e la batteria) ringraziano.
   // L'ologramma e la meteo aperti contano come attività: a metà frequenza mani, rotazione e foto andrebbero a scatti.
-  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on') || holo?.aperto || meteo?.aperto) lastActive = now;
+  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on') || holoAperto || meteo?.aperto) lastActive = now;
   if (now - lastActive > 20000) { skip = !skip; if (skip || now - last < 45) return; }
   contaQuadro(now);
+  if (holoAperto) { last = now; return; } // davanti c'è Blender: il nucleo non si disegna e la grafica resta a Blender e alle mani
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const t = freeze ? Number(freeze) : (now - t0) / 1000;
   if (!revealed && t >= TIMING.reveal) { revealed = true; if (!freeze) sfx?.reveal(); }
@@ -925,10 +883,8 @@ function loop(now) {
   if (S.mode === 'listening' && !S.hearing && !pending && performance.now() - heardAt > 4000) setMode('idle');
   S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
   S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 6); // nell'angolo in mezzo secondo: prima che atterri il protagonista
-  holo?.fotogramma(t, dt);
   meteo?.fotogramma(t, dt); // il globo: camera, anelli, vento e scritte, prima del render
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
-  holo?.dopoRender(); // nello stesso fotogramma: la foto legge il canvas prima che il buffer si svuoti
   disegnaAttorno(t, scene.anchor());
 }
 requestAnimationFrame(loop);

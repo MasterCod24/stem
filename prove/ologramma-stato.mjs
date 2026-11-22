@@ -187,7 +187,7 @@ titolo("3. Dall'HUD: togli, rimetti, chiudi, 409 e rifiuti");
   const rifiutate = ['mostra', 'modifica', 'analizza', 'boh'].map((azione) => O.esegui({ azione, modello: 2, togli: ['perno'], vista: { modo: 'solido' } }, { daHud: true }));
   esito(rifiutate.every((x) => !x.ok && x.codice === 403) && uguale(O.stato().tolti, []) && O.stato().vista.modo === 'ologramma', "mostra, modifica, analizza e altro dall'HUD: 403 e niente cambia");
   r = O.esegui({ azione: 'chiudi', modello: 2 }, { daHud: true });
-  esito(r.ok && O.stato().aperto === false && /chiuso da Tony con Esc/.test(O.testo()), "chiudi dall'HUD: chiuso, e il testo per il cervello dice che è stato Tony");
+  esito(r.ok && O.stato().aperto === false && /chiuso da Tony \(ha chiuso Blender o premuto Esc\)/.test(O.testo()), "chiudi dall'HUD: chiuso, e il testo per il cervello dice che è stato Tony");
   const v = O.stato().versione;
   r = O.esegui({ azione: 'chiudi', modello: 2 }, { daHud: true });
   esito(r.ok && r.versione === v, 'chiudere un ologramma già chiuso: niente versione nuova');

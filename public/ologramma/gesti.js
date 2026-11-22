@@ -2,7 +2,7 @@
 // Ingresso: mani = [{ lato: 'Left'|'Right', punti: [{x, y, z}] × 21 }], x e y normalizzate 0..1 dell'immagine già
 // specchiata. Dentro si conta in «altezze d'immagine» (x·aspetto, y): le distanze sono pixel veri a meno di un fattore,
 // così pizzico e palmo non dipendono dalle proporzioni. In uscita x, y, dx, dy, vx, vy sono frazioni dello schermo
-// (vx e vy al secondo), come il mouse in scena.js.
+// (vx e vy al secondo), come il mouse nella scena di prima.
 //
 // Una mano, col pizzico di pollice e indice:
 // - pizzico e subito trascinamento: 'ruota';
@@ -14,7 +14,7 @@
 // mani aperte unite al centro (centri dei palmi entro esplodi_unite) e aperte da esplodi_ms, che poi si allargano; mai
 // dopo uno zoom o un ricomponi finché le mani non si sono separate. Prima bastavano due palmi aperti, e uscendo da uno
 // zoom i pizzichi riaperti erano già due palmi: staccando le mani i pezzi esplodevano (Tony, 17/11).
-// scena.js non sa dire se sotto il cursore c'è un
+// la scena non sa dire se sotto il cursore c'è un
 // pezzo, quindi ruotare e afferrare si distinguono dal tempo: chi vuole ruotare si muove subito.
 //
 // Sopra i gesti c'è una macchina a tre fasi, una sola per tutte le mani (evento 'stato'):
@@ -406,7 +406,7 @@ export function createGesti(opzioni) {
       return testa;
     }
     if (fase === 'pronto' && (nGesti || inCorso)) { fase = 'azione'; testa.push({ tipo: 'stato', fase }); }
-    const c = stabili.find((tr) => tr.modo) || stabili[0]; // un cursore solo: scena.js ne disegna uno
+    const c = stabili.find((tr) => tr.modo) || stabili[0]; // un cursore solo: Blender ne disegna uno
     if (c) prima.push({ tipo: 'cursore', ...schermo(c.ix, c.iy), mano: c.lato });
     if (fase === 'azione' && !inCorso) { fase = 'pronto'; dopo.push({ tipo: 'stato', fase }); }
     return testa.concat(prima, dopo);

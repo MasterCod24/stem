@@ -186,19 +186,10 @@
   #report .dots i { width: 4px; height: 4px; background: var(--ciano-tenue); }
   #report .dots i.on { width: 16px; background: var(--ciano); box-shadow: 0 0 6px var(--ciano); }
 
-  /* Ologramma: etichette, scheda, legenda e cursore li fa scena.js qui dentro, col suo stile. #holo fa da contesto di
-     impilamento: lo z-index di scena.js resta qui, e scritte, avvisi e report, che vengono dopo, restano sopra */
+  /* #holo: la vista meteo ci mette etichette e scritte, e fa da contesto di impilamento (avvisi e report restano sopra).
+     L'ologramma dal 22/11 sta in Blender: qui non c'è più */
   #holo { position: fixed; inset: 0; pointer-events: none; }
-  body.olo #gl { cursor: grab; }
-  body.olo #gl:active { cursor: grabbing; }
-  #holo .holo-card::before { content: ""; position: absolute; inset: -1px; pointer-events: none; /* angoli a staffa, come il browser */
-    background: linear-gradient(var(--neon) 0 0) left top / 14px 2px, linear-gradient(var(--neon) 0 0) left top / 2px 14px,
-      linear-gradient(var(--neon) 0 0) right top / 14px 2px, linear-gradient(var(--neon) 0 0) right top / 2px 14px,
-      linear-gradient(var(--neon) 0 0) left bottom / 14px 2px, linear-gradient(var(--neon) 0 0) left bottom / 2px 14px,
-      linear-gradient(var(--neon) 0 0) right bottom / 14px 2px, linear-gradient(var(--neon) 0 0) right bottom / 2px 14px;
-    background-repeat: no-repeat; filter: drop-shadow(0 0 4px var(--neon)); }
-  /* Le dita viste dalla fotocamera: punto pieno l'indice, anello il pollice. Il cursore dei gesti lo spegne scena.js.
-     Lo z-index vale solo dentro #holo: le dita restano sopra scheda e legenda di scena.js (z-index 4), non sopra il resto */
+  /* Le dita viste dalla fotocamera: punto pieno l'indice, anello il pollice */
   #dita { position: absolute; inset: 0; z-index: 5; }
   #dita i { position: absolute; left: 0; top: 0; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--ciano-vivo);
     box-shadow: 0 0 8px rgba(62, 230, 255, .9); opacity: 0; transition: opacity .2s; will-change: transform; }

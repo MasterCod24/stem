@@ -144,7 +144,7 @@ const byte = (t) => Buffer.from(t.buffer, t.byteOffset, t.byteLength);
 export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = Date.now } = {}) {
   const FILE = path.join(cartella, 'ologramma.json'), BIN = path.join(cartella, 'ologramma-campo.bin');
   let S = statoVuoto(0, 0);
-  let chiusoDa = null;  // 'tony' (Esc nell'HUD) o 'oscar': il cervello deve sapere chi l'ha chiuso
+  let chiusoDa = null;  // 'tony' (Blender chiuso, o Esc nell'HUD) o 'oscar': il cervello deve sapere chi l'ha chiuso
   let base = null;      // l'ultimo calcolo risolto: { versione, geo, tutto, mats, r, vm, vp }
   let sicurezza = null; // fs per voxel, rifatto da base con i materiali di adesso
   let corsa = null;     // il calcolo in volo: { versione, geo, tutto, lavoro, inizio }
@@ -507,7 +507,7 @@ export function createOlogramma({ cartella, calcola, onCambio = () => {}, ora = 
   function testo() {
     if (!S.modello) return 'Nessun ologramma: non ne è ancora stato mostrato uno.';
     const P = S.pezzi, tolti = new Set(S.tolti), r = [];
-    const come = S.aperto ? 'aperto' : chiusoDa === 'tony' ? 'chiuso da Tony con Esc' : 'chiuso';
+    const come = S.aperto ? 'aperto' : chiusoDa === 'tony' ? 'chiuso da Tony (ha chiuso Blender o premuto Esc)' : 'chiuso';
     r.push(`Ologramma «${S.titolo}», ${come}: modello ${S.modello}, versione ${S.versione}.`);
     r.push(`${P.length} ${P.length === 1 ? 'pezzo' : 'pezzi'}${S.tolti.length ? `, di cui ${S.tolti.length} ${S.tolti.length === 1 ? 'tolto' : 'tolti'}: ${elenco(S.tolti)}` : ''}.`);
     const presenti = P.filter((p) => !tolti.has(p.id)), daFile = presenti.filter((p) => p.forma === 'file').length;

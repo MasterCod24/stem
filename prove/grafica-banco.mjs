@@ -30,7 +30,7 @@ if (!fs.existsSync(MODULO)) { console.error(`modulo inesistente: ${MODULO}`); pr
 fs.mkdirSync(USCITA, { recursive: true });
 const LAVORO = fs.mkdtempSync(path.join(os.tmpdir(), 'banco-chrome-'));
 
-// L'angolo del report e dell'ologramma (come angoloTesta di scena.js): ultime 2 colonne e 2 righe di una griglia 12×6
+// L'angolo del report e dell'ologramma (come angoloTesta della scena dell'HUD, tolta il 22/11): ultime 2 colonne e 2 righe di una griglia 12×6
 function angolo(Wp, Hp) {
   const gw = Wp * (1 - 0.044), gh = Hp * (1 - 0.086), cw = (gw - 11 * 12) / 12, rh = (gh - 5 * 12) / 6;
   const x0 = 0.022 * Wp + 10 * (cw + 12), y0 = 0.06 * Hp + 4 * (rh + 12), x1 = 0.022 * Wp + gw, y1 = 0.06 * Hp + gh;
