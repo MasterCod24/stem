@@ -146,7 +146,7 @@ try {
   esito(r.immagini.length === 1, '…e nemmeno ai raggi X');
   r = await strumento('guarda_oggetto_vero', { oggetto: 'Con HUD spento', foto: [{ url: altra.thumburl, cosa: 'fuori' }] });
   r = await strumento('mostra_ologramma', { titolo: 'senza-hud', pezzi });
-  esito(r.immagini.length === 0 && /senza la foto dell'HUD non c'è confronto/.test(r.testo), 'HUD spento: niente foto vere, e il testo dice perché');
+  esito(r.immagini.length === 0 && /senza la foto di Blender non c'è confronto/.test(r.testo), 'senza la foto di Blender: niente foto vere, e il testo dice perché');
 } catch (e) {
   esito(false, 'la parte con la rete', e.message);
 }

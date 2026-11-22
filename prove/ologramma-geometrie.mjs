@@ -160,7 +160,7 @@ for (const pezzo of casi) {
   g.dispose();
 }
 
-// La posa: forme.matrice, matricePezzo e un Object3D con rotation 'XYZ' (quello che usa scena.js) coincidono.
+// La posa: forme.matrice, matricePezzo e un Object3D con rotation 'XYZ' (quello che usava la scena dell'HUD) coincidono.
 let scarto = 0;
 const o = new THREE.Object3D();
 for (let i = 0; i < 200; i++) {

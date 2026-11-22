@@ -160,6 +160,8 @@ if (!esito(!(await porteOccupate()), `porte ${PORTA}, ${PW}, ${CDP} e ${VUOTA} l
 const env = {
   ...process.env, OSCAR_PORT: String(PORTA), OSCAR_BROWSER_PORT: String(PW), OSCAR_CDP_PORT: String(CDP), OSCAR_NO_OPEN: '1',
   OSCAR_CERVELLO: CASA, OSCAR_APP: '', GIPHY_API_KEY: '', // niente GIF: niente rete
+  // dal 22/11 l'ologramma si vede in Blender: qui uno finto, che parla come mac/blender/vivo.py senza finestre
+  OSCAR_BLENDER: path.join(ROOT, 'prove', 'blender-finto.mjs'), OSCAR_BLENDER_FINTO: path.join(CASA, 'blender.log'),
 };
 function avvia(altre = {}) { // il server di prova, con il suo registro
   const p = spawn(process.execPath, ['server.mjs'], { cwd: ROOT, env: { ...env, ...altre }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -226,17 +228,21 @@ r = await chiedi('POST', '/api/ologramma', { corpo: { azione: 'chiudi' }, intest
 esito(r.codice === 403, 'POST da un\'origine estranea: 403');
 // Previsione: la pagina dell'HUD dice al browser di non aprirsi dentro un'altra origine (prima partiva in un iframe di un sito qualsiasi)
 r = await chiedi('GET', '/');
-const r1b = await chiedi('GET', '/lab-ologramma.html');
+const r1b = await chiedi('GET', '/lab-sfx.html');
 esito(r.codice === 200 && r.h['x-frame-options'] === 'SAMEORIGIN' && r.h['content-security-policy'] === "frame-ancestors 'self'" && r1b.h['x-frame-options'] === 'SAMEORIGIN',
   "l'HUD non si apre in un iframe di un'altra origine: x-frame-options SAMEORIGIN e frame-ancestors 'self'", `${r.h['x-frame-options']} | ${r.h['content-security-policy']}`);
 r = await chiedi('POST', '/api/ologramma', { corpo: { azione: 'mostra', modello: { titolo: 'x', pezzi: [{ id: 'a', forma: 'sfera', misure: { r: 1 } }] } }, intestazioni: HUD });
 esito(r.codice === 403 && /solo togli, rimetti e chiudi/.test(r.j?.errori?.[0]), 'dall\'HUD un «mostra» è rifiutato: 403', r.j?.errori?.[0]);
 
 const riempi = (n) => Buffer.from(JSON.stringify({ line: 'x'.repeat(n) }));
+// Il Blender finto: il suo registro (una riga per messaggio ricevuto) e i comandi che diventano eventi verso il server
+const BLOG = env.OSCAR_BLENDER_FINTO, BCMD = `${BLOG}.comandi`;
+const blog = () => (fs.existsSync(BLOG) ? fs.readFileSync(BLOG, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+const comando = (o) => fs.appendFileSync(BCMD, JSON.stringify(o) + '\n');
+const larga8 = (b64) => typeof b64 === 'string' && b64.length > 40 && Buffer.from(b64, 'base64').readUInt32BE(16) === 8; // la foto finta è 8×5
 const limiti = [
   ['/api/log', riempi(2e5), 'base 1e5, con content-length'],
   ['/api/ologramma', Buffer.from(JSON.stringify({ azione: 'modifica', x: 'y'.repeat(1.2e6) })), '1 MB'],
-  ['/api/ologramma/foto', Buffer.from(JSON.stringify({ modello: 1, versione: 1, png: 'A'.repeat(2.3e6) })), '2 MB'],
 ];
 for (const [rotta, corpo, nome] of limiti) {
   r = await chiedi('POST', rotta, { corpo }).catch((e) => ({ codice: e.code || e.message, ms: 0 })); // un reset invece della risposta è un FAIL
@@ -260,8 +266,8 @@ r = await cervello({ azione: 'mostra', modello: TRAVE });
 let s = await stato();
 esito(r.codice === 200 && r.j.ok === true && r.j.versione === s.versione && r.j.testo.startsWith(`Mostrato «Trave di prova» (modello ${s.modello}).`),
   'mostra: 200 { ok, versione, testo }', r.j?.testo?.split('\n')[0]);
-esito(r.j.testo.includes('Ingombro 100 × 10 × 10 mm') && r.j.testo.includes('Massa 27 g') && r.j.testo.includes("Senza foto: l'HUD non è acceso") && !('foto' in r.j),
-  'il testo dice ingombro, massa (10.000 mm³ × 2700 kg/m³ = 27 g) e che la foto non c\'è');
+esito(r.j.testo.includes('Ingombro 100 × 10 × 10 mm') && r.j.testo.includes('Massa 27 g') && larga8(r.j.foto),
+  'il testo dice ingombro e massa (10.000 mm³ × 2700 kg/m³ = 27 g), e la foto viene da Blender');
 esito(s.aperto === true && s.pezzi.length === 1 && Math.abs(s.massa_kg - 0.027) < 1e-12, 'lo stato è aperto, con un pezzo e 0,027 kg');
 r = await cervello({ azione: 'modifica', vista: { esploso: 0.5 } });
 esito(r.codice === 200 && r.j.testo.startsWith('Fatto: vista.') && r.j.testo.includes('esploso 0,5'), 'modifica della vista', r.j?.testo?.split('\n')[0]);
@@ -330,7 +336,7 @@ const STAFFA = {
 };
 let t = await M.strumento('mostra_ologramma', STAFFA);
 s = await stato();
-esito(!t.errore && t.testo.startsWith(`Mostrato «Staffa» (modello ${s.modello}).`) && t.contenuto.length === 1, 'mostra_ologramma', t.testo.split('\n')[0]);
+esito(!t.errore && t.testo.startsWith(`Mostrato «Staffa» (modello ${s.modello}).`) && t.contenuto.length === 2 && t.foto?.mimeType === 'image/png', 'mostra_ologramma: testo e foto di Blender', t.testo.split('\n')[0]);
 esito(t.testo.includes('2 pezzi.') && t.testo.includes('Ingombro 60 × 56 × 40 mm') && t.testo.includes('Massa 207 g'),
   'il testo dello strumento: 2 pezzi, 60 × 56 × 40 mm, 207 g (26.400 mm³ di S235)');
 t = await M.strumento('modifica_ologramma', { titolo: 'Staffa in S235', descrizione: 'Base e braccio.' });
@@ -353,7 +359,7 @@ t = await M.strumento('modifica_ologramma', { rimetti: ['braccio'], vista: { esp
 s = await stato();
 esito(!t.errore && s.tolti.length === 0 && s.vista.esploso === 1 && s.vista.sezione?.verso === 1 && s.vista.modo === 'raggi-x', 'modifica_ologramma: rimetti, esploso, sezione e raggi X', t.testo.split('\n')[0]);
 t = await M.strumento('modifica_ologramma', {});
-esito(!t.errore && t.testo.startsWith('Ologramma «Staffa», aperto') && t.testo.includes('Foto: nessuna nuova'), 'modifica_ologramma senza campi: lo stato in testo', t.testo.split('\n')[0]);
+esito(!t.errore && t.testo.startsWith('Ologramma «Staffa», aperto') && t.foto?.mimeType === 'image/png', 'modifica_ologramma senza campi: lo stato in testo, con l\'ultima foto', t.testo.split('\n')[0]);
 t = await M.strumento('modifica_ologramma', { chiudi: true, vista: { esploso: 0 } });
 esito(t.errore && /chiudi va mandato da solo/.test(t.testo) && (await stato()).vista.esploso === 1, 'chiudi insieme ad altro: errore, niente cambiato');
 t = await M.strumento('modifica_ologramma', { chiudi: true });
@@ -379,7 +385,7 @@ esito(t.errore && t.testo.includes(`non risponde sulla porta ${VUOTA}`) && t2.er
 await Promise.all([V.chiudi(), X.chiudi()]);
 
 // ---------------------------------------------------------------- file 3D
-titolo('File 3D (GET /api/ologramma/file/<modello>/<id>)');
+titolo('File 3D: Blender riceve solo i percorsi controllati dal server');
 const file = (id, f) => ({ id, forma: 'file', misure: { file: f } });
 const FILE = {
   titolo: 'File', pezzi: [
@@ -394,23 +400,17 @@ esito(r.codice === 400 && /estensione|glb/.test(r.j.errori.join(' ')), 'un file 
 r = await cervello({ azione: 'mostra', modello: FILE });
 const MF = (await stato()).modello;
 esito(r.codice === 200 && r.j.testo.includes(`(modello ${MF})`), 'modello con nove pezzi, otto da file', `modello ${MF}`);
+const daBlender = blog().filter((m) => m.tipo === 'ologramma' && m.modello === MF).at(-1);
 const casi = [
-  ['ok', 200, 'dentro Documents'], ['fuori', 403, 'fuori dalle cartelle'], ['link-fuori', 403, 'link simbolico verso fuori'],
-  ['finto', 403, 'link verso un .txt (estensione vera vietata)'], ['nascosto', 403, 'link verso una cartella nascosta'],
-  ['cartella', 403, 'una cartella che si chiama .stl'], ['enorme', 413, 'oltre 200 MB'], ['manca', 404, 'che non c\'è'], ['box', 404, 'pezzo che non è un file'],
+  ['ok', null, 'dentro Documents'], ['fuori', /fuori dalle cartelle/, 'fuori dalle cartelle'], ['link-fuori', /fuori dalle cartelle/, 'link simbolico verso fuori'],
+  ['finto', /estensione/, 'link verso un .txt (estensione vera vietata)'], ['nascosto', /nascosta/, 'link verso una cartella nascosta'],
+  ['cartella', /non è un file/, 'una cartella che si chiama .stl'], ['enorme', /200 MB/, 'oltre 200 MB'], ['manca', /non esiste/, 'che non c\'è'],
 ];
 for (const [id, atteso, nome] of casi) {
-  r = await chiedi('GET', `/api/ologramma/file/${MF}/${id}`, { intestazioni: { 'sec-fetch-site': 'same-origin' } });
-  esito(r.codice === atteso, `file ${nome}: ${atteso}`, `codice ${r.codice}${r.codice === 200 ? `, ${r.b.length} B` : ''}`);
-  if (id === 'ok' && r.codice === 200) {
-    esito(r.b.toString('utf8') === STL && r.h['x-content-type-options'] === 'nosniff' && r.h['cross-origin-resource-policy'] === 'same-origin' &&
-      r.h['content-type'] === 'model/stl', 'il file arriva intero, con nosniff, same-origin e model/stl');
-  }
+  const p = daBlender?.file?.[id];
+  esito(atteso ? p && p.file === null && atteso.test(p.errore) : p && p.file === fs.realpathSync(path.join(DOC, 'pezzo.stl')) && !p.errore,
+    `file ${nome}: ${atteso ? 'Blender non lo riceve, col motivo' : 'Blender riceve il percorso vero'}`, p ? `${p.file} ${p.errore || ''}` : 'stato non arrivato');
 }
-r = await chiedi('GET', `/api/ologramma/file/${MF - 1}/ok`);
-const r4 = await chiedi('GET', `/api/ologramma/file/${MF}/ok`, { intestazioni: { 'sec-fetch-site': 'cross-site' } });
-const r5 = await chiedi('GET', `/api/ologramma/file/${MF}/..%2F..%2Fetc`);
-esito(r.codice === 404 && r4.codice === 403 && r5.codice === 404, 'modello vecchio 404, altro sito 403, id strano 404');
 
 // ---------------------------------------------------------------- azioni dell'HUD
 titolo('Azioni dell\'HUD (togli, rimetti, chiudi)');
@@ -423,46 +423,63 @@ r = await chiedi('POST', '/api/ologramma', { corpo: { azione: 'togli', id: 'box'
 esito(r.codice === 409 && r.j.ok === false && r.j.stato?.modello === s.modello && Array.isArray(r.j.stato?.pezzi), 'modello vecchio: 409 con lo stato', r.j?.errori?.[0]);
 r = await chiedi('POST', '/api/ologramma', { corpo: { azione: 'chiudi', modello: s.modello }, intestazioni: HUD });
 t = await M.strumento('modifica_ologramma', {});
-esito(r.codice === 200 && (await stato()).aperto === false && t.testo.startsWith('Ologramma «File», chiuso da Tony con Esc'), 'Esc nell\'HUD: il cervello sa che l\'ha chiuso Tony', t.testo.split('\n')[0]);
+esito(r.codice === 200 && (await stato()).aperto === false && t.testo.startsWith('Ologramma «File», chiuso da Tony (ha chiuso Blender o premuto Esc)'), 'Esc nell\'HUD: il cervello sa che l\'ha chiuso Tony', t.testo.split('\n')[0]);
 
-// ---------------------------------------------------------------- foto
-titolo('Foto (l\'HUD finto: /api/status?hud=1, poi POST /api/ologramma/foto)');
+// ---------------------------------------------------------------- Blender
+titolo('Blender (finto): stato, foto, gesti dell\'HUD e modifiche di Tony');
 const vedoHud = () => chiedi('GET', '/api/status?hud=1&ear=on&lock=0&rec=ear&mic=0.000&mode=idle', { intestazioni: { 'sec-fetch-site': 'same-origin' } });
 r = await vedoHud();
 esito(r.codice === 200 && fs.existsSync(LOG) && fs.readFileSync(LOG, 'utf8').includes('HUD: ascolto=on'), 'l\'HUD è visto, e il registro va nella cartella della prova');
-// Previsione: con l'HUD acceso e nessuna foto il server aspetta 8 s dopo mostra (l'entrata di un modello nuovo dura 3 s)
-// e 4 s dopo una modifica, poi lo dice
 t = await M.strumento('mostra_ologramma', STAFFA);
-// Dal 17/11 dopo la riga della foto può venire quella delle foto vere (guarda_oggetto_vero in mac-mcp.mjs)
-esito(!t.errore && !t.foto && t.testo.includes("Senza foto: l'HUD non l'ha mandata entro 8 s.") && t.ms > 7900 && t.ms < 8800, 'HUD acceso ma foto che non arriva: dopo mostra aspetta 8 s e lo dice', `${Math.round(t.ms)} ms`);
-await vedoHud();
-t = await M.strumento('modifica_ologramma', { vista: { esploso: 0.2 } });
-esito(!t.errore && !t.foto && t.testo.endsWith("Senza foto: l'HUD non l'ha mandata entro 4 s.") && t.ms > 3900 && t.ms < 4800, 'dopo una modifica aspetta 4 s', `${Math.round(t.ms)} ms`);
-const v0 = (await stato()).versione;
-const FOTO = png(8, 5);
-const scatto = async () => { // come l'HUD: aspetta la versione nuova, poi manda la foto
-  const st = await attendi(async () => { const x = await stato(); return x.versione > v0 && x; }, 5000, 30);
-  const t1 = performance.now(), rr = await chiedi('POST', '/api/ologramma/foto', { corpo: { modello: st.modello, versione: st.versione, png: FOTO.toString('base64') }, intestazioni: HUD });
-  return { ...rr, t1 };
-};
-// Previsione: la risposta dello strumento arriva entro 300 ms dalla foto
-const [tf, rf] = await Promise.all([M.strumento('modifica_ologramma', { vista: { modo: 'solido' } }).then((x) => ({ ...x, t2: performance.now() })), scatto()]);
-esito(rf.codice === 204 && !tf.errore && tf.foto?.mimeType === 'image/png' && tf.foto.data === FOTO.toString('base64') && tf.contenuto[0].type === 'text' && tf.t2 - rf.t1 < 300,
-  'lo strumento restituisce [testo, foto PNG] appena la foto arriva', `strumento ${Math.round(tf.ms)} ms, ${Math.round(tf.t2 - rf.t1)} ms dopo la foto`);
 s = await stato();
-t = await M.strumento('modifica_ologramma', {});
-esito(t.foto?.data === FOTO.toString('base64'), 'senza cambi torna l\'ultima foto della stessa versione');
-r = await chiedi('POST', '/api/ologramma/foto', { corpo: { modello: s.modello, versione: s.versione - 1, png: FOTO.toString('base64') }, intestazioni: HUD });
-esito(r.codice === 409, 'foto di una versione vecchia: 409');
-const sbagliate = [['non è base64', 'non base64!'], ['non è un PNG', Buffer.from('GIF89a, non un png, ma abbastanza lungo').toString('base64')],
-  ['larga 961 px', png(961, 2).toString('base64')], ['oltre 1,5 MB', png(4, 3, 1.5e6).toString('base64')]];
-for (const [nome, dati] of sbagliate) {
-  r = await chiedi('POST', '/api/ologramma/foto', { corpo: { modello: s.modello, versione: s.versione, png: dati }, intestazioni: HUD });
-  esito(r.codice === 400, `foto ${nome}: 400`);
+const ultimo = () => blog().filter((m) => m.tipo === 'ologramma').at(-1);
+esito(!t.errore && t.foto?.mimeType === 'image/png' && larga8(t.foto.data) && ultimo()?.versione === s.versione && ultimo()?.modello === s.modello,
+  'mostra: Blender riceve la versione nuova e lo strumento restituisce la sua foto', `${Math.round(t.ms)} ms`);
+esito(ultimo().mesh.length === 2 && ultimo().info === 2 && ultimo().materiali >= 10, 'le forme native vanno a Blender come mesh, con la scheda di ogni pezzo e i materiali');
+// Previsione: se Blender non manda la foto, dopo una modifica lo strumento aspetta 5 s e lo dice
+comando({ foto: 'mai' }); await pausa(120);
+t = await M.strumento('modifica_ologramma', { vista: { esploso: 0.2 } });
+esito(!t.errore && !t.foto && t.testo.endsWith("Senza foto: Blender non l'ha mandata entro 5 s.") && t.ms > 4900 && t.ms < 6000, 'foto che non arriva: dopo una modifica aspetta 5 s e lo dice', `${Math.round(t.ms)} ms`);
+comando({ foto: 0 }); await pausa(200);
+t = await M.strumento('modifica_ologramma', { vista: { modo: 'solido' } });
+esito(!t.errore && larga8(t.foto?.data) && t.contenuto[0].type === 'text', 'lo strumento restituisce [testo, foto PNG] appena Blender la manda', `${Math.round(t.ms)} ms`);
+const t3 = await M.strumento('modifica_ologramma', {});
+esito(t3.foto?.data === t.foto?.data, 'senza cambi torna l\'ultima foto della stessa versione');
+// I gesti delle mani: dall'HUD al server, poi a Blender, solo tipi noti e numeri finiti
+r = await chiedi('POST', '/api/blender/gesti', { corpo: { gesti: [{ tipo: 'ruota', dx: 0.01, dy: 0 }, { tipo: 'cursore', x: 0.5, y: 0.4, file: '/etc/passwd' }, { tipo: 'stato', fase: 'pronto' }] }, intestazioni: HUD });
+await pausa(200);
+const gg = blog().filter((m) => ['ruota', 'cursore', 'stato'].includes(m.tipo));
+esito(r.codice === 204 && gg.length === 3 && gg[0].dx === 0.01 && !('file' in gg[1]) && gg[2].fase === 'pronto', 'i gesti arrivano a Blender, senza campi in più', JSON.stringify(gg));
+for (const [nome, gesti] of [['sconosciuto', [{ tipo: 'apri', file: '/etc/passwd' }]], ['con un numero non finito', [{ tipo: 'ruota', dx: 'NaN' }]], ['con una fase inventata', [{ tipo: 'stato', fase: 'boh' }]], ['vuoti', []]]) {
+  r = await chiedi('POST', '/api/blender/gesti', { corpo: { gesti }, intestazioni: HUD });
+  esito(r.codice === 400, `gesti ${nome}: 400`);
 }
-await vedoHud();
-r = await cervello({ azione: 'mostra', modello: FILE });
-esito(r.codice === 200 && r.j.testo.endsWith("Senza foto: l'HUD non l'ha mandata entro 8 s.") && r.ms > 7900 && r.ms < 8800, 'con pezzi da file aspetta 8 s', `${Math.round(r.ms)} ms`);
+r = await chiedi('POST', '/api/blender/gesti', { corpo: { gesti: [{ tipo: 'zoom', fattore: 1.1 }] }, intestazioni: { origin: 'http://evil.example' } });
+esito(r.codice === 403, 'gesti da un\'origine estranea: 403');
+// Tony cambia un pezzo nella scheda di Blender: lo stato del server lo prende, e la scheda dice com'è andata
+comando({ evento: 'cambia', id: 'base', campi: { materiale_vero: 'ottone', misure: { x: 80 } } });
+let pz = await attendi(async () => { const x = (await stato()).pezzi.find((p) => p.id === 'base'); return x.materiale_vero === 'ottone' && x; }, 3000, 50);
+esito(pz && pz.misure.x === 80 && pz.misure.y === 6 && blog().some((m) => m.tipo === 'messaggio' && /^Fatto/.test(m.testo)), 'Tony cambia materiale e misura nella scheda: il server li prende e la scheda lo dice', pz ? `x ${pz.misure.x}` : 'non cambiato');
+const statiPrima = blog().filter((m) => m.tipo === 'ologramma').length;
+comando({ evento: 'cambia', id: 'base', campi: { misure: { x: -5 } } });
+const rifiuto = await attendi(async () => blog().find((m) => m.tipo === 'messaggio' && m.testo.startsWith('Non cambiato')), 3000, 50);
+await pausa(200);
+esito(rifiuto && (await stato()).pezzi.find((p) => p.id === 'base').misure.x === 80 && blog().filter((m) => m.tipo === 'ologramma').length > statiPrima,
+  'una misura sbagliata è rifiutata: la scheda lo dice e Blender riceve di nuovo lo stato com\'era', rifiuto?.testo?.slice(0, 80));
+comando({ evento: 'togli', id: 'braccio' });
+esito(await attendi(async () => (await stato()).tolti.includes('braccio'), 3000, 50), 'un pezzo lanciato via in Blender finisce fra i tolti');
+// Tony chiude Blender: per il cervello ha chiuso lui l'ologramma. Il cervello che lo chiude chiude Blender.
+comando({ esci: 0 });
+esito(await attendi(async () => !(await stato()).aperto, 3000, 50), 'Blender chiuso da Tony: l\'ologramma si chiude');
+t = await M.strumento('modifica_ologramma', {});
+esito(t.testo.startsWith('Ologramma «Staffa», chiuso da Tony'), 'e il cervello sa che l\'ha chiuso Tony', t.testo.split('\n')[0]);
+await M.strumento('mostra_ologramma', STAFFA);
+const fini = blog().filter((m) => m.fine).length;
+await M.strumento('modifica_ologramma', { chiudi: true });
+esito(await attendi(async () => blog().filter((m) => m.fine === 'SIGTERM').length > 0 && blog().filter((m) => m.fine).length > fini, 3000, 50), 'l\'ologramma chiuso dal cervello chiude anche Blender');
+r = await chiedi('POST', '/api/blender/gesti', { corpo: { gesti: [{ tipo: 'zoom', fattore: 1.1 }] }, intestazioni: HUD });
+esito(r.codice === 204 && !blog().some((m) => m.tipo === 'zoom'), 'con l\'ologramma chiuso i gesti non vanno da nessuna parte');
+await M.strumento('mostra_ologramma', STAFFA); // aperto, per lo spegnimento più sotto
 
 // ---------------------------------------------------------------- la misura delle mani
 titolo('Misura delle mani: dall\'HUD solo numeri, una riga nel registro del server');
@@ -633,7 +650,7 @@ ev = await domanda('ancora il browser');
 esito((await stato()).versione === vChiuso && !ev.some((e) => e.t === 'holo'), 'già chiuso: nessuna versione nuova');
 // Un corpo JSON che non è un oggetto vale {}: prima «null» faceva cadere il server, che lo destrutturava
 const nulli = [];
-for (const rotta of ['/api/ologramma/foto', '/api/log', '/api/ask', '/api/ologramma']) nulli.push(`${rotta} ${(await chiedi('POST', rotta, { corpo: 'null' }).catch((e) => ({ codice: e.code })) ).codice}`);
+for (const rotta of ['/api/blender/gesti', '/api/log', '/api/ask', '/api/ologramma']) nulli.push(`${rotta} ${(await chiedi('POST', rotta, { corpo: 'null' }).catch((e) => ({ codice: e.code })) ).codice}`);
 r = await chiedi('GET', '/api/status').catch((e) => ({ codice: e.code }));
 esito(r.codice === 200 && !S1.uscito && !/TypeError/.test(S1.registro), 'un corpo «null» non fa cadere il server', nulli.join(', '));
 await spegni(S1);

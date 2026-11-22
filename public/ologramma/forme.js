@@ -904,7 +904,7 @@ function leggiPercorso(C, v) {
 
 // Il colore dell'oggetto vero (11/11, richiesta di Tony): l'ossigeno rosso e gli idrogeni bianchi di una molecola. Prima
 // arrivava come campo sconosciuto e si ignorava. Solo esadecimale, «#rrggbb» o «#rgb», normalizzato in «#rrggbb» minuscolo:
-// la scena lo legge come numero e non lo passa mai a un parser CSS. Come si disegna (e in quali modi) lo decide scena.js.
+// la scena lo legge come numero e non lo passa mai a un parser CSS. Come si disegna (e in quali modi) lo decide Blender, mac/blender/vivo.py.
 const COLORE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 function leggiColore(C, v) {
   if (v === undefined || v === null || (typeof v === 'string' && !v.trim())) return null; // vuoto: nessun colore, e in cambia lo toglie

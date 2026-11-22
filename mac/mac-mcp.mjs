@@ -660,7 +660,7 @@ async function ologramma(corpo) {
 // --- L'oggetto vero: foto e misure, per confrontare l'ologramma con la realtà (17/11, richiesta di Tony) ---
 // Tony ha bocciato gli oggetti fatti «a occhio»: il cervello costruiva da quello che ricordava e controllava la foto
 // dell'HUD solo contro sé stesso. Con guarda_oggetto_vero guarda le foto vere, e gli strumenti gliele rimettono accanto
-// alla foto dell'HUD: «fuori» alla prima vista (mostra), «dentro» quando guarda ai raggi X o in sezione. Le misure
+// alla foto di Blender: «fuori» alla prima vista (mostra), «dentro» quando guarda ai raggi X o in sezione. Le misure
 // ufficiali le confronta costruisci_in_blender con l'ingombro di quello che esce da Blender.
 // Le foto vengono dal web: solo https verso indirizzi pubblici (niente O.S.C.A.R. né altri servizi del Mac o di casa).
 // Nessuno le apre sul Mac: tipo e misure si leggono dai primi byte, e passano così come sono solo se stanno entro
@@ -793,12 +793,12 @@ async function guardaOggettoVero(a) {
   const righe = [`Guardato «${oggetto}»: ${buone.length ? `${buone.length} foto (fuori ${quante('fuori')}, dentro ${quante('dentro')}), qui sotto` : 'nessuna foto'}` +
     (misure ? `; misure vere ${misure.map(mm).join(' × ')} mm${fonte ? ` (${fonte})` : ''}${scala !== 1 ? `, ologramma in scala 1:${mm(scala)}` : ''}` : '') + '.'];
   if (errori.some(Boolean)) righe.push(`Non prese:\n- ${errori.filter(Boolean).join('\n- ')}`);
-  righe.push('Costruisci su queste. Alla prima vista mcp__mac__mostra_ologramma ti rimette accanto alla foto dell\'HUD quelle «fuori», e quelle «dentro» quando guardi in raggi-x o in sezione' +
+  righe.push('Costruisci su queste. Alla prima vista mcp__mac__mostra_ologramma ti rimette accanto alla foto di Blender quelle «fuori», e quelle «dentro» quando guardi in raggi-x o in sezione' +
     (misure ? '; mcp__mac__costruisci_in_blender confronta le misure con quello che costruisci.' : '.'));
   return [{ type: 'text', text: righe.join('\n') }, ...buone.map((f) => ({ type: 'image', data: f.data, mimeType: f.mimeType }))];
 }
 
-// Dopo la foto dell'HUD, quelle vere: «fuori» alla prima vista, «dentro» ai raggi X o in sezione
+// Dopo la foto di Blender, quelle vere: «fuori» alla prima vista, «dentro» ai raggi X o in sezione
 function accantoAlVero(corpo, out) {
   if (corpo.azione === 'mostra') {
     if (!vero || vero.mostrato || Date.now() - vero.quando > VERO_VALE_MS) {
@@ -819,10 +819,10 @@ function conFotoVere(out, cosa, perche) {
   const f = vero.foto.filter((x) => x.cosa === cosa);
   if (!f.length) return out;
   if (out.length < 2) {
-    out[0].text += `\nLe foto vere di «${vero.oggetto}» (${cosa}) non te le rimetto: senza la foto dell'HUD non c'è confronto.`;
+    out[0].text += `\nLe foto vere di «${vero.oggetto}» (${cosa}) non te le rimetto: senza la foto di Blender non c'è confronto.`;
     return out;
   }
-  out[0].text += `\nDopo la foto dell'HUD, ${f.length === 1 ? 'la foto vera' : `le ${f.length} foto vere`} di «${vero.oggetto}», ${perche}.`;
+  out[0].text += `\nDopo la foto di Blender, ${f.length === 1 ? 'la foto vera' : `le ${f.length} foto vere`} di «${vero.oggetto}», ${perche}.`;
   for (const x of f) out.push({ type: 'image', data: x.data, mimeType: x.mimeType });
   return out;
 }
@@ -848,7 +848,7 @@ TOOLS.push({
   name: 'guarda_oggetto_vero',
   description: 'Per un oggetto che esiste, dopo le ricerche e prima di costruirlo: guardi 1–3 sue foto vere e fissi le misure ufficiali. ' +
     'Le foto sono indirizzi https di immagini jpg, png, webp o gif (non la pagina) entro 2000 pixel per lato e 3,5 MB, trovati con WebSearch e WebFetch: ' +
-    'Wikimedia (l\'anteprima /thumb/…/1280px-…), iFixit (.medium), il sito del produttore. «fuori» è com\'è fuori, «dentro» uno spaccato o uno smontaggio. Tornano a te; poi mcp__mac__mostra_ologramma te le rimette accanto alla foto dell\'HUD: ' +
+    'Wikimedia (l\'anteprima /thumb/…/1280px-…), iFixit (.medium), il sito del produttore. «fuori» è com\'è fuori, «dentro» uno spaccato o uno smontaggio. Tornano a te; poi mcp__mac__mostra_ologramma te le rimette accanto alla foto di Blender: ' +
     '«fuori» alla prima vista, «dentro» quando guardi in raggi-x o in sezione. Con «misure», mcp__mac__costruisci_in_blender confronta l\'ingombro di quello che costruisci con quello vero. ' +
     'Vale per il prossimo ologramma; una chiamata nuova sostituisce la precedente.',
   inputSchema: { type: 'object', properties: {
@@ -932,8 +932,8 @@ function soloBlender(pezzi, campo) {
 }
 TOOLS.push({
   name: 'mostra_ologramma',
-  description: 'Mostra nell\'HUD, a schermo intero, un ologramma 3D fatto di pezzi con misure vere in mm, al posto di quello di prima. ' +
-    'Risponde con il riassunto (pezzi, ingombro, massa, pezzi senza materiale o senza fattura) e, con l\'HUD acceso, con la foto di quello che si vede: guardala e correggi prima di dire che è fatto. ' +
+  description: 'Apre in Blender, davanti a Tony, un ologramma 3D fatto di pezzi con misure vere in mm, al posto di quello di prima. ' +
+    'Risponde con il riassunto (pezzi, ingombro, massa, pezzi senza materiale o senza fattura) e con la foto di Blender di quello che si vede: guardala e correggi prima di dire che è fatto. ' +
     'Un oggetto vero costruito così è stilizzato; per quello vero serve un file 3D di Tony (forma file).',
   inputSchema: { type: 'object', properties: {
     titolo: { type: 'string', description: 'al massimo 80 caratteri' },
