@@ -207,9 +207,8 @@ const brain = createBrain({
 });
 const media = createMedia({ giphyKey: env.GIPHY_API_KEY || '', onLog: (l) => console.error(l) });
 
-// --- Voce: Kokoro sul Mac (voice.mjs, voce-kokoro.py), la voce del Mac se Kokoro non c'è ---
-const voice = createVoice({ cartella: path.join(RUNTIME, 'kokoro'), script: path.join(ROOT, 'voce-kokoro.py'),
-  voce: env.NEXUS_VOCE || 'im_nicola', velocita: Number(env.NEXUS_VOCE_VELOCITA) || 1, macVoice: env.NEXUS_MAC_VOICE, onLog: (l) => console.error(l) });
+// --- Voce: quella del Mac (voice.mjs) ---
+const voice = createVoice({ macVoice: env.NEXUS_MAC_VOICE });
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
 const LOG_FILE = path.join(STATO, 'ascolto.log');
@@ -638,11 +637,11 @@ const server = http.createServer(async (req, res) => {
     return res.writeHead(204).end();
   }
 
-  if (req.method === 'POST' && p === '/api/tts') { // sempre audio vero: Kokoro o voce del Mac, mai mescolate in una risposta
-    const { text, answer } = body;
+  if (req.method === 'POST' && p === '/api/tts') { // una frase con la voce del Mac
+    const { text } = body;
     try {
-      const a = await voice.speak(String(text || '').slice(0, 2000), String(answer || 'x'));
-      return res.writeHead(200, { 'content-type': a.type, 'x-nexus-voce': a.provider + (a.switched ? ';cambio' : '') }).end(a.data);
+      const a = await voice.speak(String(text || '').slice(0, 2000));
+      return res.writeHead(200, { 'content-type': a.type }).end(a.data);
     } catch (e) {
       console.error(`[voce] ${e.message}`);
       return res.writeHead(502).end();
@@ -678,7 +677,7 @@ function openHud() {
 
 // All'uscita, per qualunque motivo (Ctrl-C, finestra del Terminale chiusa, crash), spengo tutto quello che ho acceso
 process.on('exit', () => {
-  brain.kill(); voice.ferma();
+  brain.kill();
   for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di Nexus
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));

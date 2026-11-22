@@ -2,11 +2,11 @@
 
 ![Nexus](public/icona.png)
 
-Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con Kokoro, una voce che gira tutta sul Mac, naviga su Google, usa le app e lo schermo al posto tuo.
+Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con la voce del Mac, naviga su Google, usa le app e lo schermo al posto tuo.
 
 ## Avvio
 - **App Nexus:** doppio clic su `STEM.app`, che cambierà nome col trasloco della cartella (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: le particelle si raccolgono nella sfera, poi gli anelli si disegnano. Se Nexus è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), Nexus si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
-- **Da Terminale:** `./avvia.command`, che la prima volta installa anche la voce (circa 500 MB). Ctrl-C o chiudere la finestra spegne tutto.
+- **Da Terminale:** `./avvia.command`. Ctrl-C o chiudere la finestra spegne tutto.
 
 ## Parlare con Nexus
 L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il vecchio nome non lo sveglia più.
@@ -60,16 +60,13 @@ L'assistente si chiama Nexus: «Ciao Nexus», «Nexus, …». Dal 12/11/2026 il 
 - **Orologio e agenda:** sa sempre che ore sono. Se gli chiedi qualcosa per dopo («ricordami alle 18 di chiamare la mamma», «tra un'ora guarda se è uscito il trailer di GTA 6»), se lo segna e all'ora giusta parla lui per primo, anche se nel frattempo Nexus si è riavviato. Funziona solo con Nexus acceso e il Mac sveglio: se a quell'ora era spento o in stop, te lo dice appena si riaccende. A batteria il Mac va in stop dopo un po' che nessuno lo tocca, e parlargli non conta: per una sveglia, attaccalo alla corrente.
 
 ## La voce
-- Kokoro, con la voce italiana maschile `im_nicola`. Gira sul Mac: niente crediti, niente rete, la stessa voce tutto il mese. «Guardo subito.» esce in circa 0,4 s, contro 0,8–1,4 s della voce del Mac.
-- Si cambia in `.env`: `NEXUS_VOCE` sceglie la voce, anche una miscela come `im_nicola:0.7+bm_george:0.3` (un po' di accento britannico), e `NEXUS_VOCE_VELOCITA` il ritmo (1 è quello del modello). Poi si riavvia Nexus.
-- Kokoro in italiano ha una sola voce maschile, addestrata con poco audio: niente clonazione, quindi niente voce di un attore. Il tono da maggiordomo lo fanno soprattutto le parole.
-- Se Kokoro non c'è o si ferma, Nexus usa la voce del Mac per tutta la risposta, e riparte da solo. La voce del Mac è quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata.
-- Si installa una volta con `./installa-kokoro.sh`, in `runtime/kokoro`.
+- È la voce del Mac: quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata. `NEXUS_MAC_VOICE` in `.env` la scavalca.
+- Gira tutta sul Mac: niente crediti, niente rete, la stessa voce sempre.
 
 ## Come funziona
 - `server.mjs`: avvio, finestre, pannello del browser (screencast), voce e cervello.
 - `brain.mjs`: un processo Claude Code sempre acceso (stream-json), interrotto quando arriva una domanda nuova.
-- `voice.mjs` e `voce-kokoro.py`: Kokoro sempre acceso, o la voce del Mac, una per risposta.
+- `voice.mjs`: la voce del Mac, con `say`.
 - `media.mjs`: GIF e animazioni.
 - `orologio.mjs`: l'ora, data al cervello a ogni domanda, e l'agenda (`runtime/agenda.json`).
 - `ologramma.mjs`: lo stato degli ologrammi; `fisica/`: il calcolo degli sforzi.
