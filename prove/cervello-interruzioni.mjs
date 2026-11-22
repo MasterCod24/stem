@@ -1,6 +1,6 @@
 // cervello-interruzioni.mjs — un cervello ucciso da Nexus per un'interruzione lenta riprende sempre la stessa conversazione,
-// anche se lo si uccide mentre sta ancora ripartendo. Il 17/11 sera una domanda di Telegram e due dell'HUD in 11 s l'hanno
-// fatto uccidere due volte; la seconda contava come «morto appena nato», e brain.mjs ha aperto una conversazione nuova.
+// anche se lo si uccide mentre sta ancora ripartendo. Il 17/11 sera tre domande in 11 s l'hanno fatto
+// uccidere due volte; la seconda contava come «morto appena nato», e brain.mjs ha aperto una conversazione nuova.
 // Un claude finto (bin/claude nella cartella della prova) non chiude mai il turno e ignora le interruzioni, e scrive i
 // suoi argomenti a ogni avvio. Niente server né modello, circa 15 s.
 // node prove/cervello-interruzioni.mjs → una riga PASS o FAIL per caso; esce con 0 solo se passa tutto.
@@ -41,18 +41,31 @@ const avvii = () => { try { return fs.readFileSync(AVVII, 'utf8').trim().split('
 const riprende = (a) => a && a[a.indexOf('--resume') + 1] === SESSIONE && a.includes('--resume');
 
 await attendi(() => avvii().length >= 1, 5000);
-brain.ask('la domanda di Telegram', () => {});
+brain.ask('la prima domanda', () => {});
 await pausa(300);
-brain.ask("la prima dell'HUD", () => {}); // interrompe: il finto non chiude, dopo 4 s lo uccido e riparte
+brain.ask('la seconda domanda', () => {}); // interrompe: il finto non chiude, dopo 4 s lo uccido e riparte
 const secondo = await attendi(() => avvii()[1], 12_000);
 esito(riprende(secondo), 'ucciso per l\'interruzione lenta, riparte riprendendo la conversazione', JSON.stringify(secondo?.slice(0, 2)));
-brain.ask("la seconda dell'HUD", () => {}); // subito, mentre il secondo sta ripartendo: lo uccido di nuovo prima di 20 s
+brain.ask('la terza domanda', () => {}); // subito, mentre il secondo sta ripartendo: lo uccido di nuovo prima di 20 s
 const terzo = await attendi(() => avvii()[2], 15_000);
 esito(riprende(terzo), 'ucciso di nuovo mentre ripartiva: riprende ancora la stessa conversazione', JSON.stringify(terzo?.slice(0, 2)));
 esito(!registro.some((l) => l.includes('ne apro una nuova')), 'nessuna conversazione nuova nel registro', registro.filter((l) => !l.includes('fermo')).join(' | '));
 
 brain.kill(); // il finto esce quando si chiude il suo ingresso
 await pausa(300);
+
+// L'impronta della persona: con la stessa si riprende, con una diversa (o senza, come in un cervello.json di prima) si apre
+// una conversazione nuova, perché Claude Code riprenderebbe col prompt di sistema registrato al primo messaggio
+for (const [salvata, attuale, deve, nome] of [['A', 'A', true, 'stessa persona: riprende'], ['A', 'B', false, 'persona cambiata: conversazione nuova'],
+  [undefined, 'B', false, 'cervello.json senza impronta: conversazione nuova']]) {
+  fs.writeFileSync(path.join(CASA, 'cervello.json'), JSON.stringify({ id: SESSIONE, at: Date.now(), impronta: salvata }));
+  const prima = avvii().length, log = [];
+  const b = createBrain({ cwd: CASA, args: [], sessionFile: path.join(CASA, 'cervello.json'), impronta: attuale, onLog: (l) => log.push(l) });
+  const a = await attendi(() => avvii()[prima], 5000);
+  esito(Boolean(riprende(a)) === deve && (deve || log.some((l) => l.includes('persona è cambiata'))), nome, JSON.stringify(a?.slice(0, 2)));
+  b.kill();
+  await pausa(300);
+}
 console.log(`\n${passati} passati, ${falliti} falliti`);
 if (!falliti) fs.rmSync(CASA, { recursive: true, force: true });
 process.exit(falliti ? 1 : 0);

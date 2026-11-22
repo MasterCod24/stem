@@ -159,7 +159,7 @@ titolo('Avvio');
 if (!esito(!(await porteOccupate()), `porte ${PORTA}, ${PW}, ${CDP} e ${VUOTA} libere prima di partire`)) process.exit(1);
 const env = {
   ...process.env, NEXUS_PORT: String(PORTA), NEXUS_BROWSER_PORT: String(PW), NEXUS_CDP_PORT: String(CDP), NEXUS_NO_OPEN: '1',
-  NEXUS_CERVELLO: CASA, NEXUS_APP: '', ELEVENLABS_API_KEY: '', GIPHY_API_KEY: '', // niente voce, niente GIF: niente rete né crediti
+  NEXUS_CERVELLO: CASA, NEXUS_APP: '', GIPHY_API_KEY: '', // niente GIF: niente rete
 };
 function avvia(altre = {}) { // il server di prova, con il suo registro
   const p = spawn(process.execPath, ['server.mjs'], { cwd: ROOT, env: { ...env, ...altre }, stdio: ['ignore', 'pipe', 'pipe'] });

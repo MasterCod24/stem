@@ -93,7 +93,7 @@ async function copione(res, testo) { // il cervello finto: eventi NDJSON con le 
 const server = http.createServer(async (req, res) => {
   const p = new URL(req.url, 'http://x').pathname;
   if (p === '/api/status') { if (guasto) { res.writeHead(500); return res.end(); } res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ voice: { provider: 'mac', credits: 0, mac: 'Siri Paolo' }, browser: true, gifs: false, agenda: 0, ologramma: 0 })); }
+    return res.end(JSON.stringify({ voice: { provider: 'kokoro', voce: 'im_nicola' }, browser: true, gifs: false, agenda: 0, ologramma: 0 })); }
   if (p === '/api/ask') { const b = await corpo(req); ultimoPerche = b.why; return copione(res, b.text || ''); }
   if (p === '/api/tts') { await corpo(req); res.writeHead(200, { 'content-type': 'audio/wav', 'x-nexus-voce': 'mac' }); return res.end(VOCE); }
   if (p === '/api/ologramma' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(OLO.stato())); }

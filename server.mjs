@@ -12,8 +12,6 @@ import { createMedia } from './media.mjs';
 import { agenda, adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
 import { createMeteo } from './meteo.mjs';
-import { createTelegram } from './telegram.mjs';
-import { createTrascrittore } from './trascrivi.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
 import { testoMisure } from './public/ologramma/gesti.js';
@@ -41,9 +39,6 @@ if (PROVA) fs.mkdirSync(PROVA, { recursive: true });
 
 const PORT = Number(env.NEXUS_PORT || 4321);
 const PW_PORT = Number(env.NEXUS_BROWSER_PORT || 8931);
-const ELEVEN_KEY = env.ELEVENLABS_API_KEY || '';
-let VOICE_ID = env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'; // George, finché non trovo una voce italiana
-const VOICE_MODEL = env.ELEVENLABS_MODEL || 'eleven_v4_turbo'; // il più veloce ed emotivo, mezzo credito a carattere
 // Sonnet 5.5, scelta di Tony del 12/11. Due effort, chiesti da Tony lo stesso giorno: low per la voce (prima parola in
 // 0,6–0,7 s di mediana), high per i compiti che il cervello annuncia con [[pensa]]: ologrammi, ricerche a più passaggi,
 // report, sforzi. Le misure di prove/latenza.mjs stanno nel CLAUDE.md. L'effort va scelto qui: se no il cervello eredita
@@ -193,6 +188,7 @@ const brain = createBrain({
   cwd: BRAIN,
   effort: effortDi(EFFORT),
   sessionFile: path.join(STATO, 'cervello.json'), // quale conversazione riprendere dopo un riavvio
+  impronta: createHash('sha256').update(PERSONA).digest('hex').slice(0, 16), // persona cambiata: conversazione nuova
   onLog: (l) => { console.error(l); },
   args: [
     '--append-system-prompt', PERSONA,
@@ -211,32 +207,9 @@ const brain = createBrain({
 });
 const media = createMedia({ giphyKey: env.GIPHY_API_KEY || '', onLog: (l) => console.error(l) });
 
-// --- Voce ---
-// Senza ELEVENLABS_VOICE_ID scelgo da solo una voce maschile italiana tra quelle del tuo account
-async function pickVoice() {
-  if (!ELEVEN_KEY || env.ELEVENLABS_VOICE_ID) return;
-  try {
-    const r = await fetch('https://api.elevenlabs.io/v2/voices?page_size=100', { headers: { 'xi-api-key': ELEVEN_KEY } });
-    if (!r.ok) throw new Error(`ElevenLabs ${r.status}`);
-    const { voices = [] } = await r.json();
-    // Col piano gratuito l'API rifiuta le voci della Voice Library (errore 402): restano quelle incluse o tue
-    const sub = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': ELEVEN_KEY } })
-      .then((x) => x.json()).catch(() => ({}));
-    const usable = (v) => sub.tier !== 'free' || ['premade', 'cloned', 'generated'].includes(v.category);
-    const italian = (v) => /ital/i.test(`${v.labels?.accent} ${v.labels?.language} ${v.description}`)
-      || (v.verified_languages || []).some((l) => l.language === 'it' && (!l.accent || /ital|standard/i.test(l.accent)));
-    const male = (v) => /male/i.test(v.labels?.gender || '') && !/female/i.test(v.labels?.gender || '');
-    const v = voices.find((x) => usable(x) && italian(x) && male(x));
-    if (v) { VOICE_ID = v.voice_id; console.log(`Voce: ${v.name}`); }
-    else if (sub.tier === 'free') console.log('Piano gratuito: le voci maschili italiane della Voice Library richiedono un piano a pagamento. Uso George.');
-    else console.log('Nessuna voce maschile italiana nel tuo account ElevenLabs: uso George. Aggiungine una dalla Voice Library.');
-  } catch (e) { console.error(`[voce] ${e.message}`); }
-}
-pickVoice();
-// Se passi a un piano a pagamento le voci italiane della Voice Library diventano usabili: ricontrollo ogni 10 minuti
-setInterval(() => { if (VOICE_ID === 'JBFqnCBsd6RMkjVDRZzb') pickVoice(); }, 10 * 60 * 1000).unref();
-
-const voice = createVoice({ key: ELEVEN_KEY, voiceId: () => VOICE_ID, model: VOICE_MODEL, macVoice: env.NEXUS_MAC_VOICE, onLog: (l) => console.error(l) });
+// --- Voce: Kokoro sul Mac (voice.mjs, voce-kokoro.py), la voce del Mac se Kokoro non c'è ---
+const voice = createVoice({ cartella: path.join(RUNTIME, 'kokoro'), script: path.join(ROOT, 'voce-kokoro.py'),
+  voce: env.NEXUS_VOCE || 'im_nicola', velocita: Number(env.NEXUS_VOCE_VELOCITA) || 1, macVoice: env.NEXUS_MAC_VOICE, onLog: (l) => console.error(l) });
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
 const LOG_FILE = path.join(STATO, 'ascolto.log');
@@ -246,10 +219,12 @@ function appendLog(line) {
   fs.writeFileSync(LOG_FILE, old.slice(-300).join('\n') + '\n');
 }
 
-// Stato dell'ascolto dell'HUD nel registro: solo quando cambia, e il microfono solo se passa da silenzio a suono o viceversa
+// Stato dell'ascolto dell'HUD nel registro: solo quando cambia, e il microfono solo se passa da silenzio a suono o viceversa.
+// Il riconoscitore no: Chrome lo chiude dopo qualche secondo di silenzio e l'HUD lo riapre, e quel via e vai era 133 righe
+// su 300 (registro al 19/11), cioè la storia ridotta a poche ore.
 let lastHud = '', silentPolls = 0, micState = '';
 function noteHud(q) {
-  const st = `ascolto=${q.get('ear')} lucchetto=${q.get('lock')} riconoscimento=${q.get('rec')} modo=${q.get('mode')}`;
+  const st = `ascolto=${q.get('ear')} lucchetto=${q.get('lock')} modo=${q.get('mode')}`;
   if (st !== lastHud) { appendLog(`HUD: ${st}`); lastHud = st; }
   const mic = Number(q.get('mic') || 0);
   silentPolls = mic < 0.002 ? silentPolls + 1 : 0;
@@ -293,23 +268,20 @@ async function rememberNow() {
 }
 
 // --- Avviato dall'app Nexus (in background): quando chiudi l'HUD, Nexus si spegne da solo ---
-// Con Telegram invece resta acceso (scelta mia del 17/11): Tony gli scrive quando è fuori casa, cioè proprio con l'HUD chiuso.
 let hudSeen = 0, hudMissed = 0, hudOpening = false;
 if (env.NEXUS_APP) {
   setInterval(() => { // 15 giri da 10 s senza notizie dall'HUD: è chiuso
     hudMissed++;
     if (hudMissed >= 2) rememberNow(); // 20 s senza HUD: la conversazione è finita, faccio memoria (anche di un compito che finisce dopo)
     const memoryPending = memoryBusy || memoryDue;
-    if (hudMissed === 15 && telegram) console.log('HUD chiuso: Nexus resta acceso per Telegram');
-    if (hudMissed >= 15 && !telegram && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo Nexus'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
+    if (hudMissed >= 15 && (!memoryPending || hudMissed >= 30)) { console.log('HUD chiuso: spengo Nexus'); process.exit(0); } // aspetto la memoria, ma non più di 5 minuti
   }, 10000);
 }
 
-// --- Una domanda per il cervello, da qualunque parte arrivi: l'HUD (/api/ask) o Telegram ---
+// --- Una domanda per il cervello (/api/ask) ---
 // Il primo turno a effort basso, poi il [pensa] e il [confronto] se servono, tutto nella stessa risposta. onEvent riceve gli
 // eventi del cervello; la promessa si risolve a risposta finita.
-// immagini: blocchi «image» che vanno al cervello con la prima domanda (le foto di Telegram)
-async function rispondi(text, onEvent, immagini = []) {
+async function rispondi(text, onEvent) {
   ensureBrowserWindow(); // se Tony ha chiuso la finestra di Google, la riapro (non blocca la risposta)
   let ignored = false, pensa = false, guardato = false;
   const modelloPrima = holoOra.modello;
@@ -319,7 +291,7 @@ async function rispondi(text, onEvent, immagini = []) {
     if (e.t === 'mac' && e.name === 'guarda_oggetto_vero') guardato = true;
     onEvent(e);
   };
-  const primo = await brain.ask(immagini.length ? [{ type: 'text', text }, ...immagini] : text, ev, { effort: effortDi(EFFORT) });
+  const primo = await brain.ask(text, ev, { effort: effortDi(EFFORT) });
   let interrotto = primo.interrotto;
   // [[pensa]]: il cervello ha detto la frase breve a effort basso e ha chiuso il turno. Il lavoro vero parte subito, con
   // l'effort alto, nella stessa risposta. Una volta sola, e mai se nel frattempo Tony ha chiesto altro.
@@ -335,29 +307,6 @@ async function rispondi(text, onEvent, immagini = []) {
   }
   if (!ignored) conversationTurn(); // una frase non per Nexus non è conversazione: niente memoria da fare
 }
-
-// --- Telegram (telegram.mjs): Tony scrive dal telefono e risponde lo stesso cervello, con la stessa memoria ---
-// Senza TELEGRAM_BOT_TOKEN non parte niente. Le risposte vanno solo a Telegram, mai all'HUD: a casa nessuno le sente.
-const tgEvento = (manda) => (ev) => {
-  if (ev.t === 'testo') manda(ev.s);
-  else if (ev.t === 'error') manda('Ho perso il filo, scusami. Riprova tra un attimo.');
-};
-const telegram = env.TELEGRAM_BOT_TOKEN ? createTelegram({
-  token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID || '', api: env.NEXUS_TELEGRAM_API || undefined,
-  onLog: (l) => console.error(l),
-  trascrivi: createTrascrittore({ cartella: path.join(RUNTIME, 'modelli') }), // i vocali: Whisper sul Mac
-  onDomanda: (testo, manda, immagini) => rispondi(`[adesso: ${adesso()}]\n${testo}`, tgEvento(manda), immagini),
-}) : null;
-// L'agenda senza HUD: se l'HUD non si sente da 15 s, il compito arrivato all'ora lo consegna il server, per scritto su Telegram.
-// Con l'HUD acceso lo dice l'HUD a voce, e la risposta arriva anche qui (onEvent di /api/ask).
-if (telegram && env.TELEGRAM_CHAT_ID) setInterval(() => {
-  if (Date.now() - hudSeen < 15_000 || brain.busy) return;
-  const due = agenda.due();
-  if (!due.length) return;
-  agenda.remove(due.map((x) => x.id));
-  console.error(`[agenda] la scrivo su Telegram: ${due.length} ${due.length === 1 ? 'compito' : 'compiti'}`);
-  rispondi(`[adesso: ${adesso()}]\n${agendaText(due)}\n[telegram: Tony non è al Mac e non ti sente: quello che scrivi gli arriva su Telegram]`, tgEvento(telegram.manda));
-}, 5000);
 
 // --- Ologramma: lo stato sta solo qui (ologramma.mjs). Gli strumenti del cervello (mac-mcp.mjs) e l'HUD lo cambiano con
 // POST /api/ologramma; l'HUD lo rilegge quando la versione cresce e manda la foto di quello che mostra.
@@ -659,7 +608,6 @@ const server = http.createServer(async (req, res) => {
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
     const onEvent = (ev) => {
-      if (ev.t === 'testo') { if (body.agenda) telegram?.manda(ev.s); return; } // un promemoria arriva anche sul telefono: l'HUD può parlare a una stanza vuota
       if (ev.t !== 'media') {
         write(ev);
         // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
@@ -690,7 +638,7 @@ const server = http.createServer(async (req, res) => {
     return res.writeHead(204).end();
   }
 
-  if (req.method === 'POST' && p === '/api/tts') { // sempre audio vero: ElevenLabs o voce del Mac, mai mescolate in una risposta
+  if (req.method === 'POST' && p === '/api/tts') { // sempre audio vero: Kokoro o voce del Mac, mai mescolate in una risposta
     const { text, answer } = body;
     try {
       const a = await voice.speak(String(text || '').slice(0, 2000), String(answer || 'x'));
@@ -713,7 +661,6 @@ server.on('error', async (e) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Nexus online su http://localhost:${PORT}`);
-  if (!ELEVEN_KEY) console.log('Voce ElevenLabs spenta: manca ELEVENLABS_API_KEY in .env (uso la voce del Mac).');
   if (env.NEXUS_NO_OPEN) return;
   // Prima il Chrome di Google, poi l'HUD: l'ultima finestra aperta prende il fuoco, e deve essere l'HUD a schermo intero
   hudOpening = true; // anche mentre aspetto Chrome: un secondo clic sull'app non apre un altro HUD
@@ -731,7 +678,7 @@ function openHud() {
 
 // All'uscita, per qualunque motivo (Ctrl-C, finestra del Terminale chiusa, crash), spengo tutto quello che ho acceso
 process.on('exit', () => {
-  brain.kill();
+  brain.kill(); voice.ferma();
   for (const p of [browser, ...launched]) { try { process.kill(-p.pid, 'SIGTERM'); } catch {} } // npx, server e Chrome di Nexus
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));

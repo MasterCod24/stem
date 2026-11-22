@@ -1,45 +1,78 @@
-// La voce di Nexus. Una risposta ha UN solo fornitore dall'inizio alla fine: mai più ElevenLabs → Mac → ElevenLabs.
-// Prima la causa era il piano gratuito: con pochi crediti rimasti le frasi corte passavano e quelle lunghe no.
+// La voce di Nexus: Kokoro sul Mac (voce-kokoro.py, sempre acceso), e la voce del Mac se Kokoro non c'è o si ferma.
+// Una risposta ha UNA sola voce dall'inizio alla fine: si decide alla prima frase e resta quella.
+// Kokoro dice «Guardo subito.» in 0,37 s, `say` in 0,8–1,4 s, perché riparte e ricarica la voce a ogni frase (22/11).
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 
 const run = (cmd, args) => new Promise((ok, ko) => execFile(cmd, args, { maxBuffer: 4e6 }, (e, out) => (e ? ko(e) : ok(String(out)))));
+const FRASE_MS = 15_000; // l'HUD rinuncia a una frase dopo 15 s
 
-export function createVoice({ key, voiceId, model, macVoice, onLog = () => {} }) {
-  const COST = /turbo|flash|conversational/.test(model) ? 0.5 : 1; // crediti per carattere
-  const MIN_CREDITS = 400;                                          // sotto questa soglia una risposta intera non ci sta
-  let credits = null, exhausted = !key, mac = macVoice || null; // null = da scegliere
-  const answers = new Map();                                        // risposta → { provider, said: [frasi già dette] }
+// cartella: runtime/kokoro, con venv, modello e voci (installa-kokoro.sh). script: voce-kokoro.py.
+// voce: una voce di Kokoro o una miscela («im_nicola:0.7+bm_george:0.3»); velocita: 1 è quella del modello.
+export function createVoice({ cartella, script, voce = 'im_nicola', velocita = 1, macVoice, onLog = () => {} }) {
+  const answers = new Map(); // risposta → { provider, said: quante frasi dette }
 
-  async function refreshCredits() {
-    if (!key) return;
-    try {
-      const r = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': key }, signal: AbortSignal.timeout(8000) });
-      const s = r.ok ? await r.json() : {};
-      if (!Number.isFinite(s.character_limit) || !Number.isFinite(s.character_count)) throw new Error(`risposta ${r.status}`); // non tocco lo stato
-      credits = s.character_limit - s.character_count;
-      exhausted = credits < MIN_CREDITS;
-      onLog(`[voce] ElevenLabs: ${credits} crediti${exhausted ? ' (finiti: uso la voce del Mac)' : ''}`);
-    } catch (e) { onLog(`[voce] crediti non letti: ${e.message}`); }
+  // --- Kokoro: un processo solo, che riparte se muore ---
+  const python = path.join(cartella, 'venv', 'bin', 'python');
+  const installato = () => ['kokoro-v1.0.onnx', 'voices-v1.0.bin'].every((f) => fs.existsSync(path.join(cartella, f))) && fs.existsSync(python);
+  let proc = null, pronto = false, buf = '', prossimo = 0, attesa = 2000;
+  const inCorso = new Map(); // id → { ok, ko, timer }
+  function avvia() {
+    if (!installato()) { onLog(`[voce] Kokoro non è installato (${cartella}): uso la voce del Mac. Si installa con ./installa-kokoro.sh`); return; }
+    const p = spawn(python, ['-I', script, cartella], { stdio: ['pipe', 'pipe', 'pipe'] });
+    proc = p; buf = '';
+    let errori = '';
+    p.stderr.on('data', (d) => { errori = (errori + d).slice(-600); });
+    p.stdin.on('error', () => {}); // EPIPE se è appena morto: non deve far cadere il server
+    p.stdout.on('data', (d) => {
+      buf += d;
+      let k;
+      while ((k = buf.indexOf('\n')) >= 0) {
+        const riga = buf.slice(0, k); buf = buf.slice(k + 1);
+        let o; try { o = JSON.parse(riga); } catch { continue; }
+        if (o.pronto) { pronto = true; attesa = 2000; onLog(`[voce] Kokoro pronto (${voce}, velocità ${velocita})`); continue; }
+        const a = inCorso.get(o.id);
+        if (!a) continue;
+        inCorso.delete(o.id); clearTimeout(a.timer);
+        if (o.wav) a.ok(Buffer.from(o.wav, 'base64')); else a.ko(new Error(`Kokoro: ${o.errore || 'nessun audio'}`));
+      }
+    });
+    p.on('exit', (code, signal) => {
+      if (proc !== p) return;
+      proc = null; pronto = false;
+      for (const a of inCorso.values()) { clearTimeout(a.timer); a.ko(new Error('Kokoro si è fermato')); }
+      inCorso.clear();
+      onLog(`[voce] Kokoro fermo (${code ?? signal}): riparto fra ${attesa / 1000} s. ${errori.trim().split('\n').slice(-2).join(' | ')}`);
+      setTimeout(avvia, attesa).unref();
+      attesa = Math.min(60_000, attesa * 2);
+    });
   }
-  refreshCredits();
-  setInterval(refreshCredits, 10 * 60 * 1000).unref(); // si rinnovano da soli: me ne accorgo entro 10 minuti
+  avvia();
 
-  // La voce che Tony ha scelto in Impostazioni → Accessibilità → Contenuti letti, se è italiana (anche una voce di Siri,
+  function kokoroSpeak(text) {
+    if (!pronto) return Promise.reject(new Error('Kokoro non è pronto'));
+    return new Promise((ok, ko) => {
+      const id = ++prossimo;
+      const timer = setTimeout(() => { inCorso.delete(id); ko(new Error(`Kokoro: nessun audio entro ${FRASE_MS / 1000} s`)); }, FRASE_MS);
+      inCorso.set(id, { ok: (data) => ok({ type: 'audio/wav', data, provider: 'kokoro' }), ko, timer });
+      proc.stdin.write(JSON.stringify({ id, testo: text, voce, velocita }) + '\n');
+    });
+  }
+
+  // --- La voce del Mac: quella scelta in Impostazioni → Accessibilità → Contenuti letti, se è italiana (anche una voce di Siri,
   // che non ha un nome da passare a "say -v": si usa solo come voce di sistema). Altrimenti la migliore italiana installata.
-  let macLabel = '';
+  let mac = macVoice || null, macLabel = ''; // null = da scegliere, '' = voce di sistema
   async function pickMacVoice() {
     if (mac !== null) return mac;
     const sys = await run('/usr/bin/defaults', ['read', 'com.apple.Accessibility', 'SpokenContentDefaultVoiceSelectionsByLanguage']).catch(() => '');
     const it = sys.split(/\}\s*,?/).find((b) => /boundLanguage\s*=\s*"?it"?\s*;/.test(b));
     const id = it?.match(/voiceId\s*=\s*"([^"]+)"/)?.[1];
     if (id) {
-      mac = ''; // '' = voce di sistema: "say" senza -v
+      mac = '';
       macLabel = /siri/i.test(id) ? `Siri (${id.split('.').pop()})` : id.split('.').pop();
-      onLog(`[voce] voce del Mac: quella di sistema, ${macLabel}`);
       return mac;
     }
     const list = (await run('/usr/bin/say', ['-v', '?']).catch(() => '')).split('\n').filter((l) => /\bit_IT\b/.test(l));
@@ -47,7 +80,6 @@ export function createVoice({ key, voiceId, model, macVoice, onLog = () => {} })
     const rank = (n) => (/luca/i.test(n) ? 0 : /alice/i.test(n) ? 2 : 4) - (/premium|enhanced|avanzat|migliorat/i.test(n) ? 1 : 0);
     mac = names.sort((a, b) => rank(a) - rank(b))[0] || 'Alice';
     macLabel = mac;
-    onLog(`[voce] voce del Mac: ${mac}`);
     return mac;
   }
   pickMacVoice();
@@ -61,55 +93,33 @@ export function createVoice({ key, voiceId, model, macVoice, onLog = () => {} })
     return { type: 'audio/wav', data, provider: 'mac' };
   }
 
-  async function elevenSpeak(text, said) {
-    const body = {
-      text, model_id: model,
-      // Continuità tra una frase e l'altra: senza contesto ogni frase parte "da zero" e la voce suona piatta
-      previous_text: said.slice(-2).join(' ') || undefined,
-      voice_settings: { stability: 0.35, similarity_boost: 0.8, style: 0.45, use_speaker_boost: true, speed: 1.04 },
-    };
-    if (/v2_5/.test(model)) body.language_code = 'it';
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const id = typeof voiceId === 'function' ? voiceId() : voiceId; // può cambiare dopo l'avvio (scelta automatica)
-      const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}?output_format=mp3_44100_128`, {
-        method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json', accept: 'audio/mpeg' }, body: JSON.stringify(body),
-        signal: AbortSignal.timeout(12000), // una connessione bloccata non deve lasciare Nexus muto
-      });
-      if (r.ok) {
-        if (credits !== null) credits -= Math.ceil(text.length * COST);
-        return { type: 'audio/mpeg', data: Buffer.from(await r.arrayBuffer()), provider: 'eleven' };
-      }
-      const err = await r.text();
-      if (r.status === 429 && attempt === 0) { await new Promise((ok) => setTimeout(ok, 500)); continue; } // troppe richieste insieme: riprovo una volta
-      if (/quota|credits|paid_plan/i.test(err)) exhausted = true;
-      throw new Error(`ElevenLabs ${r.status}: ${err.slice(0, 160)}`);
-    }
-  }
-
-  // Una frase della risposta `answer`. Il fornitore si decide alla prima frase e resta quello.
+  // Una frase della risposta `answer`. Se Kokoro sbaglia alla prima frase, tutta la risposta passa al Mac;
+  // se sbaglia dopo, la frase si salta: meglio un buco che un'altra voce a metà.
   async function speak(text, answer) {
     let a = answers.get(answer);
     if (!a) {
-      a = { provider: !exhausted && (credits === null || credits >= MIN_CREDITS) ? 'eleven' : 'mac', said: [], elevenOk: 0, inflight: 0 };
+      a = { provider: pronto ? 'kokoro' : 'mac', said: 0 };
       answers.set(answer, a);
       if (answers.size > 30) answers.delete(answers.keys().next().value);
     }
-    if (a.provider === 'mac') { const out = await macSpeak(text); a.said.push(text); return out; }
-    a.inflight++;
+    if (a.provider === 'mac') { const out = await macSpeak(text); a.said++; return out; }
+    const primo = a.said === 0;
+    a.said++;
     try {
-      const out = await elevenSpeak(text, a.said);
-      a.elevenOk++; a.said.push(text);
-      return out;
+      return await kokoroSpeak(text);
     } catch (e) {
       onLog(`[voce] ${e.message}`);
-      // Se in questa risposta ElevenLabs ha già parlato (o sta parlando) NON passo al Mac: meglio saltare una frase che cambiare voce.
-      // La risposta dopo partirà direttamente con la voce giusta.
-      if (a.elevenOk || a.inflight > 1) { exhausted = exhausted || /quota|credits/i.test(e.message); throw new Error('frase saltata per non cambiare voce'); }
+      if (!primo) throw new Error('frase saltata per non cambiare voce');
       a.provider = 'mac';
-      const out = await macSpeak(text); a.said.push(text); out.switched = true;
+      const out = await macSpeak(text); out.switched = true;
       return out;
-    } finally { a.inflight--; }
+    }
   }
 
-  return { speak, get status() { return { provider: exhausted ? 'mac' : 'eleven', credits, mac: macLabel || mac } } };
+  return {
+    speak,
+    get status() { return pronto ? { provider: 'kokoro', voce } : { provider: 'mac', voce: macLabel || mac || 'sistema' }; },
+    get pid() { return proc?.pid; }, // per le prove
+    ferma() { proc?.kill('SIGTERM'); proc = null; },
+  };
 }
