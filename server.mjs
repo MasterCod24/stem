@@ -14,6 +14,7 @@ import { adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
 import { createBlender, gestoValido } from './blender.mjs';
 import { createMeteo } from './meteo.mjs';
+import { creaSalti, SALTO_MAX_B } from './salti.mjs';
 import { calcolaInWorker } from './fisica/struttura.mjs';
 import { MODELLO_MANI } from './public/ologramma/mani.js';
 import { testoMisure } from './public/ologramma/gesti.js';
@@ -31,6 +32,9 @@ if (PROVA) fs.mkdirSync(PROVA, { recursive: true });
 
 let archivio;
 const archivioAgenda = () => archivio ??= apriAgenda(STATO);
+// I fotogrammi dei salti delle mani, solo sul Mac e per 7 giorni (salti.mjs): i giorni scaduti si tolgono anche all'avvio
+const salti = creaSalti(path.join(STATO, 'salti'));
+salti.pulisci();
 const PORT = Number(env.OSCAR_PORT || 4321);
 const PW_PORT = Number(env.OSCAR_BROWSER_PORT || 8931);
 // Sonnet 5.5, scelta di Tony del 12/11. Due effort, chiesti da Tony lo stesso giorno: low per la voce (prima parola in
@@ -507,7 +511,8 @@ async function gestisci(req, res) {
     const origin = req.headers.origin;
     const sameOrigin = !origin || origin === `http://localhost:${PORT}` || origin === `http://127.0.0.1:${PORT}`;
     if (!sameOrigin || !String(req.headers['content-type'] || '').startsWith('application/json')) return res.writeHead(403).end();
-    body = await readBody(req, p === '/api/ologramma' ? 2 ** 20 : 1e5);
+    // un fotogramma di un salto viaggia in base64: 4/3 del JPEG, più il resto del JSON
+    body = await readBody(req, p === '/api/ologramma' ? 2 ** 20 : p === '/api/mani/salto' ? Math.ceil(SALTO_MAX_B * 4 / 3) + 1000 : 1e5);
     if (body === TROPPO) return res.writeHead(413).end(); // il resto del corpo lo legge e lo butta Node: niente reset a metà risposta
   }
 
@@ -567,6 +572,12 @@ async function gestisci(req, res) {
     if (!gesti.length || gesti.includes(null)) return res.writeHead(400).end();
     if (holoOra.aperto) for (const g of gesti) blender.gesto(g);
     return res.writeHead(204).end();
+  }
+
+  if (req.method === 'POST' && p === '/api/mani/salto') { // il fotogramma di un salto delle mani: solo dall'HUD, che è un browser
+    if (!(req.headers.origin || req.headers['sec-fetch-site'])) return res.writeHead(403).end();
+    const r = salti.salva(typeof body.jpeg === 'string' ? Buffer.from(body.jpeg, 'base64') : null, body.vista);
+    return res.writeHead(r.ok ? 204 : r.codice).end();
   }
 
   if (req.method === 'GET' && p === '/api/ologramma/campo') { // fs per voxel, Float32 in ordine i + nx·(j + ny·k)

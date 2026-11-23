@@ -1,7 +1,8 @@
 // Le mani: fotocamera (o un'immagine di prova) → MediaPipe HandLandmarker 0.10.35 in locale → gesti.js.
 // MediaPipe si carica solo in avvia(), con un import dinamico: l'HUD non paga 11 MB di wasm finché le mani sono spente,
 // e Node può importare questo file per leggere MODELLO_MANI, con cui il server controlla il modello che serve.
-// La fotocamera è accesa solo fra avvia() e ferma(), e i suoi fotogrammi non escono dalla pagina. Il rilevatore invece
+// La fotocamera è accesa solo fra avvia() e ferma(), e i suoi fotogrammi non escono dalla pagina, tranne quelli dei salti
+// se c'è onSalto (richiesta di Tony del 23/11: vedi disegnaSalto più sotto). Il rilevatore invece
 // resta fra un'apertura e l'altra: ricrearlo voleva dire riscaricare 19,3 MB, un blocco di 150–250 ms durante l'entrata del
 // modello e uno <script> in più ogni volta (revisione del 7/11). Si chiude solo quando si guasta, e si rifà all'avvio dopo.
 import { createGesti } from './gesti.js';
@@ -32,16 +33,49 @@ function converti(ris) {
   return out;
 }
 
+// Il fotogramma di un salto (gesti.js: la punta di pollice o indice spostata di più di mezzo palmo rispetto al palmo in
+// un fotogramma), per trovarne la causa: luce, distanza, sfondo, mano di profilo. I conti del registro dicono quanti salti,
+// non cosa vedeva la fotocamera. L'immagine è specchiata come i punti; sopra, le mani della rilevazione di prima in
+// bianco e quelle di adesso in ciano, con un cerchio sulle punte di pollice e indice. Un JPEG a qualità 0,7.
+const OSSA = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
+export function disegnaSalto(fonte, mani, prima) {
+  const [w, h] = dimensioni(fonte);
+  const tela = new OffscreenCanvas(w, h), c = tela.getContext('2d'), s = Math.max(1, w / 320);
+  c.setTransform(-1, 0, 0, 1, w, 0); c.drawImage(fonte, 0, 0, w, h); c.setTransform(1, 0, 0, 1, 0, 0);
+  for (const [lista, colore] of [[prima, 'rgba(255,255,255,0.7)'], [mani, '#00f0ff']]) {
+    c.strokeStyle = colore; c.lineWidth = s;
+    for (const m of lista || []) {
+      const P = m.punti.map((q) => [q.x * w, q.y * h]);
+      c.beginPath();
+      for (const [a, b] of OSSA) { c.moveTo(P[a][0], P[a][1]); c.lineTo(P[b][0], P[b][1]); }
+      for (const i of [4, 8]) { c.moveTo(P[i][0] + 4 * s, P[i][1]); c.arc(P[i][0], P[i][1], 4 * s, 0, 2 * Math.PI); }
+      c.stroke();
+    }
+  }
+  return tela.convertToBlob({ type: 'image/jpeg', quality: 0.7 });
+}
+// Il fotogramma al server, che lo tiene solo sul Mac (salti.mjs): in base64 dentro un JSON, come ogni POST dell'HUD
+export async function inviaSalto(blob, vista) {
+  const b = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return fetch('/api/mani/salto', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jpeg: btoa(s), vista }) });
+}
+
 // onMani(mani, risultato) a ogni rilevazione, onGesto(g) per ogni gesto, onErrore(err) se MediaPipe si ferma a metà.
+// onSalto(blob, t), facoltativo: il fotogramma di un salto e il suo tempo di pagina, al più uno ogni salti.ogniMs e salti.max fra un azzeraMisure()
+// e l'altro, cioè per apertura dell'ologramma o della meteo.
 // sorgente 'immagine': detectForVideo sull'immagine data (img, canvas, ImageBitmap) a ogni fotogramma della pagina,
 // o hz volte al secondo; serve alle prove e alla misura. delegato 'GPU' ripiega sulla CPU se la GPU non parte.
-export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', immagine = null, delegato = 'GPU', hz = 0, gesti: opzioniGesti } = {}) {
+export function createMani({ onGesto, onMani, onErrore, onSalto, salti: { ogniMs = 1000, max = 50 } = {}, sorgente = 'camera', immagine = null, delegato = 'GPU', hz = 0, gesti: opzioniGesti } = {}) {
   if (sorgente !== 'camera' && sorgente !== 'immagine') throw new Error("mani: la sorgente è 'camera' o 'immagine'");
   if (delegato !== 'GPU' && delegato !== 'CPU') throw new Error("mani: il delegato è 'GPU' o 'CPU'");
   hz = typeof hz === 'number' && Number.isFinite(hz) && hz > 0 ? hz : 0;
   createGesti(opzioniGesti); // opzioni sbagliate: l'errore arriva qui, non a metà avvio
   let attivo = false, avvio = null, gen = 0, giro = 0, rilevatore = null, flusso = null, video = null, fonte = null, gesti = null;
   let usato = null, errore = null, avvioMs = null, primoMs = null, nMani = 0, ultimoT = 0, ultimoVideo = -1, ultimaRil = -Infinity, altezza = 0, aspetto = 0;
+  let maniPrima = null, nFoto = 0, ultimaFoto = -Infinity; // la rilevazione di prima, e le foto dei salti di questa apertura
   const tempi = new Float64Array(CAMPIONI), quadri = [], rilevati = [];
   let nTempi = 0;
 
@@ -140,7 +174,14 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
     const mani = converti(ris);
     nMani = mani.length;
     onMani?.(mani, ris);
-    for (const g of gesti.aggiorna(mani, t)) onGesto?.(g);
+    const saltiPrima = gesti.salti, gg = gesti.aggiorna(mani, t);
+    // la foto prima dei gesti: un gesto può chiudere la vista, e con lei la fotocamera
+    if (onSalto && gesti.salti > saltiPrima && nFoto < max && ora - ultimaFoto >= ogniMs) {
+      nFoto++; ultimaFoto = ora;
+      disegnaSalto(fonte, mani, maniPrima).then((b) => onSalto(b, ora), (e) => console.warn('[mani] foto del salto:', e));
+    }
+    maniPrima = mani;
+    for (const g of gg) onGesto?.(g);
   }
 
   function guasto(e) {
@@ -157,7 +198,7 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
     if (flusso) for (const t of flusso.getTracks()) t.stop();
     if (video) { video.pause(); video.srcObject = null; video.remove(); }
     gesti?.azzera();
-    flusso = video = fonte = null;
+    flusso = video = fonte = maniPrima = null;
     nMani = 0; ultimoVideo = -1;
   }
 
@@ -194,6 +235,6 @@ export function createMani({ onGesto, onMani, onErrore, sorgente = 'camera', imm
 
   return {
     avvia, ferma, get attivo() { return attivo; }, get misure() { return misure(); },
-    azzeraMisure() { nTempi = 0; gesti?.azzeraMisure(); }, // per misurare a regime, dopo che gli shader sono compilati, e a ogni apertura
+    azzeraMisure() { nTempi = 0; nFoto = 0; gesti?.azzeraMisure(); }, // per misurare a regime, dopo che gli shader sono compilati, e a ogni apertura
   };
 }
