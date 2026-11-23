@@ -323,13 +323,15 @@ const maniVolute = () => { try { return (localStorage.getItem('oscar-mani') ?? l
 const vogliMani = (on) => { try { localStorage.setItem('oscar-mani', on ? '1' : '0'); } catch {} };
 function creaMani() { // una volta sola, anche con due aperture di fila
   maniPronte ||= (async () => {
-    const [{ createMani }, { mappa }] = await Promise.all([import('./ologramma/mani.js'), import('./ologramma/gesti.js')]);
+    const [{ createMani, inviaSalto }, { mappa }] = await Promise.all([import('./ologramma/mani.js'), import('./ologramma/gesti.js')]);
     mappaMani = mappa;
     // ?debug&mani=immagine: la foto di prova al posto della fotocamera, a 30 Hz come lei, per misurare
     const prova = maniProva ? { sorgente: 'immagine', immagine: await telaProva(), hz: 30 } : {};
     // ?debug&delegato=CPU: MediaPipe sulla CPU invece che sulla GPU, per confrontarli (prove/mani-delegato.mjs)
     const delegato = DEBUG && params.get('delegato') === 'CPU' ? 'CPU' : 'GPU';
-    return (mani = createMani({ ...prova, delegato, onGesto: gestoMani, onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); faseMani('spente'); } }));
+    // onSalto: il fotogramma di ogni salto delle mani va al server, che lo tiene sul Mac per 7 giorni (richiesta di Tony del 23/11)
+    const onSalto = (b) => inviaSalto(b, meteo?.aperto ? 'meteo' : 'ologramma').catch(() => {});
+    return (mani = createMani({ ...prova, delegato, onSalto, onGesto: gestoMani, onMani: disegnaDita, onErrore: (e) => { warn(e.message, 'attenzione'); disegnaDita([]); faseMani('spente'); } }));
   })().catch((e) => { maniPronte = null; throw e; });
   return maniPronte;
 }

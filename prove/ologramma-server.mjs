@@ -513,6 +513,27 @@ await attendi(() => S1.registro.includes('mani accese 14 s'), 1000);
 esito(r.codice === 204 && S1.registro.includes('[ologramma] mani accese 14 s: fps mediana 55, p10 48, minimo 46, detect 21 ms; misure dei gesti scartate (storte)\n'),
   'gesti storti: si scartano loro, la riga degli fps resta');
 
+// ---------------------------------------------------------------- i fotogrammi dei salti delle mani (salti.mjs)
+titolo('Salti delle mani: dall\'HUD un JPEG, salvato nella cartella della prova');
+// 120 KB di JPEG sono 160 KB in base64: oltre il limite di 100 KB delle altre POST, sotto quello dei salti
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(120_000 - 6, 7), Buffer.from([0xff, 0xd9])]);
+const SALTO = { jpeg: JPEG.toString('base64'), vista: 'meteo' };
+const fileSalti = (d) => { try { return fs.readdirSync(d, { recursive: true }).filter((n) => n.endsWith('.jpg')).map((n) => path.join(d, n)); } catch { return []; } };
+const saltiVeri = fileSalti(path.join(ROOT, 'runtime', 'salti')).length;
+r = await chiedi('POST', '/api/mani/salto', { corpo: SALTO, intestazioni: HUD });
+let salvate = fileSalti(path.join(CASA, 'salti'));
+esito(r.codice === 204 && salvate.length === 1 && /\/\d{4}-\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}-\d{3}-meteo\.jpg$/.test(salvate[0]) && fs.readFileSync(salvate[0]).equals(JPEG),
+  'un fotogramma di 120 KB arriva intero, nella cartella del giorno', `${r.codice}, ${salvate.map((f) => path.relative(CASA, f)).join(' ')}`);
+const rifiuti = [['senza le intestazioni dell\'HUD (curl, il processo MCP)', SALTO, {}, 403], ['da un\'origine estranea', SALTO, { origin: 'http://evil.example' }, 403],
+  ['un PNG', { ...SALTO, jpeg: Buffer.from('\x89PNG\r\n\x1a\n' + 'x'.repeat(100)).toString('base64') }, HUD, 400], ['una vista sconosciuta', { ...SALTO, vista: 'altro' }, HUD, 400],
+  ['oltre il limite', { ...SALTO, jpeg: 'A'.repeat(500_000) }, HUD, 413]];
+for (const [nome, corpo, intestazioni, codice] of rifiuti) {
+  r = await chiedi('POST', '/api/mani/salto', { corpo, intestazioni });
+  esito(r.codice === codice, `fotogramma ${nome}: ${codice}`, String(r.codice));
+}
+salvate = fileSalti(path.join(CASA, 'salti'));
+esito(salvate.length === 1 && fileSalti(path.join(ROOT, 'runtime', 'salti')).length === saltiVeri, 'i rifiutati non lasciano file, e runtime/salti di Tony non si tocca');
+
 // ---------------------------------------------------------------- MediaPipe e modello delle mani
 titolo('MediaPipe e modello delle mani');
 const WASM = path.join(ROOT, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm', 'vision_wasm_internal.wasm');

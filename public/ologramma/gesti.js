@@ -448,7 +448,8 @@ export function createGesti(opzioni) {
   // Le misure ripartono da zero (all'apertura di un ologramma); le mani e la fase restano
   function azzeraMisure() { M = vuote(); }
 
-  return { aggiorna, azzera, stato, misure, azzeraMisure };
+  // salti: il conto di adesso, che mani.js guarda a ogni rilevazione per fotografare il salto (misure() riordina i minimi)
+  return { aggiorna, azzera, stato, misure, azzeraMisure, get salti() { return M.salti; } };
 }
 
 // Le misure dei gesti che l'HUD manda al server con l'azione 'misura', e il pezzo di riga che il server ne scrive nel
