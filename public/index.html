@@ -108,14 +108,41 @@
   body.olo #ascolto::before, body.report #ascolto::before, body.meteo #ascolto::before { display: none; }
   body.olo #frase, body.report #frase, body.meteo #frase { margin: 0; min-height: 0; font-size: 12px; line-height: 16px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* GIF ed esempi: modulo con gli angoli a staffa, che si apre come una porta su una molla */
-  #media { position: fixed; left: 0; top: 0; width: 300px; opacity: 0; transition: opacity var(--t-lieve) var(--lieve); pointer-events: none; }
-  #media.on { opacity: 1; }
-  #media .frame { position: relative; overflow: hidden; background: rgba(0, 14, 20, .45);
-    clip-path: inset(0 0 100% 0); transition: clip-path var(--t-molla) var(--molla); }
-  #media.on .frame { clip-path: inset(0 0 0 0); }
-  #media img { display: block; width: 100%; height: auto; max-height: 240px; object-fit: contain; }
-  #media .title { margin-top: 8px; font: 400 9px/1 var(--mono); letter-spacing: .2em; color: var(--ciano); text-shadow: var(--bagliore); }
+  /* Le schede (schede.js): le cose che O.S.C.A.R. nomina mentre parla. Una grande, le precedenti ridotte a una riga sotto;
+     compatte col browser o nell'angolo. Entrano su una molla; quando la pila si sposta, schede.js le porta con la stessa curva.
+     Solo nomi e numeri, mai frasi: la voce resta il canale principale */
+  #schede { position: fixed; left: 0; top: 0; z-index: 7; width: 300px; display: none; flex-direction: column; gap: 6px; pointer-events: none; will-change: transform; }
+  #schede.on { display: flex; }
+  #schede .scheda { position: relative; overflow: hidden;
+    background: linear-gradient(160deg, rgba(62, 230, 255, .08), rgba(0, 18, 26, .55) 45%, rgba(0, 10, 16, .62));
+    box-shadow: inset 0 1px 0 rgba(62, 230, 255, .3); transition: opacity var(--t-lieve) var(--lieve), transform var(--t-molla) var(--molla); }
+  @starting-style { #schede .scheda { opacity: 0; transform: translateX(18px) scale(.97); } }
+  #schede .foto { display: none; height: 168px; background: #000; }
+  #schede .con-foto .foto { display: block; }
+  #schede .foto img { display: block; width: 100%; height: 100%; object-fit: cover; animation: sc-foto var(--t-lieve) var(--lieve); }
+  @keyframes sc-foto { from { opacity: 0; } }
+  #schede .testo { min-width: 0; padding: 9px 12px 10px; }
+  #schede header { display: flex; justify-content: space-between; gap: 8px; font: 400 8px/1.2 var(--mono); letter-spacing: .16em;
+    color: var(--testo-2); text-transform: uppercase; white-space: nowrap; }
+  #schede header span { overflow: hidden; text-overflow: ellipsis; }
+  #schede .fonte { flex: none; max-width: 58%; }
+  #schede .nome { display: block; margin-top: 6px; font: 300 17px/1.15 var(--sottile); letter-spacing: .05em; color: #fff; text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(160, 240, 255, .35); overflow-wrap: anywhere; }
+  #schede .numeri { list-style: none; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; font: 400 10.5px/1.3 var(--mono);
+    letter-spacing: .05em; color: var(--ciano-vivo); }
+  #schede .numeri:empty { display: none; }
+  /* ridotta a una riga: il nome e il primo numero */
+  #schede .riga .foto, #schede .riga header, #schede .riga .numeri li:nth-child(n+2) { display: none; }
+  #schede .riga .testo { display: flex; align-items: baseline; gap: 10px; padding: 5px 10px; }
+  #schede .riga .nome { flex: 1; min-width: 0; margin: 0; font-size: 11px; color: var(--testo); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
+  #schede .riga .numeri { margin: 0; font-size: 9px; color: var(--testo-2); white-space: nowrap; }
+  #schede .riga::before { opacity: .35; }
+  /* compatta: col browser e nell'angolo di report e meteo. Una sola, la foto piccola a sinistra */
+  #schede[data-modo="compatto"] .riga { display: none; }
+  #schede[data-modo="compatto"] .scheda { display: flex; }
+  #schede[data-modo="compatto"] .foto { flex: none; width: 88px; height: auto; min-height: 76px; }
+  #schede[data-modo="compatto"] .nome { font-size: 14px; }
+  #schede[data-modo="compatto"] .numeri li:nth-child(n+3) { display: none; }
 
   /* Il browser dentro l'HUD: solo per i compiti complessi */
   #screen { position: fixed; right: 3.5vw; top: 50%; width: 55vw; transform: translate(3vw, -50%); opacity: 0;
@@ -239,10 +266,6 @@
     <div id="livello"><i></i></div>
   </section>
 
-  <div id="media">
-    <div class="frame staffe"><img id="media-img" alt=""></div>
-    <div class="title" id="media-title"></div>
-  </div>
 
   <div id="screen">
     <div class="head"><span class="live"></span><span id="p-what">BROWSER</span><span id="p-host"></span></div>

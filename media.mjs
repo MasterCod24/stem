@@ -1,18 +1,9 @@
-// GIF e animazioni da mostrare nell'HUD mentre O.S.C.A.R. parla.
-//   gif  → GIPHY (simpatiche; serve GIPHY_API_KEY gratuita in .env, altrimenti niente)
-//   anim → Wikimedia Commons (animazioni che spiegano come funziona qualcosa; nessuna chiave, parole in inglese)
+// Le animazioni da mostrare nell'HUD mentre O.S.C.A.R. parla ([anim:]): Wikimedia Commons, animazioni che spiegano come
+// funziona qualcosa, senza chiave, con parole in inglese. Il server le fa diventare schede (schede.mjs).
+// Le GIF di GIPHY sono state tolte il 27/11: senza la chiave in .env non si erano mai viste.
 const UA = { 'user-agent': 'OSCAR/1.0 (assistente personale di Tony)' };
 
-export function createMedia({ giphyKey, onLog = () => {} }) {
-  async function giphy(q) {
-    if (!giphyKey) return null;
-    const u = `https://api.giphy.com/v1/gifs/search?api_key=${encodeURIComponent(giphyKey)}&q=${encodeURIComponent(q)}&limit=8&rating=pg&lang=it`;
-    const { data = [] } = await (await fetch(u, { signal: AbortSignal.timeout(4000) })).json();
-    const g = data[Math.floor(Math.random() * Math.min(5, data.length))];
-    const img = g?.images?.downsized_medium || g?.images?.fixed_height;
-    return img?.url ? { url: img.url, w: Number(img.width), h: Number(img.height), title: g.title || q } : null;
-  }
-
+export function createMedia({ onLog = () => {} } = {}) {
   async function commons(q) {
     const u = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=8'
       + `&gsrsearch=${encodeURIComponent(`filemime:image/gif ${q}`)}&prop=imageinfo&iiprop=url|size&iiurlwidth=520`;
@@ -27,8 +18,8 @@ export function createMedia({ giphyKey, onLog = () => {} }) {
   }
 
   async function find(kind, q) {
-    try { return kind === 'gif' ? (await giphy(q)) : (await commons(q)); }
+    try { return kind === 'anim' ? (await commons(q)) : null; }
     catch (e) { onLog(`[media] ${kind} "${q}": ${e.message}`); return null; }
   }
-  return { find, get gifs() { return Boolean(giphyKey); } };
+  return { find };
 }

@@ -44,7 +44,7 @@ Se il cervello tace per 45 secondi, sullo schermo appare un avviso. Puoi dire «
 
 ## Cosa fa
 - **Browser:** lavora su Google in un Chrome suo, sempre nella stessa pagina. Il pannello compare nell'HUD **solo per i compiti complessi** (ricerche lunghe, creazioni); le cose banali le fa in silenzio e ti dice il risultato.
-- **GIF ed esempi:** quando spiega, mostra accanto alla goccia animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
+- **Le schede:** mentre ti spiega qualcosa di concreto (un ristorante, un museo, un prodotto, una montagna), accanto alla goccia compare una scheda con la foto, il nome, i numeri che contano e la fonte. Compare quando lo nomina; quando passa alla cosa dopo, la precedente si riduce a una riga. Restano una dozzina di secondi dopo la risposta. Non chiudono la meteo né l'ologramma. Quando spiega come funziona qualcosa può mostrare anche un'animazione da Wikimedia Commons (per esempio un motore a quattro tempi).
 - **Report a schermo intero:** alla fine di una ricerca che vuoi vedere, O.S.C.A.R. apre un report come quello di ROSE. È una griglia di note, grafici, un dato in grande, immagini e video di YouTube muti, che arrivano dal fondo e si mettono a fuoco uno alla volta, con i loro suoni, mentre lui si sposta nell'angolo in basso a destra. Le note in più si alternano ogni 9 secondi. Si chiude con `Esc`, oppure chiedendoglielo.
 - **Ologrammi:** chiedigli di mostrarti un oggetto in 3D («mostrami un motore a reazione», «fammi una staffa a L in alluminio») e lo costruisce. Dal 22/11 non compare più nell'HUD: si apre in una finestra di Blender, davanti a tutto, e si chiude quando chiudi Blender o lo chiude lui.
   - **Blender:** O.S.C.A.R. costruisce ogni ologramma in Blender, da solo, senza che tu glielo chieda: da vertici e curve, mai da forme già pronte. Le forme semplici di prima restano solo per i cavi e per i pezzi di cui chiedi gli sforzi. Blender gira invisibile e chiuso in una gabbia: niente internet, niente file tuoi, niente altri programmi. I file finiscono in Documenti, nella cartella OSCAR-Blender. Quei pezzi non hanno il calcolo degli sforzi.
@@ -76,7 +76,7 @@ Se il cervello tace per 45 secondi, sullo schermo appare un avviso. Puoi dire «
 - `server.mjs`: avvio, finestre, pannello del browser (screencast), voce e cervello.
 - `brain.mjs`: un processo Claude Code sempre acceso (stream-json), interrotto quando arriva una domanda nuova.
 - `voice.mjs`: la voce del Mac, con `say`.
-- `media.mjs`: GIF e animazioni.
+- `media.mjs`: le animazioni di Wikimedia; `schede.mjs`: le schede di quello che O.S.C.A.R. nomina, con le foto; `rete.mjs`: la guardia per scaricare dal web.
 - `orologio.mjs` fornisce l’ora. `agenda.mjs` conserva i promemoria in `runtime/agenda.sqlite` e importa automaticamente la precedente agenda JSON al primo avvio.
 - `ologramma.mjs`: lo stato degli ologrammi; `blender.mjs`: il collegamento con Blender, che li mostra; `fisica/`: il calcolo degli sforzi.
 - `meteo.mjs`: le previsioni di Open-Meteo per la vista meteo, e il riassunto per il cervello.

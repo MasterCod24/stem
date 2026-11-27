@@ -1,6 +1,7 @@
 // Il cervello di O.S.C.A.R.: un solo processo Claude Code sempre acceso (stream-json in ingresso e in uscita).
 // Niente avvio a ogni domanda: dalla seconda in poi il primo testo arriva in circa un secondo invece di tre.
 // Una domanda nuova interrompe quella in corso (control_request interrupt) senza uccidere il processo.
+import { indirizzi } from './schede.mjs';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,9 +9,13 @@ import path from 'node:path';
 // Segnali che O.S.C.A.R. scrive nel testo e che non vanno letti ad alta voce:
 //   [ignora]        la frase non era per lui: nessuna risposta
 //   [[mostra]]      compito complesso: apri il pannello del browser nell'HUD
-//   [gif: parole]   GIF simpatica (GIPHY)      [anim: words]   animazione che spiega (Wikimedia Commons)
+//   [anim: words]   animazione che spiega (Wikimedia Commons), che il server fa diventare una scheda
+//   [[vedi: nome | cos'è | numeri | fonte sito]]   una scheda nell'HUD, legata alla frase che la nomina (schede.mjs)
 //   [[pensa]]       compito complesso: il server lo rilancia subito con l'effort alto (server.mjs, /api/ask)
 const TAG = /\[\[?\s*([a-zà-ù]+)\s*(?::\s*([^\]]*?))?\s*\]\]?/gi;
+// Il segnaposto di una scheda nel parlato: un carattere che nessuno scrive. Una frase finisce anche se dopo il punto c'è lui.
+const SCHEDA = '\u0007';
+const FRASE_PRIMA = /^([\s\S]{2,}?[.!?…])((?:\s|\u0007)+)/, FRASE_DOPO = /^([\s\S]{8,}?[.!?…])((?:\s|\u0007)+)/;
 
 // Dopo un riavvio di O.S.C.A.R. riprendo la conversazione di prima, se l'ultima risposta è di meno di 2 ore fa:
 // riaprendo l'HUD poco dopo, "e il secondo film che mi hai detto?" ha ancora senso. Più in là vale la memoria.
@@ -95,7 +100,12 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
         const blocchi = o.message?.content;
         for (const blocco of (Array.isArray(blocchi) ? blocchi : [o.event?.content_block])) {
           if (blocco?.type === 'tool_use') turn.strumenti.add(blocco.id);
-          if (blocco?.type === 'tool_result') turn.strumenti.delete(blocco.tool_use_id);
+          if (blocco?.type === 'tool_result') {
+            turn.strumenti.delete(blocco.tool_use_id);
+            // gli indirizzi letti (risultati di WebSearch e WebFetch): il server tiene la fonte di una scheda solo se è fra questi
+            const lette = indirizzi(JSON.stringify(blocco.content ?? ''));
+            if (lette.length) turn.emit({ t: 'fonti', indirizzi: lette });
+          }
         }
         sorveglia();
       }
@@ -126,7 +136,11 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
       if (n === 'ignora' && !T.spoke) { T.ignored = true; T.emit({ t: 'ignore' }); }
       else if (n === 'mostra') T.emit({ t: 'show' });
       else if (n === 'pensa') T.emit({ t: 'pensa' });
-      else if ((n === 'gif' || n === 'anim') && arg) T.emit({ t: 'media', kind: n, q: arg.trim() });
+      else if (n === 'anim' && arg) T.emit({ t: 'media', kind: n, q: arg.trim() });
+      // la scheda resta nel testo come segnaposto, al suo posto fra le frasi: parte subito dopo la frase che la contiene o
+      // la precede. Emessa qui, prima delle frasi dello stesso pezzo, dopo una ricerca (testo tutto insieme) finirebbe
+      // legata alla frase sbagliata
+      else if (n === 'vedi' && arg) { T.schede.push(arg); return ` ${SCHEDA} `; }
       return ' ';
     }).replace(/[*_#`>\[\]]/g, '');
     if (T.ignored) return;
@@ -134,14 +148,22 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
     // La prima frase parte anche se è cortissima ("Certo!"), così la voce comincia subito;
     // dopo, le frasi sotto gli 8 caratteri si uniscono alla successiva invece di bloccare tutto
     let m;
-    while ((m = T.speech.match(T.spoke ? /^([\s\S]{8,}?[.!?…])(\s+)/ : /^([\s\S]{2,}?[.!?…])(\s+)/))) {
-      say(m[1]);
+    // Un segnaposto in testa, prima di ogni parola, è di una frase già partita: col testo a pezzi la frase parte appena arriva
+    // il punto, e il segnale arriva dopo. Senza questo la scheda finiva legata alla frase successiva (prove/schede.mjs).
+    const testa = () => { const t = T.speech.match(/^[\s\u0007]+/); if (T.spoke && t?.[0].includes(SCHEDA)) { schede(t[0]); T.speech = T.speech.slice(t[0].length); } };
+    testa();
+    while ((m = T.speech.match(T.spoke ? FRASE_DOPO : FRASE_PRIMA))) {
+      say(m[1]); schede(m[0]);
       T.speech = T.speech.slice(m[0].length);
+      testa();
     }
-    if (all && T.speech.trim()) { say(T.speech); T.speech = ''; }
+    if (all && T.speech.trim()) { say(T.speech); schede(T.speech); T.speech = ''; } // una scheda in fondo va con l'ultima frase
+  }
+  function schede(pezzo) { // una per segnaposto, nell'ordine in cui le ha scritte
+    for (let k = pezzo.split(SCHEDA).length - 1; k > 0 && turn.schede.length; k--) turn.emit({ t: 'vedi', arg: turn.schede.shift() });
   }
   function say(s) {
-    const clean = s.replace(/\s+/g, ' ').trim();
+    const clean = s.replaceAll(SCHEDA, ' ').replace(/\s+/g, ' ').replace(/ ([,;:.!?…])/g, '$1').trim(); // «Marin [[vedi]], al porto»
     if (!clean) return;
     turn.spoke = true;
     turn.emit({ t: 'say', s: clean });
@@ -192,7 +214,7 @@ export function createBrain({ cwd, args, sessionFile, effort = null, impronta = 
       send({ type: 'control_request', request_id: `effort-${Date.now()}`, request: { subtype: 'apply_flag_settings', settings: { effortLevel: w.effort } } });
       effortOra = w.effort;
     }
-    turn = { emit: w.onEvent, resolve: w.resolve, text: '', used: 0, speech: '', spoke: false, ignored: false, interrupted: false, browserActions: 0, strumenti: new Set() };
+    turn = { emit: w.onEvent, resolve: w.resolve, text: '', used: 0, speech: '', spoke: false, ignored: false, interrupted: false, browserActions: 0, strumenti: new Set(), schede: [] };
     sorveglia();
     send({ type: 'user', message: { role: 'user', content: w.text } });
   }
