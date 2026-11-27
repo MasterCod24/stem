@@ -73,7 +73,12 @@ let ultimoPerche; // il perché dell'ultima domanda: il server vero ne fa la rig
 const corpo = (req) => new Promise((ok) => { let s = ''; req.on('data', (d) => { s += d; }); req.on('end', () => { try { ok(JSON.parse(s || '{}')); } catch { ok({}); } }); });
 async function copione(res, testo) { // il cervello finto: eventi NDJSON con le loro pause
   res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
-  const passi = /musei/i.test(testo) ? MUSEI.map(([ms, e]) => [ms, e.id ? { ...e, id: `${e.id}-${testo.length}` } : e.url ? { ...e, id: `a1-${testo.length}`, url: `${e.url}-${testo.length}` } : e])
+  // L'eco (27/11): sei frasi, la prima cita «aspetta» e «basta», come quando O.S.C.A.R. spiega perché si era fermato
+  const FERMATO = ['Mi sono fermato perché mi hai detto aspetta, mi basta così.', 'Il riconoscitore aveva scritto non mi basta, e io sono andato avanti.',
+    'Adesso ti racconto il resto con calma, una cosa alla volta.', 'Prima di tutto il riconoscitore sente anche la mia voce.',
+    'Poi capita che scriva una parola simile a quella giusta.', 'Per esempio sente pasta e scrive un\'altra cosa.'];
+  const passi = /fermato/i.test(testo) ? FERMATO.map((f, i) => [i ? 5 : 300, { t: 'say', s: f }])
+    : /musei/i.test(testo) ? MUSEI.map(([ms, e]) => [ms, e.id ? { ...e, id: `${e.id}-${testo.length}` } : e.url ? { ...e, id: `a1-${testo.length}`, url: `${e.url}-${testo.length}` } : e])
     : /scheda/i.test(testo) // una ricerca senza browser (eventi «web»), poi l'ologramma: «schermo» sceglie il pezzo senza chiave
     ? [[200, { t: 'web', name: 'ricerca', detail: '' }], [700, { t: 'web', name: 'pagina', detail: 'ifixit.com' }],
       [1300, () => ({ t: 'holo', v: OLO.esegui(/schermo/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'schermo' } } : /niente/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'scheda' } } : { azione: 'mostra', modello: PORTATILE }).versione })],
@@ -229,6 +234,20 @@ try {
   controlla(await ev("window.__misure.ologramma === true && document.body.classList.contains('olo')"), "le schede non chiudono l'ologramma");
   await ev("oscarOlogramma({ aperto: false, versione: 2 }); true");
   await attendi(async () => (await modo()) === 'idle', 12000); await pausa(500);
+  // La sua voce dalle casse: il riconoscitore, mentre la voce va avanti, trascrive tutto il discorso dall'inizio, e storpia
+  // («fermato» → «fermati»). Fino al 27/11 il filtro ricordava 4 frasi per 6 s: O.S.C.A.R. che citava «basta» si fermava da solo
+  await ev("oscarAsk('perché ti sei fermato?'); true");
+  await attendi(() => ev("window.__tempi.frasi.some((f) => f.s.startsWith('Per esempio'))"), 20000); await pausa(300);
+  await ev("oscarParziale('mi sono fermato perché mi hai detto aspetta mi basta così il riconoscitore aveva scritto non mi basta adesso ti racconto'); true"); await pausa(150);
+  const eco1 = await modo();
+  await ev("oscarParziale('mi sono fermati perché mi hai detto'); true"); await pausa(150);
+  const eco2 = await modo();
+  await ev("oscarParziale('stop'); true"); await pausa(300);
+  const vero = await modo();
+  await ev("oscarParziale(''); true");
+  controlla(eco1 === 'speaking' && eco2 === 'speaking' && vero === 'idle', "la sua voce che dice «aspetta» e «basta», anche di frasi vecchie o storpiata, non lo ferma; «stop» sì",
+    `dopo l'eco ${eco1}, dopo «fermati» ${eco2}, dopo «stop» ${vero}`);
+  await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
   await ev("oscarAsk('apri il browser'); true"); await pausa(2600); await foto('browser');
   await attendi(async () => (await modo()) === 'idle', 12000);
   await tasto('Escape', 'Escape', 27); await pausa(800);
