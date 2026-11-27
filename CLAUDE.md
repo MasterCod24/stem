@@ -14,7 +14,16 @@ O.S.C.A.R. è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in as
    - `tail -50 runtime/ascolto.log` dice di che tipo era ogni frase sentita: per O.S.C.A.R. (nome o conversazione), scartata, eco. Le frasi non ci sono mai, per privacy. Delle frasi scartate annota solo la prima parola e quella più simile a «oscar». Tiene le ultime 300 righe. Lo stato dell'HUD (ascolto, lucchetto, modo) ci va solo quando cambia; i riavvii del riconoscitore di Chrome no, dal 22/11: erano 133 righe su 300.
 4. **Cosa resta aperto:** la sezione qui sotto.
 
-## Aperto (al 23/11/2026)
+## Aperto (al 27/11/2026)
+- **Finestra di Google dietro l'HUD: richiesta di Tony del 27/11, provata a pezzi, mai vista da lui.** Con due monitor l'HUD stava a schermo intero sull'esterno e la finestra di Google sul portatile, in vista. Ora l'HUD manda la sua posizione a ogni `/api/status` (`schermo`), il server la salva in `runtime/schermo-hud.json` e apre il Chrome di Google lì con `--window-position`. La finestra resta così sulla scrivania di quello schermo, coperta dallo Spazio dell'HUD. Per scriverci a mano (accessi, pagamenti) Tony clicca la seconda icona di Chrome nel Dock.
+  - **Perché non nascosta:** nascosta, ridotta nel Dock o headless non funziona (vedi **Lezioni**). La finestra serve anche a Tony: nel profilo ci sono accessi fatti da lui a mano, e il 12/11 O.S.C.A.R. gli ha lasciato da inserire il pagamento del cinema.
+  - **Prove:** server vero con un Chrome finto che scrive i suoi argomenti. Senza posizione salvata non cambia niente; con quella dell'HUD esce `--window-position=-232,-1080`; valori strani e richieste da altri siti sono ignorati. `prove/hud-foto.mjs` 9 su 9.
+  - Il primo avvio dopo l'aggiornamento non ha ancora la posizione. Quella di oggi (monitor esterno, -232,-1080, letta dalla finestra dell'HUD) l'ho scritta a mano nel `runtime/schermo-hud.json` della cartella di O.S.C.A.R.
+  - **Previsto:** al prossimo avvio Google compare per 1–2 s sul monitor esterno, poi l'HUD va a schermo intero sopra di lui e il portatile resta libero.
+  - **Limiti:**
+    - con un monitor solo non cambia niente: Google sta sulla scrivania e l'HUD nel suo Spazio, come prima;
+    - se Google viene chiuso e riaperto mentre l'HUD è a schermo intero, Chrome si attiva su quello schermo, e macOS può passare alla scrivania togliendo l'HUD dalla vista. Mai provato.
+  - **Mai provati:** l'avvio vero con l'HUD e i due monitor.
 - **Foto dei salti delle mani: richiesta di Tony del 23/11, costruita e provata senza la sua fotocamera, mai usata.** L'idea di partenza era «riavvolgere il laboratorio»: video, audio, registri e strumenti sincronizzati. Nel progetto però non c'è un laboratorio. Il caso vero sono i salti delle mani: 240 il 17/11, con causa sconosciuta, e il registro dice quanti sono, non quando.
   - **Cosa fa:** a ogni salto (in `gesti.js`, la punta di pollice o indice che si sposta di più di mezzo palmo rispetto al palmo) l'HUD fotografa quel fotogramma. La foto è specchiata, con le mani della rilevazione di prima in bianco, quelle di adesso in ciano e un cerchio sulle punte. Esce al più una foto al secondo, e al massimo 50 per apertura dell'ologramma o della meteo.
   - Il server le salva in `runtime/salti/<giorno>/<ora>-<vista>.jpg` (`salti.mjs`), al massimo 500 al giorno, e cancella da solo i giorni più vecchi di 7. «Era successo anche ieri?» vuol dire aprire la cartella di ieri accanto a quella di oggi: `open runtime/salti`.
@@ -59,7 +68,7 @@ O.S.C.A.R. è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in as
     - con «stop», o una domanda sopra, a metà di un promemoria, il compito torna al giro dopo di `/api/status` e l'HUD legge «Promemoria. <compito>. L'esito del compito è da verificare.», anche se nessun comando era partito (provato col server vero e un cervello finto);
     - la scheda del promemoria resta a schermo finché non si clicca «Chiudi»: Esc non la chiude.
   - Le prove di prima passano: server 124 su 124, HUD 32 su 32, Blender 32 su 32, interruzioni 6 su 6.
-- **Da sapere:** O.S.C.A.R.app gira dalla cartella del progetto, che al 23/11 è sul ramo `fix/rivoluzione-asse`, con `main` unito dentro fino alle foto dei salti delle mani (23/11). Così ha la correzione di Blender (e3ff30c), che su `main` non c'è ancora. Un `main` nuovo arriva lì solo con un altro merge.
+- **Da sapere:** O.S.C.A.R.app gira dalla cartella del progetto, che al 27/11 è sul ramo `fix/rivoluzione-asse`, con `main` unito dentro fino alla finestra di Google dietro l'HUD (27/11). Così ha la correzione di Blender (e3ff30c), che su `main` non c'è ancora. Un `main` nuovo arriva lì solo con un altro merge.
 - **Foto e misure vere accanto all'ologramma: richiesta di Tony del 17/11, costruito e provato senza cervello, mai usato.** Tony ha bocciato gli oggetti fatti «a occhio»: il cervello costruiva da quello che ricordava e confrontava la foto dell'HUD solo con sé stessa. Ora c'è `guarda_oggetto_vero` in `mac/mac-mcp.mjs`.
   - **Cosa fa:** il cervello gli dà 1–3 foto vere (`fuori`, oppure `dentro` per uno spaccato o uno smontaggio) e le misure ufficiali. Alla prima vista `mostra_ologramma` mette dopo la foto dell'HUD le foto «fuori»; `modifica_ologramma` mette quelle «dentro» quando passa ai raggi X o mette una sezione. `costruisci_in_blender` confronta l'ingombro di quello che esce da Blender con le misure vere, lato per lato dal più lungo (l'orientamento non conta), anche in scala. Un `mostra` senza foto nuove dice di guardare l'oggetto vero e non rimette quelle vecchie.
   - **Sicurezza:** solo https sulla porta 443 verso indirizzi pubblici, controllati dopo il DNS e a ogni rimando (Mac, rete di casa e O.S.C.A.R. restano fuori). Le foto non si aprono sul Mac: tipo e misure si leggono dai primi byte, e passano intere solo entro 2000 px per lato e 3,5 MB.
@@ -271,7 +280,7 @@ Restano decisioni di Tony, non lavoro sul codice:
     - ogni file servito porta `x-frame-options: SAMEORIGIN` e `frame-ancestors 'self'`. Senza, un sito qualsiasi metteva l'HUD in un iframe e, con un ologramma aperto, accendeva la fotocamera (provato l'8/11);
     - un corpo JSON rotto, o che non è un oggetto, vale `{}`.
   - le variabili d'ambiente date a mano vincono su `.env`. `OSCAR_CERVELLO=<cartella>`, solo per le prove, fa vivere un O.S.C.A.R. di prova tutto lì: conversazione, `mcp.json`, ologramma e `ascolto.log`, con le cartelle dei documenti come sue sottocartelle. Così non tocca la memoria vera né i file di Tony.
-  - un Chrome per Google con il suo profilo (`runtime/browser-profile`, CDP 9333);
+  - un Chrome per Google con il suo profilo (`runtime/browser-profile`, CDP 9333), aperto sullo schermo dell'HUD, che lo copre (la posizione la manda l'HUD e sta in `runtime/schermo-hud.json`);
   - Playwright MCP 0.0.83 sulla porta 8931, agganciato a quel Chrome, perché un browser lanciato da Playwright verrebbe chiuso alla fine di ogni risposta. Le schede nuove il server le chiude e ne apre l'indirizzo nella pagina principale;
   - lo screencast CDP mandato all'HUD come MJPEG su `/api/screen`;
   - l'HUD stesso, un Chrome `--app` a schermo intero con il profilo `runtime/hud-profile`.
@@ -497,3 +506,9 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Due messaggi con lo stesso nome si confondono.** Il 22/11 il gesto delle mani `{tipo:'stato'}` e il messaggio che porta il modello a Blender si chiamavano uguali: il Blender finto della prova si è fermato, e il server l'ha preso per chiuso da Tony. Ora il modello viaggia come `{tipo:'ologramma'}`. In un canale, i tipi dei messaggi vanno controllati tutti insieme, non uno per volta.
 - **In Blender 5.2 i piani di taglio scritti da Python non tagliano.** `region_3d.clip_planes` e `use_clip_planes` cambiano, ma il disegno resta intero (provato il 22/11 su un cubo). Tagliano solo dopo aver acceso il taglio a riquadro di Blender (`view3d.clip_border`), e allora si possono sostituire i suoi piani. In 5.2 il modo che colora i vertici si chiama `VERTEX`, non `ATTRIBUTE`.
 - **In Chrome `gl.finish()` non aspetta la GPU.** Il 10/11 dava 0,1 ms a fotogramma per l'umanoide col bagliore a 2205×1434. Il costo vero si misura con n fotogrammi di fila e un solo `readPixels` alla fine, che deve restituire pixel veri: 4,15 ms, con tre giri uguali entro l'1%.
+- **Un Chrome nascosto non disegna** (27/11, Chrome 158). Nascosta l'app o ridotta la finestra nel Dock, la pagina diventa «hidden» anche con `--disable-backgrounding-occluded-windows`, che vale solo per le finestre coperte: `requestAnimationFrame` si ferma e lo screencast scende a 0–1 fotogrammi al secondo. Si fermano anche i clic di Playwright, che aspettano i fotogrammi. Le altre vie:
+  - `open -j -g`: Chrome si mostra e si attiva lo stesso;
+  - fuori dallo schermo (`--window-position` o CDP): Chrome riporta la finestra dentro uno schermo;
+  - headless: Google risponde «traffico insolito» alla prima ricerca.
+
+  Una finestra che deve disegnare senza farsi vedere si mette dietro uno schermo intero.

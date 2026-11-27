@@ -71,7 +71,7 @@ const precedente = path.join(support, 'Nexus', 'cervello');
 const BRAIN = PROVA || (fs.existsSync(precedente) ? precedente : path.join(support, 'O.S.C.A.R.', 'cervello'));
 fs.mkdirSync(BRAIN, { recursive: true });
 
-// --- Finestre: HUD a sinistra, Google a destra ---
+// --- Finestre: l'HUD a schermo intero, Google dietro di lui ---
 const CHROME = env.OSCAR_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const CDP_PORT = Number(env.OSCAR_CDP_PORT || 9333);
 const launched = []; // Chrome avviati da O.S.C.A.R., da chiudere all'uscita
@@ -93,12 +93,21 @@ let browserPending = null; // un solo avvio alla volta, anche con due domande ra
 function ensureBrowserWindow() {
   return (browserPending ??= openBrowserWindow().finally(() => { browserPending = null; }));
 }
+// Google si apre sullo schermo dell'HUD, che a schermo intero sta in uno Spazio suo: la finestra resta sulla scrivania
+// di quello schermo, coperta. Altrimenti, con due monitor, stava in vista sull'altro. Nasconderla non si può: nascosta o
+// ridotta nel Dock Chrome non disegna più (screencast a 0 fps, 27/11), e headless Google risponde «traffico insolito».
+const SCHERMO_HUD = path.join(STATO, 'schermo-hud.json'); // [x, y] dell'HUD, mandati dall'HUD a ogni /api/status
+let schermoVisto = '';
+function posizioneGoogle() {
+  try { const [x, y] = JSON.parse(fs.readFileSync(SCHERMO_HUD, 'utf8')); if (Number.isInteger(x) && Number.isInteger(y)) return [`--window-position=${x},${y}`]; } catch {}
+  return []; // prima volta: dove la mette Chrome
+}
 async function openBrowserWindow() {
   if (await cdpAlive()) { startScreencast(); return true; }
   launchChrome([`--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${path.join(RUNTIME, 'browser-profile')}`,
     // dietro all'HUD a schermo intero la finestra è coperta: senza questi Chrome smetterebbe di disegnarla
     '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
-    '--window-size=1280,900', 'about:blank']);
+    '--window-size=1280,900', ...posizioneGoogle(), 'about:blank']);
   for (let i = 0; i < 40; i++) { if (await cdpAlive()) { startScreencast(); return true; } await sleep(250); }
   console.error('[chrome] la finestra di Google non risponde');
   return false;
@@ -532,6 +541,8 @@ async function gestisci(req, res) {
 
   if (p === '/api/status') {
     if (url.searchParams.has('hud')) { hudSeen = Date.now(); hudMissed = 0; noteHud(url.searchParams); }
+    const sch = /^(-?\d{1,5}),(-?\d{1,5})$/.exec(url.searchParams.get('schermo') || ''); // dove sta l'HUD: lì andrà Google
+    if (sch && sch[0] !== schermoVisto) { schermoVisto = sch[0]; fs.writeFile(SCHERMO_HUD, JSON.stringify([+sch[1], +sch[2]]), () => {}); }
     // Durante un aggiornamento una finestra vecchia può essere ancora aperta.
     const puoConfermare = !url.searchParams.has('hud') || url.searchParams.get('ricevute') === '1';
     let pronti = 0, erroreAgenda = false;

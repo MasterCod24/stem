@@ -114,7 +114,8 @@ function liberaColonne(scritte) {
 let micPeak = 0, ultimoStato = null, statoFalliti = 0;
 async function pollStatus() {
   try {
-    const q = new URLSearchParams({ hud: 1, ricevute: 1, ear: ear, lock: earLock ? 1 : 0, mic: micPeak.toFixed(3), mode: S.mode });
+    const q = new URLSearchParams({ hud: 1, ricevute: 1, ear: ear, lock: earLock ? 1 : 0, mic: micPeak.toFixed(3), mode: S.mode,
+      schermo: `${screenX},${screenY}` }); // il server ci apre la finestra di Google, dietro l'HUD
     micPeak = 0;
     const st = await (await fetch('/api/status?' + q)).json();
     ultimoStato = st; statoFalliti = 0; allarme('server', 0);
