@@ -9,6 +9,7 @@ import { env } from './config.mjs';
 import { createBrain } from './brain.mjs';
 import { createVoice } from './voice.mjs';
 import { createMedia } from './media.mjs';
+import { createSchede, leggiScheda } from './schede.mjs';
 import { apriAgenda, ATTESA_RICEVUTA } from './agenda.mjs';
 import { adesso, quandoIt, traQuanto } from './orologio.mjs';
 import { createOlogramma } from './ologramma.mjs';
@@ -216,7 +217,8 @@ const brain = createBrain({
     ...(EFFORT !== 'default' ? ['--effort', EFFORT] : []),
   ],
 });
-const media = createMedia({ giphyKey: env.GIPHY_API_KEY || '', onLog: (l) => console.error(l) });
+const media = createMedia({ onLog: (l) => console.error(l) });
+const schede = createSchede({ onLog: (l) => console.error(l) }); // le schede di quello che O.S.C.A.R. nomina mentre parla
 
 // --- Voce: quella del Mac (voice.mjs) ---
 const voice = createVoice({ macVoice: env.OSCAR_MAC_VOICE });
@@ -549,7 +551,7 @@ async function gestisci(req, res) {
     if (puoConfermare && !brain.busy) {
       try { pronti = archivioAgenda().disponibili(); } catch { erroreAgenda = true; }
     }
-    return json(res, 200, { voice: voice.status, browser: browserReady, gifs: media.gifs, ricevuteAgenda: true,
+    return json(res, 200, { voice: voice.status, browser: browserReady, ricevuteAgenda: true,
       agenda: pronti, erroreAgenda, ologramma: holoOra.versione });
   }
 
@@ -600,6 +602,13 @@ async function gestisci(req, res) {
   }
 
 
+  if (req.method === 'GET' && p.startsWith('/api/schede/foto/')) { // la foto di una scheda, scaricata dal server (schede.mjs)
+    const f = schede.foto(p.slice('/api/schede/foto/'.length));
+    if (!f) return res.writeHead(404, { 'cache-control': 'no-store' }).end();
+    res.writeHead(200, { 'content-type': f.tipo, 'cache-control': 'private, max-age=600', 'x-content-type-options': 'nosniff' });
+    return res.end(f.dati);
+  }
+
   if (req.method === 'GET' && p === '/api/meteo') { // l'HUD aperto: gli ultimi dati, riscaricati se hanno più di 10 minuti
     const d = await meteo.attuale();
     return d ? json(res, 200, d) : res.writeHead(404, { 'cache-control': 'no-store' }).end();
@@ -640,16 +649,30 @@ async function gestisci(req, res) {
     const write = (ev) => { if (open) res.write(JSON.stringify(ev) + '\n'); };
     const close = () => { if (open && finished && !pending) { res.end(JSON.stringify({ t: 'done' }) + '\n'); open = false; } };
     res.on('close', () => { open = false; });
+    const fonti = []; // gli indirizzi letti in questa risposta (anche nel [pensa]): le fonti che una scheda può citare
     const onEvent = (ev) => {
-      if (ev.t !== 'media') {
-        write(ev);
-        // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
-        // Prima il server lo credeva aperto, e il cervello riceveva la foto vecchia di un ologramma che Tony non vedeva.
-        if (ev.t === 'show' || (ev.t === 'report' && Array.isArray(ev.blocchi) && ev.blocchi.length)) holo.esegui({ azione: 'chiudi' });
+      if (ev.t === 'fonti') { for (const u of ev.indirizzi) if (fonti.length < 400 && !fonti.includes(u)) fonti.push(u); return; } // non va all'HUD
+      if (ev.t === 'vedi') {
+        // La scheda parte subito, nel punto del flusso dove l'ha messa il cervello (dopo la sua frase); la foto la segue
+        // quando c'è. La voce non aspetta niente: le frasi non passano di qui. Una scheda non chiude né ologramma né meteo.
+        const s = leggiScheda(ev.arg, fonti);
+        if (!s) return;
+        write({ t: 'vedi', ...s });
+        pending++;
+        schede.cercaFoto(s, fonti).then((f) => { if (f) write({ t: 'vedi-foto', id: s.id, url: f }); }).finally(() => { pending--; close(); });
         return;
       }
-      pending++; // GIF e animazioni: le cerco mentre O.S.C.A.R. parla, arrivano quando sono pronte
-      media.find(ev.kind, ev.q).then((m) => { if (m) write({ t: 'media', kind: ev.kind, ...m }); }).finally(() => { pending--; close(); });
+      if (ev.t === 'media') { // [anim:]: un'animazione di Wikimedia, che arriva come una scheda da mostrare subito
+        pending++;
+        media.find(ev.kind, ev.q).then((m) => m && schede.daAnimazione(m)).then((r) => {
+          if (r) { write({ t: 'vedi', ...r.scheda, subito: true }); write({ t: 'vedi-foto', id: r.scheda.id, url: r.foto }); }
+        }).finally(() => { pending--; close(); });
+        return;
+      }
+      write(ev);
+      // Un report o il pannello del browser coprono l'ologramma nell'HUD: si chiude anche qui, che ne è l'unico padrone.
+      // Prima il server lo credeva aperto, e il cervello riceveva la foto vecchia di un ologramma che Tony non vedeva.
+      if (ev.t === 'show' || (ev.t === 'report' && Array.isArray(ev.blocchi) && ev.blocchi.length)) holo.esegui({ azione: 'chiudi' });
     };
     if (voce) {
       // Una risposta già preparata si riconsegna senza un altro turno né comandi sul Mac.

@@ -194,7 +194,9 @@ if (esito(Boolean(claude), 'il processo claude del cervello è partito')) {
   const strumenti = dopo('--tools').split(','), approvati = a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--disallowedTools'));
   esito(['WebSearch', 'WebFetch'].every((n) => strumenti.includes(n) && approvati.includes(n)) && !strumenti.includes('Bash') && approvati.includes('mcp__mac') && approvati.includes('mcp__playwright'),
     'il cervello ha WebSearch e WebFetch, approvati senza domande, e non ha Bash', `--tools ${dopo('--tools')}; --allowedTools ${approvati.join(' ')}`);
-  esito(['WebSearch', 'materiale_vero', 'fattura'].every((n) => dopo('--append-system-prompt').includes(n)) && !dopo('--append-system-prompt').includes('`fonte`'),
+  // dal 27/11 «fonte» c'è nella sezione delle schede: quella dei pezzi tolta l'11/11 si cerca solo nella sezione Ologrammi
+  const olo = dopo('--append-system-prompt').split('## Ologrammi')[1]?.split('\n## ')[0] || '';
+  esito(['WebSearch', 'materiale_vero', 'fattura'].every((n) => dopo('--append-system-prompt').includes(n)) && olo.length > 0 && !olo.includes('`fonte`'),
     'la persona dice di cercare con WebSearch e nomina i due campi del pezzo, non più la fonte (tolta l\'11/11)');
   const dirs = a.slice(a.indexOf('--add-dir') + 1, a.indexOf('--mcp-config'));
   esito(dirs.length === 2 && dirs.includes(path.join(CASA, 'Desktop')) && dirs.includes(DOC) && a.indexOf('--add-dir') > 0,

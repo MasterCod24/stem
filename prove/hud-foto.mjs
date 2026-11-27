@@ -9,6 +9,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 import * as THREE from 'three';
 import { createOlogramma } from '../ologramma.mjs';
 
@@ -34,6 +35,20 @@ function wav(secondi = 1.8, hz = 22050) {
   return b;
 }
 const VOCE = wav();
+function png(w, h) { // una foto finta per le schede: un gradiente blu notte, PNG vero
+  const blocco = (tipo, dati) => { const l = Buffer.alloc(4), c = Buffer.alloc(4), t = Buffer.from(tipo); l.writeUInt32BE(dati.length); c.writeUInt32BE(zlib.crc32(Buffer.concat([t, dati])) >>> 0); return Buffer.concat([l, t, dati, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const righe = Buffer.alloc((3 * w + 1) * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (3 * w + 1) + 1 + 3 * x; righe[o] = 10 + (40 * x) / w; righe[o + 1] = 40 + (90 * y) / h; righe[o + 2] = 70 + (110 * (x + y)) / (w + h); }
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), blocco('IHDR', ihdr), blocco('IDAT', zlib.deflateSync(righe)), blocco('IEND', Buffer.alloc(0))]);
+}
+const FOTO = png(640, 360);
+// Le schede (27/11): una risposta con tre frasi e due schede, ognuna subito dopo la frase che la nomina, e la foto della prima
+const MUSEI = [[300, { t: 'say', s: 'Guardo subito.' }], [400, { t: 'say', s: 'Il Louvre domina con circa nove milioni di visitatori nel duemilaventicinque.' }],
+  [5, { t: 'vedi', id: 'a1', nome: 'Louvre', tipo: "museo d'arte", numeri: ['9,05 mln visitatori (2025)'], fonte: 'theartnewspaper.com' }],
+  [5, { t: 'say', s: "Al secondo posto c'è il Museo d'Orsay, con circa tre milioni e ottocentomila." }],
+  [5, { t: 'vedi', id: 'a2', nome: "Museo d'Orsay", tipo: "museo d'arte", numeri: ['3,8 mln visitatori (2025)', 'aperto dal 1986'], fonte: 'theartnewspaper.com' }],
+  [200, { t: 'vedi-foto', id: 'a1', url: '/api/schede/foto/a1' }]];
 
 // ---------------------------------------------------------------- un ologramma con la ricerca sui pezzi
 // Lo stato è quello vero di ologramma.mjs (senza calcolo): l'HUD lo legge da GET /api/ologramma dopo l'evento «holo», come
@@ -58,7 +73,8 @@ let ultimoPerche; // il perché dell'ultima domanda: il server vero ne fa la rig
 const corpo = (req) => new Promise((ok) => { let s = ''; req.on('data', (d) => { s += d; }); req.on('end', () => { try { ok(JSON.parse(s || '{}')); } catch { ok({}); } }); });
 async function copione(res, testo) { // il cervello finto: eventi NDJSON con le loro pause
   res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
-  const passi = /scheda/i.test(testo) // una ricerca senza browser (eventi «web»), poi l'ologramma: «schermo» sceglie il pezzo senza chiave
+  const passi = /musei/i.test(testo) ? MUSEI.map(([ms, e]) => [ms, e.id ? { ...e, id: `${e.id}-${testo.length}` } : e.url ? { ...e, id: `a1-${testo.length}`, url: `${e.url}-${testo.length}` } : e])
+    : /scheda/i.test(testo) // una ricerca senza browser (eventi «web»), poi l'ologramma: «schermo» sceglie il pezzo senza chiave
     ? [[200, { t: 'web', name: 'ricerca', detail: '' }], [700, { t: 'web', name: 'pagina', detail: 'ifixit.com' }],
       [1300, () => ({ t: 'holo', v: OLO.esegui(/schermo/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'schermo' } } : /niente/.test(testo) ? { azione: 'modifica', vista: { selezionato: 'scheda' } } : { azione: 'mostra', modello: PORTATILE }).versione })],
       [300, { t: 'say', s: 'Ecco il portatile.' }]]
@@ -73,6 +89,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/status') { if (guasto) { res.writeHead(500); return res.end(); } res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ voice: { provider: 'mac', voce: 'Siri (Paolo)' }, browser: true, gifs: false, agenda: 0, ologramma: 0 })); }
   if (p === '/api/ask') { const b = await corpo(req); ultimoPerche = b.why; return copione(res, b.text || ''); }
+  if (p.startsWith('/api/schede/foto/')) { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(FOTO); }
   if (p === '/api/tts') { await corpo(req); res.writeHead(200, { 'content-type': 'audio/wav' }); return res.end(VOCE); }
   if (p === '/api/ologramma' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(OLO.stato())); }
   if (p === '/api/ologramma') { const r = OLO.esegui(await corpo(req), { daHud: true }); res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ ok: r.ok, versione: r.versione })); } // Esc dall'HUD
@@ -190,6 +207,28 @@ try {
   await ev("oscarAllarme('prova', 1, 'CALCOLO DEGLI SFORZI FALLITO'); true"); await pausa(1500); await foto('allarme-1');
   await ev("oscarAllarme('prova', 2, 'SERVER NON RAGGIUNGIBILE'); true"); await pausa(1500); await foto('allarme-2');
   await ev("oscarAllarme('prova', 0); true"); await pausa(600);
+  // Le schede (27/11): compaiono all'inizio della loro frase più la quota del nome, la voce non aspetta, la precedente si riduce
+  await ev("oscarAsk('dimmi i musei di Parigi'); true");
+  await attendi(() => ev("window.__tempi.schede.length >= 2"), 12000); await pausa(450); await foto('schede');
+  const T = await ev("JSON.parse(JSON.stringify(window.__tempi))"), info = await ev("oscarCorsia.info()");
+  const frase = (w) => T.frasi.findLast((f) => f.s.includes(w)), scheda = (id) => T.schede.findLast((x) => x.id.startsWith(id));
+  const quota = (f, w) => f.s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').indexOf(w) / f.s.length;
+  // «Museo d'Orsay»: il nome comincia da «Museo», ed è lì che l'HUD lo fa comparire
+  const scarti = [['a1', 'Louvre', 'louvre'], ['a2', 'Orsay', 'museo']].map(([id, w, n]) => { const f = frase(w), x = scheda(id); return f && x ? Math.round(x.mostrata - (f.partita + quota(f, n) * f.durata * 1000)) : null; });
+  controlla(scarti.every((d) => d !== null && d >= -30 && d <= 80), 'ogni scheda compare quando la sua frase arriva al nome (entro −30/+80 ms)', `scarti ${scarti.join(', ')} ms`);
+  const prima = T.frasi.findLast((f) => f.s === 'Guardo subito.'), meteo = T.frasi.find((f) => f.s.startsWith('Domani a Torino'));
+  const buchi = ['Louvre', 'Orsay'].map((w) => { const f = frase(w), i = T.frasi.indexOf(f), p = T.frasi[i - 1]; return Math.round(f.partita - (p.partita + p.durata * 1000)); });
+  controlla(prima.partita - prima.ricevuta < 150 && buchi.every((b) => b < 60), 'la voce non aspetta le schede: prima frase subito, nessun buco fra le frasi',
+    `prima frase ${Math.round(prima.partita - prima.ricevuta)} ms (senza schede, la meteo: ${meteo ? Math.round(meteo.partita - meteo.ricevuta) : '?'} ms); fra le frasi ${buchi.join(', ')} ms`);
+  controlla(info.schede.length === 2 && info.schede[0].stato === 'grande' && info.schede[0].nome === "Museo d'Orsay" && info.schede[1].stato === 'riga' && info.schede[1].foto,
+    'la nuova è grande, la precedente ridotta a una riga e con la sua foto', JSON.stringify(info.schede));
+  // con l'ologramma aperto le schede arrivano e non lo chiudono
+  await ev("oscarOlogramma({ aperto: true, versione: 1 }); true"); await pausa(300);
+  await ev("oscarAsk('ancora i musei di Parigi'); true");
+  await attendi(() => ev("oscarCorsia.info().schede.length >= 2"), 12000);
+  controlla(await ev("window.__misure.ologramma === true && document.body.classList.contains('olo')"), "le schede non chiudono l'ologramma");
+  await ev("oscarOlogramma({ aperto: false, versione: 2 }); true");
+  await attendi(async () => (await modo()) === 'idle', 12000); await pausa(500);
   await ev("oscarAsk('apri il browser'); true"); await pausa(2600); await foto('browser');
   await attendi(async () => (await modo()) === 'idle', 12000);
   await tasto('Escape', 'Escape', 27); await pausa(800);

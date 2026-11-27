@@ -35,7 +35,7 @@ export const DOMANDE = [
   'che film danno stasera al cinema a Torino?',
 ];
 
-// La regola candidata, come andrebbe nella persona: un segnale in più e la sua sezione
+// La regola, com'è nella persona dal 27/11 (provata così prima di metterla): un segnale in più e la sua sezione
 const SEGNALE = "- `[[vedi: …]]`: una scheda nell'HUD sulla cosa concreta che hai appena nominato. Vedi \"Le schede\".\n";
 const SEZIONE = `## Le schede
 Quando nomini una cosa concreta che Tony non ha davanti (un posto, un locale, un prodotto, un film, un libro, una persona, un monumento), l'HUD la mostra mentre ne parli: subito DOPO la frase che la nomina scrivi \`[[vedi: …]]\`, coi campi separati da \`|\`:
@@ -59,14 +59,17 @@ async function giro(variante, uscita) {
   const prova = fs.mkdtempSync(path.join(os.tmpdir(), 'schede-cervello-'));
   execFileSync('/usr/bin/rsync', ['-a', '--exclude', '.git', '--exclude', 'node_modules', '--exclude', 'runtime', '--exclude', '.claude', '--exclude', '.env', `${REPO}/`, `${copia}/`]);
   fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(copia, 'node_modules'));
-  if (variante === 'regola') {
-    const f = path.join(copia, 'oscar-persona.md');
-    let p = fs.readFileSync(f, 'utf8');
-    const ancora = "- `[anim: english keywords]`", sez = '## Ascolto sempre acceso';
-    if (!p.includes(ancora) || !p.includes(sez)) throw new Error('la persona è cambiata: aggiorna i punti dove va la regola');
-    p = p.replace(ancora, SEGNALE + ancora).replace(sez, SEZIONE + sez);
-    fs.writeFileSync(f, p);
+  // Dal 27/11 la regola sta nella persona: «base» la toglie, «regola» la usa com'è (e la aggiunge solo se mancasse)
+  const f = path.join(copia, 'oscar-persona.md');
+  let persona = fs.readFileSync(f, 'utf8');
+  const ancora = "- `[anim: english keywords]`", sez = '## Ascolto sempre acceso', ha = persona.includes(SEZIONE);
+  if (variante === 'base' && ha) persona = persona.replace(SEGNALE, '').replace(SEZIONE, '');
+  if (variante === 'regola' && !ha) {
+    if (!persona.includes(ancora) || !persona.includes(sez)) throw new Error('la persona è cambiata: aggiorna i punti dove va la regola');
+    persona = persona.replace(ancora, SEGNALE + ancora).replace(sez, SEZIONE + sez);
   }
+  if (persona.includes(SEZIONE) !== (variante === 'regola')) throw new Error('la persona non è quella della variante');
+  fs.writeFileSync(f, persona);
   const log = fs.openSync(path.join(uscita, `server-${variante}.log`), 'w');
   const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${path.join(prova, 'chrome')}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' });
   await pausa(1500);

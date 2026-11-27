@@ -4,6 +4,7 @@ import { NOME, norm, isName, unisciSigla } from './nome.js';
 import { mostraPromemoria } from './promemoria.js';
 import { showReport, hideReport, reportDock } from './report.js';
 import { avvia as avviaMoto, molla } from './fisica.js';
+import { createSchede } from './schede.js';
 avviaMoto(); // --molla, --t-molla, --lieve, --t-lieve: le transizioni CSS con la stessa fisica
 // allarme: 0 normale, 1 attenzione (arancione), 2 critico (rosso). Lo calcola aggiornaAllarme() dalle cause attive.
 const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, dock: 0, dockTarget: 0, hearing: false, allarme: 0 };
@@ -19,6 +20,7 @@ function setMode(m) {
   if (S.mode !== m && sfx) { if (m === 'thinking') sfx.think?.(true); else if (S.mode === 'thinking') sfx.think?.(false); }
   if (S.mode === 'speaking' && m !== 'speaking') spokeUntil = performance.now();
   S.mode = m; document.body.dataset.mode = m;
+  if (m === 'idle') corsia.scadi(12000); // finita la risposta, le schede restano 12 s
   if (m === 'idle') { if (document.body.classList.contains('browsing')) showScreen(false); }
   else clearTimeout(screenTimer);
 }
@@ -43,14 +45,16 @@ for (const r of RAGGI) { // un filo e un punto per dato, e la molla della scritt
   r.punto.setAttribute('r', '2'); $('fili').append(r.filo, r.punto);
   r.mx = molla(0); r.my = molla(0); r.via = ''; r.ancora = null;
 }
-const mediaX = molla(0), mediaY = molla(0), ascoltoX = molla(0);
+const corsia = createSchede(); // le schede di quello che O.S.C.A.R. nomina mentre parla (schede.js)
+const corsiaX = molla(0), corsiaY = molla(0), ascoltoX = molla(0);
+let corsiaVia = '';
 let chiaveAttorno = '', largAscolto = 0, ultimaLarg = '', primaVolta = true, colonneDaRifare = false;
 function disegnaAttorno(t, at, dt) {
   const docked = S.dock > 0.5, split = S.split > 0.5, R = at.R ?? at.r * 1.5, st = $('status');
   if (booting) scrivi(st, `ASSEMBLING... ${Math.min(99, Math.round(scene.assembling(t) * 100))}%`);
   else scrivi(st, ear !== 'on' && S.mode === 'idle' ? (docked ? 'STATUS: MIC OFF' : `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()) // nell'angolo il perché uscirebbe dallo schermo
     : S.mode === 'speaking' && S.audio > 0.35 && !docked ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode]);
-  const media = $('media').classList.contains('on'), sm = $('small'), an = $('anomalia');
+  const media = corsia.attiva, sm = $('small'), an = $('anomalia'); // la corsia delle schede prende il posto dei dati di destra
   // anche la lunghezza dei testi: una scritta che si allunga può arrivare sopra la colonna degli eventi
   const lunghi = `${RAGGI.map((r) => r.el.textContent.length)} ${sm.classList.contains('on') && sm.textContent.length} ${an.classList.contains('on') && an.textContent.length}`;
   const chiave = `${at.x.toFixed(1)} ${at.y.toFixed(1)} ${R.toFixed(1)} ${docked} ${split} ${media} ${innerWidth} ${innerHeight} ${lunghi}`;
@@ -69,19 +73,23 @@ function mete(at, R, docked, split, media) {
     // col browser il nucleo sta a sinistra: i dati uscirebbero dallo schermo o finirebbero sulla pagina, resta solo lo stato, in alto
     const lato = r.lato, ang = (r.stato && split ? 72 : r.ang) * Math.PI / 180, c = Math.cos(ang), s = Math.sin(ang);
     const x0 = at.x + R * c, y0 = at.y - R * s, x1 = at.x + (R + 22) * c, y1 = at.y - (R + 22) * s;
-    r.ancora = { x0, y0, x1, y1, lato, nascosto: !r.stato && (split || (lato === 1 && media)) }; // a destra la GIF
+    r.ancora = { x0, y0, x1, y1, lato, nascosto: !r.stato && (split || (lato === 1 && media)) }; // a destra le schede
     r.mx.verso(x1 + lato * 52); r.my.verso(y1 - 7); r.via = lato === -1 ? ' translateX(-100%)' : '';
   }
-  // La GIF a destra degli anelli (i dati di destra si spengono), oppure a sinistra quando a destra c'è il browser
-  const mx = split ? Math.round(at.x - R - 330) : Math.round(at.x + R + 28);
-  mediaX.verso(Math.max(16, Math.min(innerWidth - 316, mx))); mediaY.verso(Math.round(at.y - 150));
+  // La corsia delle schede: a destra degli anelli (i dati di destra si spengono); col browser sotto il nucleo, compatta; col
+  // report o la meteo sopra il nucleo nell'angolo, compatta e appoggiata dal basso. Non chiude niente.
+  corsia.modo(docked || split ? 'compatto' : 'pieno');
+  if (docked) { corsiaX.verso(Math.max(16, Math.min(innerWidth - 316, at.x - 150))); corsiaY.verso(at.y - R - 66); corsiaVia = ' translateY(-100%)'; }
+  else if (split) { corsiaX.verso(Math.max(16, at.x - 150)); corsiaY.verso(at.y + R + 14); corsiaVia = ''; }
+  else { corsiaX.verso(Math.max(16, Math.min(innerWidth - 316, at.x + R + 28))); corsiaY.verso(at.y - 150); corsiaVia = ''; }
+  corsiaX.scritta = null;
   // La scheda dell'ascolto sotto il nucleo, centrata su di lui (col report e la meteo è una riga in basso, centrata sullo schermo)
   // la larghezza della scheda cambia solo con le classi del corpo e con la finestra: rileggerla a ogni passo del nucleo
   // forzava un layout per fotogramma
   const chiaveLarg = `${document.body.className} ${innerWidth}`;
   if (chiaveLarg !== ultimaLarg) { ultimaLarg = chiaveLarg; largAscolto = $('ascolto').offsetWidth; }
   ascoltoX.verso(Math.max(12, (docked ? innerWidth * 0.44 : at.x) - largAscolto / 2));
-  if (primaVolta) { primaVolta = false; for (const m of [...RAGGI.flatMap((r) => [r.mx, r.my]), mediaX, mediaY, ascoltoX]) m.salta(m.meta); }
+  if (primaVolta) { primaVolta = false; for (const m of [...RAGGI.flatMap((r) => [r.mx, r.my]), corsiaX, corsiaY, ascoltoX]) m.salta(m.meta); }
   colonneDaRifare = true;
 }
 // Un passo delle molle; il DOM si tocca solo per quello che si muove
@@ -106,7 +114,7 @@ function muovi(dt) {
     }
     if (r.mx.ferma() && r.my.ferma()) r.disegnata = chiaveAttorno;
   }
-  if (!mediaX.ferma() || !mediaY.ferma()) { fermi = false; $('media').style.transform = `translate(${mediaX.passo(dt).toFixed(1)}px, ${mediaY.passo(dt).toFixed(1)}px)`; }
+  if (!corsiaX.ferma() || !corsiaY.ferma() || corsiaX.scritta === null) { fermi = false; corsiaX.scritta = 1; corsia.el.style.transform = `translate(${corsiaX.passo(dt).toFixed(1)}px, ${corsiaY.passo(dt).toFixed(1)}px)${corsiaVia}`; }
   if (!ascoltoX.ferma() || ascoltoX.scritta !== ascoltoX.meta) { fermi = false; ascoltoX.scritta = ascoltoX.ferma() ? ascoltoX.meta : null; $('ascolto').style.transform = `translateX(${ascoltoX.passo(dt).toFixed(1)}px)`; }
   if (fermi && colonneDaRifare) { colonneDaRifare = false; liberaColonna(); }
 }
@@ -117,7 +125,7 @@ function liberaColonna() {
   const dx = $('colonna-dx');
   dx.style.top = ''; dx.style.width = '';
   if (S.dock > 0.5 || S.split > 0.5) return; // col browser, il report o la meteo la colonna è spenta
-  const scritte = [...RAGGI.map((r) => r.el), ...[$('small'), $('anomalia')].filter((e) => e.classList.contains('on')), ...($('media').classList.contains('on') ? [$('media')] : [])];
+  const scritte = [...RAGGI.map((r) => r.el), ...[$('small'), $('anomalia')].filter((e) => e.classList.contains('on')), ...(corsia.attiva ? [corsia.el] : [])];
   const cd = dx.getBoundingClientRect(), asc = $('ascolto').getBoundingClientRect();
   let sotto = cd.top;
   for (const e of scritte) {
@@ -395,19 +403,28 @@ function disegnaDita(lista) {
   });
 }
 
-// ---------- GIF e animazioni accanto alla testa ----------
-let mediaTimer = 0;
-function showMedia(m) {
-  const box = $('media'), img = $('media-img');
-  img.onload = () => {
-    $('media-title').textContent = (m.kind === 'anim' ? 'ESEMPIO · ' : '') + (m.title || '').toUpperCase().slice(0, 48);
-    box.classList.add('on');
-    clearTimeout(mediaTimer);
-    mediaTimer = setTimeout(hideMedia, m.kind === 'anim' ? 16000 : 9000);
-  };
-  img.src = m.url;
+// ---------- Le schede: compaiono quando la loro frase comincia a suonare ----------
+// Il server manda ogni scheda subito dopo la frase che la nomina: qui si lega a quella frase (l'ultima arrivata). Compare
+// quando la frase parte, più la posizione del nome nella frase per la sua durata: «say» non dice quando pronuncia ogni
+// parola, quindi è una stima. La voce non aspetta mai una scheda: le schede non entrano nella coda dell'audio.
+const normT = (x) => String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function posizioneNome(testo, nome) {
+  const t = normT(testo);
+  for (const w of normT(nome).split(/[^a-z0-9]+/).filter((x) => x.length >= 3)) { const i = t.indexOf(w); if (i >= 0) return Math.min(0.85, i / Math.max(1, t.length)); }
+  return 0;
 }
-function hideMedia() { $('media').classList.remove('on'); }
+const TEMPI = DEBUG ? (window.__tempi = { frasi: [], schede: [] }) : null; // per prove/hud-foto.mjs
+function mostraScheda(id) { corsia.mostra(id); TEMPI?.schede.push({ id, mostrata: performance.now() }); }
+function programma(item, d) {
+  const ms = item.partita + posizioneNome(item.job.text || '', d.nome) * item.durata * 1000 - performance.now();
+  setTimeout(() => { if (item.gen === generation) mostraScheda(d.id); }, Math.max(0, ms));
+}
+function legaScheda(item, d) {
+  corsia.aggiungi(d);
+  if (d.subito || !item || item.finita) mostraScheda(d.id); // un'animazione, o la frase già finita: subito
+  else if (item.partita) programma(item, d);
+  else item.schede.push(d);
+}
 
 // ---------- Audio: una coda, la voce del Mac dal server ----------
 let ctx = null, outAnalyser = null, micAnalyser = null, sfx = null, micLivello = 0; // micLivello: rms del microfono, per i dB a raggiera
@@ -451,8 +468,10 @@ function speak(text, riprodotta) {
     : fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }), signal })
       .then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null))).finally(ttsFree);
   job.text = text;
-  queue.push({ gen, job, riprodotta });
+  const item = { gen, job, riprodotta, schede: [], ricevuta: performance.now() };
+  queue.push(item);
   if (!playing) playNext();
+  return item;
 }
 async function playNext() {
   const item = queue.shift();
@@ -465,7 +484,7 @@ async function playNext() {
   playing = true;
   const data = await item.job;
   if (item.gen !== generation) return; // risposta annullata: silence() ha già azzerato tutto
-  if (!data) return playNext();         // frase persa: meglio un salto che un'altra voce
+  if (!data) { item.finita = true; item.schede.forEach((d) => mostraScheda(d.id)); return playNext(); } // frase persa: meglio un salto che un'altra voce
   try {
     await ensureAudio();
     const audio = await ctx.decodeAudioData(data);
@@ -476,9 +495,12 @@ async function playNext() {
     spokeThisAnswer = true;
     recentSpoken.push({ text: item.job.text || '', at: performance.now() + audio.duration * 1000 }); if (recentSpoken.length > 4) recentSpoken.shift();
     if (S.mode !== 'speaking') setMode('speaking');
-    src.onended = () => { if (currentSource === src) currentSource = null; if (item.gen === generation) { item.riprodotta?.(); playNext(); } };
+    src.onended = () => { item.finita = true; if (currentSource === src) currentSource = null; if (item.gen === generation) { item.riprodotta?.(); playNext(); } };
     src.start();
-  } catch { if (item.gen === generation) playNext(); }
+    item.partita = performance.now(); item.durata = audio.duration;
+    TEMPI?.frasi.push({ s: item.job.text, ricevuta: item.ricevuta, partita: item.partita, durata: audio.duration });
+    for (const d of item.schede) programma(item, d);
+  } catch { if (item.gen === generation) { item.finita = true; item.schede.forEach((d) => mostraScheda(d.id)); playNext(); } }
 }
 function silence() {
   generation++;
@@ -495,7 +517,8 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
   spokeThisAnswer = false; earlySent = '';
   allarme('attesa', 0);
   const gen = generation, chiesto = performance.now();
-  let primaFrase = true;
+  let primaFrase = true, ultima = null; // ultima: la frase a cui si lega la prossima scheda
+  corsia.pulisci(); // una risposta nuova: via le schede di quella prima
   controller?.abort();
   controller = new AbortController();
   setMode('thinking');
@@ -518,8 +541,10 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
         const ev = JSON.parse(line);
         if (ev.t === 'say') {
           if (primaFrase) { primaFrase = false; latenza = (performance.now() - chiesto) / 1000; evento(`VOICE OUT · ${latenza.toFixed(1)} S`); allarme('cervello', 0); }
-          speak(ev.s);
+          ultima = speak(ev.s);
         }
+        else if (ev.t === 'vedi') { evento(`VEDI · ${String(ev.nome || '').slice(0, 24)}`); legaScheda(ultima, ev); } // non chiude né ologramma né meteo
+        else if (ev.t === 'vedi-foto') corsia.foto(ev.id, ev.url)
         else if (ev.t === 'show') { evento('BROWSER · SHOW'); chiudiOlo(); chiudiMeteo(); closeReport(); showScreen(true); } // ricerca nuova: report, ologramma e meteo lasciano il posto al browser
         else if (ev.t === 'report') openReport(ev);
         else if (ev.t === 'meteo') { if (ev.chiudi) chiudiMeteo(); else apriMeteo(ev.dati); }
@@ -530,7 +555,6 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
         // Ricerca senza browser (WebSearch, WebFetch): un'etichetta piccola, e l'ologramma resta aperto. Dal server arriva
         // solo il tipo e, per una pagina, il nome del sito: mai le parole cercate.
         else if (ev.t === 'web') { const pagina = ev.name === 'pagina'; evento(`WEB · ${pagina ? 'PAGINA' : 'RICERCA'}`); showSmall(pagina ? 'Leggo' : 'Cerco in rete', pagina ? String(ev.detail || '').slice(0, 60) : ''); if (!playing) setMode('thinking'); }
-        else if (ev.t === 'media') { evento(`MEDIA · ${ev.kind === 'anim' ? 'ANIM' : 'GIF'}`); showMedia(ev); }
         else if (ev.t === 'ignore') { evento('IGNORE'); report('frase non per O.S.C.A.R. (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
         else if (ev.t === 'promemoria') mostraPromemoria(ev, () => gen === generation, speak);
         else if (ev.t === 'attesa') allarme('attesa', ev.attiva ? 1 : 0, 'IN ATTESA · ESC O «STOP» PER INTERROMPERE');
@@ -766,7 +790,7 @@ const ascolto = (() => {
 
 // ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce e chiude, un clic sblocca l'audio se Chrome lo blocca ----------
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); chiudiMeteo(); }
+  if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); chiudiMeteo(); corsia.pulisci(); }
   else if (holoAperto && e.key.toLowerCase() === 'm' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) { cambiaMani(); e.preventDefault(); }
   else if (meteo?.aperto && tastoMeteo(e)) e.preventDefault();
 });
@@ -839,7 +863,7 @@ function disegnaLivello() {
 // ---------- Avvio ----------
 // Prove senza microfono e senza ricerca: oscarSente è una frase finita e oscarParziale una parziale, come dal riconoscimento;
 // oscarAllarme(causa, livello, testo, ms) accende un'anomalia finta
-if (DEBUG) { window.oscarAsk = ask; window.oscarReport = openReport; window.oscarSente = heard; window.oscarParziale = onInterim; window.oscarAllarme = allarme; window.oscarNome = isName; }
+if (DEBUG) { window.oscarCorsia = corsia; window.oscarAsk = ask; window.oscarReport = openReport; window.oscarSente = heard; window.oscarParziale = onInterim; window.oscarAllarme = allarme; window.oscarNome = isName; }
 // oscarMeteo(dati): apre la meteo senza cervello, con i dati dati o con gli ultimi del server (GET /api/meteo); oscarVistaMeteo() per info() e gesto()
 if (DEBUG) { window.oscarMeteo = async (dati) => apriMeteo(dati || await (await fetch('/api/meteo', { cache: 'no-store' })).json()); window.oscarVistaMeteo = () => meteo; }
 if (DEBUG && params.get('wav')) await loadDebugTrack(params.get('wav'));
@@ -888,7 +912,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   // In attesa e senza nessuno che parla da 20 s: 20 fotogrammi al secondo bastano, la GPU (e la batteria) ringraziano.
   // L'ologramma e la meteo aperti contano come attività: a metà frequenza mani, rotazione e foto andrebbero a scatti.
-  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || $('media').classList.contains('on') || holoAperto || meteo?.aperto) lastActive = now;
+  if (booting || S.mode !== 'idle' || S.hearing || S.split > 0.01 || corsia.attiva || holoAperto || meteo?.aperto) lastActive = now;
   if (now - lastActive > 20000) { skip = !skip; if (skip || now - last < 45) return; }
   contaQuadro(now);
   if (holoAperto) { last = now; return; } // davanti c'è Blender: il nucleo non si disegna e la grafica resta a Blender e alle mani
