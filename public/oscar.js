@@ -493,7 +493,7 @@ async function playNext() {
     src.buffer = audio; src.connect(outAnalyser);
     currentSource = src;
     spokeThisAnswer = true;
-    recentSpoken.push({ text: item.job.text || '', at: performance.now() + audio.duration * 1000 }); if (recentSpoken.length > 4) recentSpoken.shift();
+    recentSpoken.push({ text: item.job.text || '', at: performance.now() + audio.duration * 1000, gen: item.gen }); if (recentSpoken.length > 60) recentSpoken.shift();
     if (S.mode !== 'speaking') setMode('speaking');
     src.onended = () => { item.finita = true; if (currentSource === src) currentSource = null; if (item.gen === generation) { item.riprodotta?.(); playNext(); } };
     src.start();
@@ -654,23 +654,34 @@ async function loadDebugTrack(file) {
 let earlySent = '', earlyTimer = 0, joinTimer = 0, pending = '', heardAt = 0, spokeUntil = -1e9;
 // Eco: le ultime parole di O.S.C.A.R. arrivano al riconoscitore anche dopo che ha smesso di parlare.
 // Le scarto se arrivano entro 1,2 s dalla fine o se somigliano per più del 60% a ciò che ha appena detto.
-function echoWords() { // parole dette da O.S.C.A.R. negli ultimi 6 secondi
+// Le parole della sua voce: tutte quelle della risposta in corso, più quelle finite da meno di 6 secondi. Mentre la voce va
+// avanti senza pause il riconoscitore trascrive il discorso dall'inizio: fino al 27/11 il filtro ricordava 4 frasi per 6 s,
+// e O.S.C.A.R. che spiegava «mi hai detto aspetta, mi basta così» si fermava da solo, più volte di fila (prove/hud-foto.mjs).
+function echoWords() {
   const now = performance.now();
-  return new Set(recentSpoken.filter((r) => now - r.at < 6000).flatMap((r) => r.text.split(/\s+/).map(norm)));
+  return new Set(recentSpoken.filter((r) => r.gen === generation || now - r.at < 6000).flatMap((r) => r.text.split(/\s+/).map(norm).filter(Boolean)));
+}
+// Detta da lui, anche storpiata: il riconoscitore cambia una lettera («fermato» → «fermati», «pasta» → «basta»).
+// Solo parole di almeno 4 lettere, così un «stop» di Tony non si confonde con un «top» detto da lui.
+function dettaDaLui(parola, said) {
+  const p = norm(parola);
+  if (!p || said.has(p)) return true;
+  if (p.length < 4) return false;
+  for (const w of said) if (w.length >= 4 && Math.abs(w.length - p.length) <= 1 && editDistance(w, p) <= 1) return true;
+  return false;
 }
 function isEcho(text) {
   const words = text.split(/\s+/);
   if (words.some(isName)) return false;
   const w = words.map(norm).filter((x) => x.length > 2);
   if (w.length < 1) return performance.now() - spokeUntil < 1200;
-  const said = echoWords();
-  const similar = w.filter((x) => said.has(x)).length / w.length > 0.6;
-  return similar || (performance.now() - spokeUntil < 1200 && w.filter((x) => said.has(x)).length > 0);
+  const said = echoWords(), sue = w.filter((x) => dettaDaLui(x, said)).length;
+  return sue / w.length > 0.6 || (performance.now() - spokeUntil < 1200 && sue > 0);
 }
 // Mentre parla o lavora: "stop", "basta"… oppure il nome, in qualunque punto della frase, tolte le parole della sua eco
 function wantsStop(text) {
   const said = echoWords();
-  const mine = text.split(/\s+/).filter((x) => !said.has(norm(x)));
+  const mine = text.split(/\s+/).filter((x) => !dettaDaLui(x, said));
   return mine.some((x) => STOP.test(x) || isName(x));
 }
 function startEar() {
@@ -709,7 +720,7 @@ function onInterim(text) {
   dbg('parziale', text, '| modo', S.mode);
   heardAt = performance.now();
   const said = echoWords();
-  if ((S.mode === 'speaking' || S.mode === 'thinking') && text.split(/\s+/).some((x) => STOP.test(x) && !said.has(norm(x)))) {
+  if ((S.mode === 'speaking' || S.mode === 'thinking') && text.split(/\s+/).some((x) => STOP.test(x) && !dettaDaLui(x, said))) {
     interrupt(); report('fermato a voce'); ascolto.esito('STOP', true); return; // "stop" funziona anche mentre clicca e scrive, senza aspettare la fine della frase
   }
   if (S.mode === 'speaking' || isEcho(text)) return; // mentre parla, e subito dopo, ignora l'eco della sua voce (e non la scrive)
