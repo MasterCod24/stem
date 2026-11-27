@@ -7,7 +7,7 @@ Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`
 ## Avvio
 Per l’agenda serve Node.js con il modulo integrato `node:sqlite`.
 
-- **App O.S.C.A.R.:** doppio clic su `O.S.C.A.R.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: le particelle si raccolgono nella sfera, poi gli anelli si disegnano. Se O.S.C.A.R. è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), O.S.C.A.R. si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
+- **App O.S.C.A.R.:** doppio clic su `O.S.C.A.R.app` (o Spotlight, o trascinala nel Dock). Si apre l'HUD a schermo intero: una nube di particelle collassa in una goccia e un'onda disegna gli anelli, in un secondo e mezzo. Se O.S.C.A.R. è già acceso, riapre solo l'HUD. Quando chiudi l'HUD (Cmd+Q), O.S.C.A.R. si spegne da solo entro un paio di minuti, qualcuno in più se sta ancora facendo memoria.
 - Se macOS richiede nuovamente Accessibilità o Registrazione schermo, scegli **O.S.C.A.R.** nelle Impostazioni di Sistema.
 - **Da Terminale:** `./avvia.command`. Ctrl-C o chiudere la finestra spegne tutto.
 
@@ -20,19 +20,21 @@ L’assistente si chiama **O.S.C.A.R.** e si pronuncia **Oscar**. Puoi dire «Ci
   Nient'altro passa: né la TV, né un «dimmi» detto a qualcun altro. Il cervello sa anche quale delle due è: senza il nome, nel dubbio tace (`[ignora]`). Con l'ologramma aperto vale lo stesso: «O.S.C.A.R., esplodilo».
 - **Il cervello** è un processo Claude Code sempre acceso, con Sonnet 5.5. Risponde a effort basso, con la prima parola in meno di un secondo. Per un ologramma, una ricerca con un report o un calcolo, dice prima una frase breve («Te lo costruisco.») e poi lavora a effort alto. Si cambiano in `.env` con `OSCAR_EFFORT` e `OSCAR_EFFORT_PENSA`. Se fai una pausa a metà di una richiesta, O.S.C.A.R. parte già e, se poi continui, riparte con la frase completa.
 - **Interromperlo:** mentre parla di' "stop", "basta" o "aspetta", oppure chiamalo per nome. `Esc` lo zittisce.
-- **La scheda dell'ascolto:** in basso, sotto la sfera, O.S.C.A.R. scrive quello che dici mentre lo dici. A frase finita aggiunge cosa ne ha fatto: «PER O.S.C.A.R. · NOME», «PER O.S.C.A.R. · CONVERSAZIONE», «NON PER O.S.C.A.R.». Così vedi subito perché non ti ha risposto.
+- **La scheda dell'ascolto:** in basso, sotto la goccia, O.S.C.A.R. scrive quello che dici mentre lo dici. A frase finita aggiunge cosa ne ha fatto: «PER O.S.C.A.R. · NOME», «PER O.S.C.A.R. · CONVERSAZIONE», «NON PER O.S.C.A.R.». Così vedi subito perché non ti ha risposto.
 - **Privacy:** l'ascolto usa il riconoscimento vocale locale di Chrome: l'audio della stanza non esce dal Mac. Le frasi della scheda dell'ascolto restano sullo schermo e non finiscono in nessun registro. In `runtime/ascolto.log` O.S.C.A.R. annota solo se una frase era per lui e la prima parola di quelle scartate, per capire come il riconoscitore ti sente.
 
 Se il cervello tace per 45 secondi, sullo schermo appare un avviso. Puoi dire «stop» o premere Esc. Dopo tre minuti senza progressi il turno si interrompe automaticamente. Il limite sale a sette minuti durante l’uso di uno strumento. Puoi quindi fare una nuova domanda.
 
 ## Cosa vedi
-- **La sfera è il cervello di O.S.C.A.R.** È fatta di particelle e filamenti, dentro anelli che girano a velocità diverse:
-  - in attesa respira piano;
-  - quando parli si accende col microfono;
-  - quando pensa nei filamenti corrono gli impulsi e un arco scansiona gli anelli;
-  - quando parla pulsa con la voce.
-- **Intorno alla sfera** ci sono i dati veri, appesi agli anelli: lo stato, la voce in uso, quanto ha messo a rispondere l'ultima volta, il microfono in dB, browser e agenda, gli fps.
-- **Ai bordi** scorrono i micro-dati: a sinistra lo spettro del microfono in esadecimale, a destra gli eventi (domande, strumenti, voce, mai le frasi), in alto ora e memoria.
+- **La goccia è il cervello di O.S.C.A.R.** Tutto quello che si muove segue la fisica vera, come una goccia d'acqua che vibra:
+  - in attesa trema appena, come una goccia ferma;
+  - quando parli vibra col tuo microfono, e l'anello dello spettro mostra le tue frequenze (basse in basso, alte in alto);
+  - quando pensa si allunga e gira, nelle linee di campo dentro corrono le cariche e sulla corda attorno girano onde che si incrociano;
+  - quando parla vibra con la sua voce, e la voce fa partire onde dalla cima della corda;
+  - in un'anomalia seria trema forte e si fa rossa.
+- **Le animazioni** sono molle: brevi (un quinto di secondo), con un filo di rimbalzo, e se cambi idea a metà ripartono senza scatti.
+- **Intorno alla goccia** ci sono i dati veri, appesi agli anelli come pesi su una molla: lo stato, la voce in uso, quanto ha messo a rispondere l'ultima volta, il microfono in dB, browser e agenda, gli fps.
+- **Ai bordi:** a destra gli eventi (domande, strumenti, voce, mai le frasi), che si spengono man mano che invecchiano; in alto ora e memoria.
 - **I colori:**
   - ciano vuol dire che tutto va;
   - arancione è un'anomalia da guardare: microfono negato o spento, calcolo degli sforzi fallito;
@@ -42,7 +44,7 @@ Se il cervello tace per 45 secondi, sullo schermo appare un avviso. Puoi dire «
 
 ## Cosa fa
 - **Browser:** lavora su Google in un Chrome suo, sempre nella stessa pagina. Il pannello compare nell'HUD **solo per i compiti complessi** (ricerche lunghe, creazioni); le cose banali le fa in silenzio e ti dice il risultato.
-- **GIF ed esempi:** quando spiega, mostra accanto alla sfera animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
+- **GIF ed esempi:** quando spiega, mostra accanto alla goccia animazioni da Wikimedia Commons (per esempio un motore a quattro tempi); per le GIF simpatiche serve una chiave gratuita GIPHY in `.env` (`GIPHY_API_KEY`, da developers.giphy.com).
 - **Report a schermo intero:** alla fine di una ricerca che vuoi vedere, O.S.C.A.R. apre un report come quello di ROSE. È una griglia di note, grafici, un dato in grande, immagini e video di YouTube muti, che arrivano dal fondo e si mettono a fuoco uno alla volta, con i loro suoni, mentre lui si sposta nell'angolo in basso a destra. Le note in più si alternano ogni 9 secondi. Si chiude con `Esc`, oppure chiedendoglielo.
 - **Ologrammi:** chiedigli di mostrarti un oggetto in 3D («mostrami un motore a reazione», «fammi una staffa a L in alluminio») e lo costruisce. Dal 22/11 non compare più nell'HUD: si apre in una finestra di Blender, davanti a tutto, e si chiude quando chiudi Blender o lo chiude lui.
   - **Blender:** O.S.C.A.R. costruisce ogni ologramma in Blender, da solo, senza che tu glielo chieda: da vertici e curve, mai da forme già pronte. Le forme semplici di prima restano solo per i cavi e per i pezzi di cui chiedi gli sforzi. Blender gira invisibile e chiuso in una gabbia: niente internet, niente file tuoi, niente altri programmi. I file finiscono in Documenti, nella cartella OSCAR-Blender. Quei pezzi non hanno il calcolo degli sforzi.
@@ -78,7 +80,7 @@ Se il cervello tace per 45 secondi, sullo schermo appare un avviso. Puoi dire «
 - `orologio.mjs` fornisce l’ora. `agenda.mjs` conserva i promemoria in `runtime/agenda.sqlite` e importa automaticamente la precedente agenda JSON al primo avvio.
 - `ologramma.mjs`: lo stato degli ologrammi; `blender.mjs`: il collegamento con Blender, che li mostra; `fisica/`: il calcolo degli sforzi.
 - `meteo.mjs`: le previsioni di Open-Meteo per la vista meteo, e il riassunto per il cervello.
-- `public/`: l'HUD (`nucleo.js` per la sfera e gli anelli, `sfx.js` per i suoni sintetizzati, `oscar.js` per ascolto e logica, `report.js` per il report a schermo intero, `ologramma/` per le mani e per le forme dei pezzi, `meteo/` per la vista meteo, il globo e il radar).
+- `public/`: l'HUD (`nucleo.js` per la goccia e gli anelli, `fisica.js` per le molle delle animazioni, `sfx.js` per i suoni sintetizzati, `oscar.js` per ascolto e logica, `report.js` per il report a schermo intero, `ologramma/` per le mani e per le forme dei pezzi, `meteo/` per la vista meteo, il globo e il radar).
 - `mac/`: controllo del Mac (server MCP + aiutante Swift); `mac/blender/` la gabbia e gli attrezzi per i pezzi fatti in Blender, e `vivo.py`, che mostra l'ologramma in Blender.
 - `oscar-persona.md`: il carattere. O.S.C.A.R. ha una memoria sua, separata dalla repository.
 

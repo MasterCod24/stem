@@ -150,8 +150,9 @@ try {
     try { localStorage.setItem('oscar-mani', '0') } catch {}` });
 
   // Avvio: la formazione ferma a 1, 3,5 e 6 secondi
-  if (!SOLO || ['avvio-1', 'avvio-3', 'avvio-6'].some((n) => SOLO.has(n))) {
-    for (const [t, nome] of [[1, 'avvio-1'], [3.5, 'avvio-3'], [6, 'avvio-6']]) { await vai(`?debug&t=${t}`, false); await pausa(2500); await foto(nome); }
+  if (!SOLO || ['avvio-03', 'avvio-07', 'avvio-11'].some((n) => SOLO.has(n))) {
+    // l'avvio del 27/11: goccia fatta a 0,85 s, pronto a 1,45 s
+    for (const [t, nome] of [[0.3, 'avvio-03'], [0.7, 'avvio-07'], [1.1, 'avvio-11']]) { await vai(`?debug&t=${t}`, false); await pausa(2500); await foto(nome); }
   }
   await vai('?debug');
   await pausa(2500); await foto('casa');
@@ -192,6 +193,8 @@ try {
   await ev("oscarAsk('apri il browser'); true"); await pausa(2600); await foto('browser');
   await attendi(async () => (await modo()) === 'idle', 12000);
   await tasto('Escape', 'Escape', 27); await pausa(800);
+  // fluidità dell'entrata: gli intervalli fra i fotogrammi nei primi 2 s (criterio scritto prima del 27/11: nessuno oltre 50 ms)
+  await ev("window.__gap = []; { let p = 0; const f = (n) => { if (p) __gap.push(n - p); if (p && n - p > 20) (window.__lunghi ||= []).push([Math.round(p - window.__gap0), Math.round(n - p)]); p = n; if (n - (window.__gap0 ||= n) < 2000) requestAnimationFrame(f); }; requestAnimationFrame(f); } true");
   await ev(`oscarReport({ titolo: 'Realtà virtuale nel 2026', blocchi: [
     { tipo: 'testo', titolo: 'Il mercato', testo: 'Le spedizioni di visori sono cresciute del 12% rispetto al 2025, trainate dai modelli leggeri.', fonte: 'IDC' },
     { tipo: 'dato', titolo: 'Visori venduti', valore: '9,4 mln', testo: 'Nel mondo, primi tre trimestri.', fonte: 'IDC' },
@@ -200,6 +203,11 @@ try {
     { tipo: 'dato', titolo: 'Peso medio', valore: '410 g', testo: 'Contro i 520 g del 2023.' },
     { tipo: 'testo', titolo: 'Limiti', testo: 'Batteria e prezzo restano i freni principali.' } ] }); true`);
   await pausa(3000); await foto('report');
+  const gap = await ev("(() => { const g = window.__gap.slice().sort((a, b) => b - a); return { n: g.length, max: +g[0].toFixed(1), oltre34: g.filter((x) => x > 34).length, p99: +g[Math.floor(g.length * 0.01)].toFixed(1) }; })()");
+  controlla(gap.max < 50, "l'entrata del report è fluida: nessun fotogramma oltre 50 ms", `${gap.n} fotogrammi, il più lungo ${gap.max} ms, ${gap.oltre34} oltre 34 ms; oltre 20 ms (da quando, quanto): ${JSON.stringify(await ev('window.__lunghi || []'))}`);
+  // fino al 27/11 le schede «dato» prendevano la classe delle scritte attorno al nucleo, che col report si spengono: non si vedevano mai
+  const dati = await ev(`[...document.querySelectorAll('#report .card.dato')].map((c) => { const s = getComputedStyle(c); return [s.opacity, s.position, c.textContent.includes('9,4 mln') || c.textContent.includes('410 g')].join(' '); })`);
+  controlla(dati.length === 2 && dati.every((d) => d === '1 relative true'), 'nel report le schede «dato» si vedono, al loro posto nella griglia', dati.join(' | '));
   await ev("oscarParziale('oscar chiudi il report'); true"); await pausa(600); await foto('report-ascolto');
   await ev("oscarParziale(''); true");
   await tasto('Escape', 'Escape', 27); await pausa(1200);

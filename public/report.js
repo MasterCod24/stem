@@ -1,9 +1,12 @@
-// O.S.C.A.R. — il report a schermo intero, come nel video di ROSE (secondi 34–46).
-// I blocchi (testi, grafici, dati, immagini, video) stanno in una griglia 12×6. Entrano in quattro tempi:
-// un lampo di pannelli che attraversano lo schermo in profondità, il protagonista (il primo video) che atterra per primo,
-// gli altri che arrivano dal fondo uno alla volta, sfocati e inclinati, e infine i video che partono.
+// O.S.C.A.R. — il report a schermo intero.
+// I blocchi (testi, grafici, dati, immagini, video) stanno in una griglia 12×6. Entrano su molle (fisica.js): prima il
+// protagonista (il primo video), poi gli altri in ordine di distanza da lui, come un fronte d'onda che si allarga sulla
+// griglia; le barre dei grafici salgono anche loro su una molla. Tutto atterra in circa mezzo secondo, poi partono i video.
+// Niente sfocature: costavano a ogni fotogramma, ed erano il primo indiziato degli scatti dell'entrata (1/11).
 // I blocchi che non ci stanno si impilano su uno dello stesso tipo e si alternano ogni 9 secondi.
 // Tutto il testo entra con textContent: quello che scrive il cervello non diventa mai HTML.
+
+import { curvaCSS, MOTO } from './fisica.js';
 
 const COLS = 12, ROWS = 6;
 const DOCK = { c: 10, r: 4 };      // le ultime due colonne delle ultime due righe: lì si siede la testa di O.S.C.A.R.
@@ -11,9 +14,10 @@ const DOCK = { c: 10, r: 4 };      // le ultime due colonne delle ultime due rig
 const SIZES = { video: [[4, 2]], verticale: [[2, 3], [2, 2]], testo: [[3, 2], [2, 2]], grafico: [[3, 2], [2, 2]],
   immagine: [[3, 2], [2, 2]], dato: [[2, 2], [3, 1], [2, 1]] };
 const KICKER = { testo: 'NOTA', grafico: 'GRAFICO', dato: 'DATO', immagine: 'IMMAGINE', video: 'VIDEO', verticale: 'VIDEO' };
-const EASE = 'cubic-bezier(.16, .84, .24, 1)';
 const SWAP_MS = 9000;
-const LAND_MS = 480;                // durata del volo di una scheda
+const CORPO = curvaCSS(MOTO.corpo), LIEVE = curvaCSS(MOTO.lieve);
+const ATTERRA_S = MOTO.corpo.ts * 0.7; // quando una scheda è a posto entro il 2% (0,21 s con la molla del corpo: prove/fisica.mjs)
+const ONDA_MS = 280;                   // il fronte arriva alla scheda più lontana dal protagonista in 0,28 s
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -22,7 +26,6 @@ const el = (tag, cls, text) => {
   return e;
 };
 const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : typeof v === 'number' ? String(v) : '');
-const rand = (a, b) => a + Math.random() * (b - a);
 
 function youtube(v) {
   const s = str(v, 300);
@@ -186,47 +189,43 @@ function next(card, slot) {
   slot.i = (slot.i + 1) % slot.items.length;
   fill(card, slot);
   goLive(card, slot);
-  card.animate([{ opacity: 0.25, filter: 'blur(5px)' }, { opacity: 1, filter: 'blur(0px)' }], { duration: 450, easing: 'ease-out' });
+  card.animate([{ opacity: 0.25, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: CORPO.ms, easing: CORPO.linear });
+  sali(card, 0);
   const b = slot.items[slot.i], p = card.querySelector('p:not(.note)');
   if (p && b.text) typeOn(p, b.text);
 }
 
-// ---------- Entrata in quattro tempi (tempi presi dal video, fotogramma per fotogramma) ----------
-function land(card, delay, from, onLand) {
-  card.animate([
-    { transform: from, opacity: 0, filter: 'blur(14px)' },
-    { opacity: 0.75, offset: 0.35 },
-    { transform: 'none', opacity: 1, filter: 'blur(0px)' },
-  ], { duration: LAND_MS, delay, easing: EASE, fill: 'backwards' }).finished.then(() => {
-    card.classList.add('landed');
+// ---------- Entrata: molle e un fronte d'onda ----------
+// Le barre di un grafico salgono dalla base, ognuna un poco dopo la precedente
+function sali(card, delay) {
+  card.querySelectorAll('.bars i').forEach((b, j) => b.animate([{ transform: 'scaleY(0)' }, { transform: 'none' }],
+    { duration: CORPO.ms, easing: CORPO.linear, delay: delay + 40 * j, fill: 'backwards' }));
+}
+function land(card, delay, onLand) {
+  card.animate([{ transform: 'translate3d(0, 22px, 0) scale(.94)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+    { duration: CORPO.ms, delay, easing: CORPO.linear, fill: 'backwards' });
+  sali(card, delay + 60);
+  // il bordo si accende all'arrivo e si spegne senza rimbalzo
+  setTimeout(() => {
+    if (!card.isConnected) return;
+    card.animate([{ boxShadow: 'inset 0 1px 0 #d2fbff, 0 0 30px rgba(110, 235, 255, .4)' }, { boxShadow: 'inset 0 1px 0 rgba(62, 230, 255, .3), 0 0 0 rgba(110, 235, 255, 0)' }],
+      { duration: LIEVE.ms * 2, easing: LIEVE.linear });
     onLand?.();
-  }).catch(() => {});
+  }, delay + ATTERRA_S * 1000);
 }
 
 // Restituisce quando atterrano le schede (secondi dall'apertura): sfx.js ci aggancia i suoni
-function assemble(grid, cards) {
-  // 1. lampo (0–0,8 s): copie dei pannelli che attraversano lo schermo dal fondo e svaniscono
-  cards.forEach(({ card }, i) => {
-    const g = card.cloneNode(true);
-    g.classList.add('ghost');
-    grid.append(g);
-    const dx = rand(-260, 260), dy = rand(-140, 140);
-    g.animate([
-      { transform: `translate3d(${dx}px, ${dy}px, -1700px)`, opacity: 0, filter: 'blur(14px)' },
-      { opacity: 0.8, filter: 'blur(0px)', offset: 0.5 },
-      { transform: `translate3d(${dx * 0.5}px, ${dy * 0.5}px, -350px)`, opacity: 0, filter: 'blur(10px)' },
-    ], { duration: 560, delay: i * 25 + rand(0, 60), easing: 'linear', fill: 'both' }).finished.then(() => g.remove()).catch(() => g.remove());
-  });
-  // 2. il protagonista atterra (0,42–0,9 s), con il bordo che si accende
+function assemble(cards) {
   const [hero, ...rest] = cards;
-  land(hero.card, 420, 'translate3d(-90px, 60px, -900px) rotateY(14deg) rotateX(6deg)', hero.live);
-  // 3. gli altri, uno alla volta: l'ultimo atterra entro circa 2 s
-  const gap = Math.min(90, 760 / Math.max(1, rest.length - 1));
-  rest.forEach(({ card, live }, i) => {
-    const s = Math.random() < 0.5 ? -1 : 1;
-    land(card, 860 + i * gap, `translate3d(${s * 50}px, 30px, -700px) rotateY(${-s * 16}deg) rotateX(9deg)`, live);
-  });
-  return { hero: (420 + LAND_MS) / 1000, lands: rest.map((_, i) => (860 + i * gap + LAND_MS) / 1000) };
+  // distanze in colonne: una riga è alta (0,914·H/6)/(0,956·W/12) colonne, cioè circa 1,3 a 1470×956 (la griglia di index.html)
+  const k = (0.914 * innerHeight / ROWS) / (0.956 * innerWidth / COLS);
+  const centro = ({ slot: { at, w, h } }) => [at.c + w / 2, (at.r + h / 2) * k];
+  const [hx, hy] = centro(hero), dist = rest.map((c) => { const [x, y] = centro(c); return Math.hypot(x - hx, y - hy); });
+  const v = Math.max(...dist, 1) / ONDA_MS;
+  land(hero.card, 0, hero.live);
+  const ritardi = rest.map((c, i) => Math.round(50 + dist[i] / v));
+  rest.forEach((c, i) => land(c.card, ritardi[i], c.live));
+  return { hero: ATTERRA_S, lands: ritardi.map((d) => d / 1000 + ATTERRA_S).sort((x, y) => x - y) };
 }
 
 // ---------- Apri e chiudi ----------
@@ -263,8 +262,8 @@ export function showReport(data) {
   });
   grid.replaceChildren(dock, ...cards.map((c) => c.card));
   root.classList.add('on');
-  const plan = assemble(grid, cards);
-  top.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 500, delay: 300, fill: 'backwards' });
+  const plan = assemble(cards);
+  top.animate([{ opacity: 0, transform: 'translateY(-8px)' }, { opacity: 1, transform: 'none' }], { duration: CORPO.ms, delay: 60, easing: CORPO.linear, fill: 'backwards' });
 
   // le pile cambiano la prima volta dopo 9 s, come nel video, e poi ogni 9 s, sfasate di 1,3 s l'una dall'altra
   cards.filter(({ slot }) => slot.items.length > 1).forEach(({ card, slot }, j) => {
@@ -277,8 +276,8 @@ export function hideReport() {
   if (!root.classList.contains('on')) return;
   const id = ++shown;
   timers.forEach(clearInterval); timers = [];
-  root.animate([{ opacity: 1, filter: 'blur(0px)', transform: 'none' }, { opacity: 0, filter: 'blur(10px)', transform: 'scale(.97)' }],
-    { duration: 450, easing: 'ease-in' }).finished.then(() => {
+  root.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.985)' }],
+    { duration: LIEVE.ms, easing: LIEVE.linear }).finished.then(() => {
     if (shown !== id) return;
     root.classList.remove('on');
     grid.replaceChildren(); // fuori anche gli iframe: i video smettono di girare

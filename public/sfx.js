@@ -100,7 +100,7 @@ export function createSfx(ctx) {
     e.setValueAtTime(0, a);
     e.linearRampToValueAtTime(0.088, a + 0.03);
     e.setValueCurveAtTime(new Float32Array([0.088, 0.096, 0.1, 0.098, 0.1, 0.104, 0.104, 0.11, 0.21, 0.27, 0.255, 0.235]),
-      a + 0.04, L - 0.06);
+      a + 0.04, L - 0.061); // 1 ms prima del punto dopo: sullo stesso istante, per arrotondamento, Chrome li dà sovrapposti
     e.setValueAtTime(0.235, b - 0.02);
     e.setTargetAtTime(0, b - 0.01, 0.025);
 
