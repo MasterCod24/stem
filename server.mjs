@@ -37,11 +37,11 @@ const salti = creaSalti(path.join(STATO, 'salti'));
 salti.pulisci();
 const PORT = Number(env.OSCAR_PORT || 4321);
 const PW_PORT = Number(env.OSCAR_BROWSER_PORT || 8931);
-// Sonnet 5.5, scelta di Tony del 12/11. Due effort, chiesti da Tony lo stesso giorno: low per la voce (prima parola in
-// 0,6–0,7 s di mediana), high per i compiti che il cervello annuncia con [[pensa]]: ologrammi, ricerche a più passaggi,
-// report, sforzi. Le misure di prove/latenza.mjs stanno nel CLAUDE.md. L'effort va scelto qui: se no il cervello eredita
-// quello di Claude Code di Tony (per programmare).
-const MODEL = env.OSCAR_MODEL || 'claude-sonnet-5-5';
+// Opus 5.5, scelta di Tony del 27/11 (dal 12/11 era Sonnet 5.5). Due effort, chiesti da Tony il 12/11: low per la voce,
+// high per i compiti che il cervello annuncia con [[pensa]]: ologrammi, ricerche a più passaggi, report, sforzi.
+// A low la prima parola arriva in 2,1 s di mediana con Opus, 0,7 con Sonnet (prove/latenza.mjs, 27/11; il resto nel CLAUDE.md).
+// L'effort va scelto qui: se no il cervello eredita quello di Claude Code di Tony (per programmare).
+const MODEL = env.OSCAR_MODEL || 'claude-opus-5-5';
 const EFFORT = env.OSCAR_EFFORT || 'low';
 const EFFORT_PENSA = env.OSCAR_EFFORT_PENSA || 'high';
 const effortDi = (e) => (e === 'default' ? undefined : e);
