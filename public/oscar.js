@@ -3,6 +3,8 @@
 import { NOME, norm, isName, unisciSigla } from './nome.js';
 import { mostraPromemoria } from './promemoria.js';
 import { showReport, hideReport, reportDock } from './report.js';
+import { avvia as avviaMoto, molla } from './fisica.js';
+avviaMoto(); // --molla, --t-molla, --lieve, --t-lieve: le transizioni CSS con la stessa fisica
 // allarme: 0 normale, 1 attenzione (arancione), 2 critico (rosso). Lo calcola aggiornaAllarme() dalle cause attive.
 const S = { mode: 'idle', audio: 0, mic: 0, split: 0, splitTarget: 0, dock: 0, dockTarget: 0, hearing: false, allarme: 0 };
 const $ = (id) => document.getElementById(id);
@@ -23,8 +25,10 @@ function setMode(m) {
 const scrivi = (el, testo) => { if (el.textContent !== testo) el.textContent = testo; }; // riscrivere lo stesso testo rifà il layout
 
 // ---------- Attorno al nucleo: scritta di stato e dati a raggiera, con i fili che partono dall'anello più esterno ----------
-// anchor() di nucleo.js: centro (x, y), raggio della sfera r e dell'anello più esterno R, in pixel CSS.
+// anchor() di nucleo.js: centro (x, y), raggio della goccia r e dell'anello più esterno R, in pixel CSS.
 // I dati stanno su raggi fissi: angolo in gradi (0 a destra, in senso antiorario); lato 1 scritta a destra, -1 a sinistra.
+// Ogni scritta è una massa su una molla (fisica.js) agganciata al suo punto: quando il nucleo si sposta lo segue con un filo
+// di ritardo e il filo si tende; quando è ferma non costa niente.
 const RAGGI = [
   { el: $('status'), ang: 38, lato: 1, stato: true },
   { el: $('d-voce'), ang: 6, lato: 1 },
@@ -34,78 +38,95 @@ const RAGGI = [
   { el: $('d-grafica'), ang: 220, lato: -1 },
 ];
 const SVG = 'http://www.w3.org/2000/svg';
-for (const r of RAGGI) { // un filo e un punto per dato: si spostano solo quando si sposta il nucleo
+for (const r of RAGGI) { // un filo e un punto per dato, e la molla della scritta
   r.filo = document.createElementNS(SVG, 'polyline'); r.punto = document.createElementNS(SVG, 'circle');
   r.punto.setAttribute('r', '2'); $('fili').append(r.filo, r.punto);
+  r.mx = molla(0); r.my = molla(0); r.via = ''; r.ancora = null;
 }
-let chiaveAttorno = '', largAscolto = 0;
-function disegnaAttorno(t, at) {
+const mediaX = molla(0), mediaY = molla(0), ascoltoX = molla(0);
+let chiaveAttorno = '', largAscolto = 0, ultimaLarg = '', primaVolta = true, colonneDaRifare = false;
+function disegnaAttorno(t, at, dt) {
   const docked = S.dock > 0.5, split = S.split > 0.5, R = at.R ?? at.r * 1.5, st = $('status');
   if (booting) scrivi(st, `ASSEMBLING... ${Math.min(99, Math.round(scene.assembling(t) * 100))}%`);
   else scrivi(st, ear !== 'on' && S.mode === 'idle' ? (docked ? 'STATUS: MIC OFF' : `STATUS: MIC OFF  (${EAR_TEXT[ear]})`.toUpperCase()) // nell'angolo il perché uscirebbe dallo schermo
     : S.mode === 'speaking' && S.audio > 0.35 && !docked ? 'STATUS: SPEAKING  INTENSITY: HIGH' : LABELS[S.mode]);
   const media = $('media').classList.contains('on'), sm = $('small'), an = $('anomalia');
-  // anche la lunghezza dei testi: una scritta che si allunga può arrivare sopra le colonne dei bordi
+  // anche la lunghezza dei testi: una scritta che si allunga può arrivare sopra la colonna degli eventi
   const lunghi = `${RAGGI.map((r) => r.el.textContent.length)} ${sm.classList.contains('on') && sm.textContent.length} ${an.classList.contains('on') && an.textContent.length}`;
-  const chiave = `${Math.round(at.x)} ${Math.round(at.y)} ${Math.round(R)} ${docked} ${split} ${media} ${innerWidth} ${innerHeight} ${lunghi}`;
-  if (chiave === chiaveAttorno) return; // fermo: niente da spostare
-  chiaveAttorno = chiave;
+  const chiave = `${at.x.toFixed(1)} ${at.y.toFixed(1)} ${R.toFixed(1)} ${docked} ${split} ${media} ${innerWidth} ${innerHeight} ${lunghi}`;
+  if (chiave !== chiaveAttorno) { chiaveAttorno = chiave; mete(at, R, docked, split, media); }
+  muovi(dt);
+}
+// Dove devono andare scritte, GIF e scheda dell'ascolto: gira solo quando cambia qualcosa
+function mete(at, R, docked, split, media) {
   document.body.classList.toggle('media', media);
-  if (docked) { // nell'angolo del report e dell'ologramma: la scritta sopra gli anelli, centrata e corta, per non finire sulle schede
-    const y = Math.round(at.y - R - 24);
-    st.style.transform = `translate(${Math.round(at.x)}px, ${y}px) translateX(-50%)`;
-    $('small').style.transform = `translate(${Math.round(at.x)}px, ${y - 18}px) translateX(-50%)`;
-    $('anomalia').style.transform = `translate(${Math.round(at.x)}px, ${y - 36}px) translateX(-50%)`;
-    for (const r of RAGGI) { r.filo.classList.add('spento'); r.punto.classList.add('spento'); }
-  } else {
-    for (const r of RAGGI) {
-      // col browser il nucleo sta a sinistra: i dati uscirebbero dallo schermo o finirebbero sulla pagina, resta solo lo stato, in alto
-      const lato = r.lato, ang = (r.stato && split ? 72 : r.ang) * Math.PI / 180;
-      const c = Math.cos(ang), s = Math.sin(ang);
-      const x0 = at.x + R * c, y0 = at.y - R * s, x1 = at.x + (R + 22) * c, y1 = at.y - (R + 22) * s, x2 = x1 + lato * 44;
-      const nascosto = !r.stato && (split || (lato === 1 && media)); // a destra la GIF
-      r.filo.setAttribute('points', `${x0.toFixed(1)},${y0.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y1.toFixed(1)}`);
-      r.punto.setAttribute('cx', x0.toFixed(1)); r.punto.setAttribute('cy', y0.toFixed(1));
-      r.filo.classList.toggle('spento', nascosto); r.punto.classList.toggle('spento', nascosto);
-      r.el.classList.toggle('spento', nascosto && !r.stato);
-      const tx = Math.round(x2 + lato * 8), ty = Math.round(y1 - 7), via = lato === -1 ? ' translateX(-100%)' : '';
-      r.el.style.transform = `translate(${tx}px, ${ty}px)${via}`;
-      if (r.stato) {
-        $('small').style.transform = `translate(${tx}px, ${ty + 20}px)${via}`;
-        $('anomalia').style.transform = `translate(${tx}px, ${ty + 38}px)${via}`;
-      }
+  for (const r of RAGGI) {
+    if (docked) { // nell'angolo del report e della meteo: la scritta sopra gli anelli, centrata e corta, per non finire sulle schede
+      r.ancora = null;
+      if (r.stato) { r.mx.verso(at.x); r.my.verso(at.y - R - 24); r.via = ' translateX(-50%)'; }
+      continue;
     }
+    // col browser il nucleo sta a sinistra: i dati uscirebbero dallo schermo o finirebbero sulla pagina, resta solo lo stato, in alto
+    const lato = r.lato, ang = (r.stato && split ? 72 : r.ang) * Math.PI / 180, c = Math.cos(ang), s = Math.sin(ang);
+    const x0 = at.x + R * c, y0 = at.y - R * s, x1 = at.x + (R + 22) * c, y1 = at.y - (R + 22) * s;
+    r.ancora = { x0, y0, x1, y1, lato, nascosto: !r.stato && (split || (lato === 1 && media)) }; // a destra la GIF
+    r.mx.verso(x1 + lato * 52); r.my.verso(y1 - 7); r.via = lato === -1 ? ' translateX(-100%)' : '';
   }
   // La GIF a destra degli anelli (i dati di destra si spengono), oppure a sinistra quando a destra c'è il browser
   const mx = split ? Math.round(at.x - R - 330) : Math.round(at.x + R + 28);
-  $('media').style.transform = `translate(${Math.max(16, Math.min(innerWidth - 316, mx))}px, ${Math.round(at.y - 150)}px)`;
-  // La scheda dell'ascolto sotto il nucleo, centrata su di lui (col report e l'ologramma è una riga in basso, centrata sullo schermo)
-  const el = $('ascolto');
-  largAscolto = el.offsetWidth;
-  const cx = docked ? innerWidth * 0.44 : at.x;
-  el.style.transform = `translateX(${Math.round(Math.max(12, cx - largAscolto / 2))}px)`;
-  liberaColonne(docked || split ? null : [...RAGGI.map((r) => r.el), ...[sm, an].filter((e) => e.classList.contains('on')), ...(media ? [$('media')] : [])]);
+  mediaX.verso(Math.max(16, Math.min(innerWidth - 316, mx))); mediaY.verso(Math.round(at.y - 150));
+  // La scheda dell'ascolto sotto il nucleo, centrata su di lui (col report e la meteo è una riga in basso, centrata sullo schermo)
+  // la larghezza della scheda cambia solo con le classi del corpo e con la finestra: rileggerla a ogni passo del nucleo
+  // forzava un layout per fotogramma
+  const chiaveLarg = `${document.body.className} ${innerWidth}`;
+  if (chiaveLarg !== ultimaLarg) { ultimaLarg = chiaveLarg; largAscolto = $('ascolto').offsetWidth; }
+  ascoltoX.verso(Math.max(12, (docked ? innerWidth * 0.44 : at.x) - largAscolto / 2));
+  if (primaVolta) { primaVolta = false; for (const m of [...RAGGI.flatMap((r) => [r.mx, r.my]), mediaX, mediaY, ascoltoX]) m.salta(m.meta); }
+  colonneDaRifare = true;
 }
-// Le colonne dei bordi non passano sotto le scritte: quella di sinistra si stringe fino ai dati di sinistra («BROWSER ON ·
-// AGENDA 0» ci finiva sopra), quella di destra comincia sotto stato, dati, anomalia e GIF che le stanno sopra (riempita di
-// eventi arrivava fino a «MAC · SIRI PAOLO»). Gira solo quando cambia la chiave, non a ogni fotogramma.
-function liberaColonne(scritte) {
-  const sx = $('colonna-sx'), dx = $('colonna-dx');
-  sx.style.width = ''; dx.style.top = ''; dx.style.width = '';
-  if (!scritte) return; // col browser, il report o l'ologramma le colonne sono spente
-  const cs = sx.getBoundingClientRect(), cd = dx.getBoundingClientRect(), asc = $('ascolto').getBoundingClientRect();
-  let bordo = asc.left < cs.right + 12 ? asc.left : Infinity, sotto = cd.top;
+// Un passo delle molle; il DOM si tocca solo per quello che si muove
+function muovi(dt) {
+  let fermi = true;
+  for (const r of RAGGI) {
+    const fermo = r.mx.ferma() && r.my.ferma() && r.disegnata === chiaveAttorno;
+    if (fermo) continue;
+    fermi = false;
+    const x = r.mx.passo(dt), y = r.my.passo(dt);
+    r.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)${r.via}`;
+    if (r.stato) {
+      $('small').style.transform = `translate(${x.toFixed(1)}px, ${(y - (r.ancora ? -20 : 18)).toFixed(1)}px)${r.via}`;
+      $('anomalia').style.transform = `translate(${x.toFixed(1)}px, ${(y - (r.ancora ? -38 : 36)).toFixed(1)}px)${r.via}`;
+    }
+    const a = r.ancora;
+    r.filo.classList.toggle('spento', !a || a.nascosto); r.punto.classList.toggle('spento', !a || a.nascosto);
+    r.el.classList.toggle('spento', !r.stato && (!a || a.nascosto));
+    if (a) { // il filo: dal punto sull'anello, in fuori lungo il raggio, poi fino alla scritta dove sta adesso
+      r.filo.setAttribute('points', `${a.x0.toFixed(1)},${a.y0.toFixed(1)} ${a.x1.toFixed(1)},${a.y1.toFixed(1)} ${(x - a.lato * 8).toFixed(1)},${(y + 7).toFixed(1)}`);
+      r.punto.setAttribute('cx', a.x0.toFixed(1)); r.punto.setAttribute('cy', a.y0.toFixed(1));
+    }
+    if (r.mx.ferma() && r.my.ferma()) r.disegnata = chiaveAttorno;
+  }
+  if (!mediaX.ferma() || !mediaY.ferma()) { fermi = false; $('media').style.transform = `translate(${mediaX.passo(dt).toFixed(1)}px, ${mediaY.passo(dt).toFixed(1)}px)`; }
+  if (!ascoltoX.ferma() || ascoltoX.scritta !== ascoltoX.meta) { fermi = false; ascoltoX.scritta = ascoltoX.ferma() ? ascoltoX.meta : null; $('ascolto').style.transform = `translateX(${ascoltoX.passo(dt).toFixed(1)}px)`; }
+  if (fermi && colonneDaRifare) { colonneDaRifare = false; liberaColonna(); }
+}
+// La colonna degli eventi non passa sotto le scritte: comincia sotto stato, dati, anomalia e GIF che le stanno sopra
+// (riempita di eventi arrivava fino a «MAC · SIRI PAOLO»), e con finestre strette si stringe invece di finire sulla scheda
+// dell'ascolto. Gira quando le molle si sono fermate, non a ogni fotogramma.
+function liberaColonna() {
+  const dx = $('colonna-dx');
+  dx.style.top = ''; dx.style.width = '';
+  if (S.dock > 0.5 || S.split > 0.5) return; // col browser, il report o la meteo la colonna è spenta
+  const scritte = [...RAGGI.map((r) => r.el), ...[$('small'), $('anomalia')].filter((e) => e.classList.contains('on')), ...($('media').classList.contains('on') ? [$('media')] : [])];
+  const cd = dx.getBoundingClientRect(), asc = $('ascolto').getBoundingClientRect();
+  let sotto = cd.top;
   for (const e of scritte) {
     if (e.classList.contains('spento')) continue;
     const r = e.getBoundingClientRect();
-    if (!r.width || r.bottom < cs.top || r.top > cs.bottom) continue;
-    if (r.left < cs.right + 12) bordo = Math.min(bordo, r.left);
+    if (!r.width || r.bottom < cd.top || r.top > cd.bottom) continue;
     if (r.right > cd.left - 12) sotto = Math.max(sotto, r.bottom + 12);
   }
-  // meno di quattro caratteri sarebbero una striscia di cifre tagliate: allora niente colonna
-  if (bordo < Infinity) { const w = Math.floor(bordo - 12 - cs.left); sx.style.width = `${w < 30 ? 0 : w}px`; }
   if (sotto > cd.top) dx.style.top = `${Math.ceil(sotto)}px`;
-  // in basso la scheda dell'ascolto: con finestre strette la colonna di destra si stringe invece di finirle sopra
   if (asc.right > cd.left - 12) dx.style.width = `${Math.max(0, Math.floor(cd.right - asc.right - 12))}px`;
 }
 
@@ -753,44 +774,36 @@ addEventListener('pointerdown', () => { ensureAudio(); if (ear !== 'on' && ear !
 
 // livello: '' per le notizie (ciano), 'attenzione' (arancione) e 'critico' (rosso) solo per le anomalie
 function warn(msg, livello = '') {
-  const w = $('warn'); w.textContent = msg; w.className = livello; w.style.display = 'block';
-  clearTimeout(warn.t); warn.t = setTimeout(() => { w.style.display = 'none'; }, 5000);
+  const w = $('warn'); w.textContent = msg; w.className = `${livello} on`;
+  clearTimeout(warn.t); warn.t = setTimeout(() => w.classList.remove('on'), 5000);
 }
 
-// ---------- Micro-dati ai bordi e valori a raggiera: tutti numeri veri ----------
-// A sinistra lo spettro del microfono in esadecimale (della voce di O.S.C.A.R. se il microfono non c'è), a destra gli eventi
-// (solo tipi e nomi di strumenti, mai frasi), in alto ora e memoria, in basso i livelli. 8 aggiornamenti al secondo.
-const EVENTI = [], RIGHE_ESA = [];
-let eventiNuovi = false, indirizzo = 0x4f00, giro = 0;
+// ---------- Ai bordi e a raggiera: tutti numeri veri ----------
+// A destra gli eventi (solo tipi e nomi di strumenti, mai frasi), in alto ora e memoria. Ogni evento si spegne col suo tempo
+// di dimezzamento: la luce di una riga dice quanto è vecchia. Lo spettro del microfono non è più una colonna di esadecimali
+// (illeggibile): è l'anello dello spettro del nucleo. 4 aggiornamenti al secondo.
+const EVENTI = []; // { el, at }
+const DIMEZZA_S = 25;
 const due = (n) => String(n).padStart(2, '0');
 const orario = (d = new Date()) => `${due(d.getHours())}:${due(d.getMinutes())}:${due(d.getSeconds())}`;
 function evento(testo) {
-  EVENTI.push(`${testo.toUpperCase()}  ${orario()}`);
-  if (EVENTI.length > 48) EVENTI.shift();
-  eventiNuovi = true;
+  const el = document.createElement('div');
+  el.textContent = `${testo.toUpperCase()}  ${orario()}`; // solo testo: nomi di strumenti e siti arrivano da fuori
+  $('eventi').append(el);
+  EVENTI.push({ el, at: performance.now() });
+  if (EVENTI.length > 48) EVENTI.shift().el.remove();
 }
-const spettro = new Uint8Array(512);
 function aggiornaBordi() {
-  giro++;
-  const an = micAnalyser || outAnalyser;
-  if (an) an.getByteFrequencyData(spettro); else spettro.fill(0);
-  const b = []; // 8 bande a passo logaritmico, da 60 Hz a 8 kHz circa
-  for (let k = 0; k < 8; k++) { const i0 = Math.round(1.5 * 1.9 ** k), i1 = Math.max(i0 + 1, Math.round(1.5 * 1.9 ** (k + 1))); let m = 0; for (let i = i0; i < i1 && i < 512; i++) m = Math.max(m, spettro[i]); b.push(m); }
-  indirizzo = (indirizzo + 8) & 0xffff;
-  const hx = (n) => n.toString(16).padStart(2, '0').toUpperCase();
-  RIGHE_ESA.push(`${hx(indirizzo >> 8)}${hx(indirizzo & 255)}  ${hx(b[0])}${hx(b[1])} ${hx(b[2])}${hx(b[3])} ${hx(b[4])}${hx(b[5])} ${hx(b[6])}${hx(b[7])}`);
-  if (RIGHE_ESA.length > 60) RIGHE_ESA.shift();
   if (document.body.classList.contains('olo') || document.body.classList.contains('report') || document.body.classList.contains('meteo')) return; // spenti: niente da scrivere
-  scrivi($('esa'), RIGHE_ESA.join('\n'));
-  if (eventiNuovi) { eventiNuovi = false; scrivi($('eventi'), EVENTI.join('\n')); }
-  if (giro % 2) return; // il resto 4 volte al secondo
+  const ora = performance.now();
+  for (const e of EVENTI) { // 0,2 di fondo, così anche le righe vecchie si leggono
+    const o = (0.2 + 0.8 * 2 ** (-(ora - e.at) / 1000 / DIMEZZA_S)).toFixed(2);
+    if (e.o !== o) { e.o = o; e.el.style.opacity = o; }
+  }
   const d = new Date(), su = Math.floor((performance.now()) / 1000);
   scrivi($('cima-ora'), `${due(d.getDate())}.${due(d.getMonth() + 1)}.${d.getFullYear()}  ${orario(d)}`);
   const heap = performance.memory ? ` · HEAP ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : '';
   scrivi($('cima-dati'), `UPTIME ${due(Math.floor(su / 3600))}:${due(Math.floor(su / 60) % 60)}:${due(su % 60)}${heap}`);
-  const pct = (v) => String(Math.round(Math.min(1, Math.max(0, v)) * 100)).padStart(3, '0');
-  scrivi($('fondo-sx'), `MIC ${pct(S.mic)}%  ·  VOX ${pct(S.audio)}%`);
-  scrivi($('fondo-dx'), `FRAME ${nQuadri}  ·  T+${due(Math.floor(su / 3600))}:${due(Math.floor(su / 60) % 60)}:${due(su % 60)}`);
   // I valori a raggiera
   const v = ultimoStato?.voice;
   scrivi($('d-voce').lastChild, !v ? '—' : `MAC · ${String(v.voce || 'SISTEMA').toUpperCase().slice(0, 22)}`);
@@ -803,19 +816,24 @@ function aggiornaBordi() {
   aggiornaAllarme(); // le cause a tempo scadono anche se nessuno le tocca
 }
 
-// La fila di trattini della scheda dell'ascolto: il microfono in 24 bande, a ogni fotogramma (solo trasformazioni)
-const TRATTI = Array.from({ length: 24 }, () => $('livello').appendChild(document.createElement('i')));
-const bande = new Uint8Array(512);
+// Lo spettro per il nucleo: 64 bande a passo logaritmico da circa 94 Hz a 8 kHz (fftSize 1024), dal microfono quando
+// O.S.C.A.R. ascolta, dalla sua voce quando parla. Il nucleo ci fa l'anello dello spettro e ci spinge la goccia.
+// Sotto la frase, il livello del microfono è una riga sola: la sua lunghezza (solo una trasformazione).
+const bande = new Uint8Array(512), SPETTRO = new Uint8Array(64);
+const BANDE_I = Array.from({ length: 65 }, (_, k) => Math.round(2 * (170 / 2) ** (k / 64)));
+S.spettro = SPETTRO;
+function leggiSpettro() {
+  const an = S.mode === 'speaking' && currentSource ? outAnalyser : micAnalyser;
+  if (!an) { SPETTRO.fill(0); return; }
+  an.getByteFrequencyData(bande);
+  for (let k = 0; k < 64; k++) { let m = 0; for (let i = BANDE_I[k]; i < Math.max(BANDE_I[k] + 1, BANDE_I[k + 1]); i++) m = Math.max(m, bande[i]); SPETTRO[k] = m; }
+}
+const rigaLivello = $('livello').firstElementChild;
+let livelloScritto = '';
 function disegnaLivello() {
-  if (!micAnalyser || document.body.classList.contains('olo') || document.body.classList.contains('report') || document.body.classList.contains('meteo')) return;
-  micAnalyser.getByteFrequencyData(bande);
-  for (let k = 0; k < 24; k++) {
-    const i0 = 2 + Math.round(k * k * 0.42), i1 = 3 + Math.round((k + 1) * (k + 1) * 0.42);
-    let m = 0; for (let i = i0; i < i1 && i < 512; i++) m = Math.max(m, bande[i]);
-    const h = Math.max(0.12, Math.min(1, (m - 70) / 140));
-    const t = TRATTI[k], s = h.toFixed(2);
-    if (t.dataset.s !== s) { t.dataset.s = s; t.style.transform = `scaleY(${s})`; }
-  }
+  if (document.body.classList.contains('olo') || document.body.classList.contains('report') || document.body.classList.contains('meteo')) return;
+  const s = Math.min(1, S.mic * 1.4).toFixed(3);
+  if (s !== livelloScritto) { livelloScritto = s; rigaLivello.style.transform = `scaleX(${s})`; }
 }
 
 // ---------- Avvio ----------
@@ -838,7 +856,7 @@ if (DEBUG) window.oscarOlogramma = (st) => { applicaOlogramma(st); return { aper
 const freeze = params.get('t'); // ?t=3 ferma la formazione a 3 secondi (per le prove)
 const t0 = performance.now();
 let last = t0, revealed = false;
-ensureAudio().then(() => { if (!freeze) sfx?.boot(); });
+ensureAudio().then(() => { if (!freeze) sfx?.boot(undefined, TIMING.formEnd); }); // il suono della formazione dura quanto lei
 // Fotogrammi disegnati, contati in ogni secondo intero (gli ultimi 3600), con le mani accese o no per tutto il secondo.
 // Servono a misuraMani() e a chi misura via CDP (window.__misure: mediana, p10 e minimo degli ultimi 20 secondi, più i
 // conti uno per uno). Sono fotogrammi di requestAnimationFrame: col thread in ritardo possono superare quelli presentati,
@@ -865,6 +883,7 @@ Object.defineProperty(window, '__misure', { get() {
   return { fotogrammi: nQuadri, fps: { ...statFps(ultimi), conti: ultimi.map((x) => x.n) }, ologramma: holoAperto, mani: mani ? { attive: mani.attivo, ...mani.misure } : null };
 } });
 let lastActive = 0, skip = false;
+const mollaSplit = molla(0), mollaDock = molla(0);
 function loop(now) {
   requestAnimationFrame(loop);
   // In attesa e senza nessuno che parla da 20 s: 20 fotogrammi al secondo bastano, la GPU (e la batteria) ringraziano.
@@ -882,13 +901,14 @@ function loop(now) {
   micLivello = micAnalyser ? rms(micAnalyser) : 0; micPeak = Math.max(micPeak, micLivello);
   const mic = micAnalyser && S.mode !== 'speaking' ? Math.min(1, micLivello * 6) : 0;
   S.mic += (mic - S.mic) * Math.min(1, dt * 18);
+  leggiSpettro();
   disegnaLivello();
   if (S.mode === 'listening' && !S.hearing && !pending && performance.now() - heardAt > 4000) setMode('idle');
-  S.split += (S.splitTarget - S.split) * Math.min(1, dt * 2.5);
-  S.dock += (S.dockTarget - S.dock) * Math.min(1, dt * 6); // nell'angolo in mezzo secondo: prima che atterri il protagonista
+  // il nucleo si sposta su due molle (fisica.js): verso il browser e nell'angolo del report o della meteo
+  S.split = mollaSplit.verso(S.splitTarget).passo(dt); S.dock = mollaDock.verso(S.dockTarget).passo(dt);
   meteo?.fotogramma(t, dt); // il globo: camera, anelli, vento e scritte, prima del render
   scene.frame(t, ((now - t0) / 1000) % 3600, dt); // orologio che riparte ogni ora: in float32 resta preciso anche dopo giorni
-  disegnaAttorno(t, scene.anchor());
+  disegnaAttorno(t, scene.anchor(), dt);
 }
 requestAnimationFrame(loop);
-setInterval(aggiornaBordi, 125); // dopo la scena: usa i fotogrammi contati
+setInterval(aggiornaBordi, 250); // dopo la scena: usa i fotogrammi contati

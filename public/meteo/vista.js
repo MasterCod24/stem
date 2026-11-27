@@ -17,18 +17,19 @@ const SEG = 30, SEG_O = 20;               // segmenti delle barre del profilo te
 const CSS = `
 #meteo { position: absolute; inset: 0; z-index: 3; display: none; pointer-events: none; color: var(--testo); }
 #meteo.on { display: block; }
-#meteo.via { opacity: 0; filter: blur(8px); transform: scale(.97); transition: opacity .45s ease-in, filter .45s, transform .45s; }
+#meteo.via { opacity: 0; transform: scale(.985); transition: opacity var(--t-lieve) var(--lieve), transform var(--t-lieve) var(--lieve); }
 #meteo .m-top { position: absolute; left: 2.2vw; right: 2.2vw; top: 2.2vh; display: flex; justify-content: space-between; align-items: baseline; gap: 2vw;
-  white-space: nowrap; text-transform: uppercase; animation: m-entra .5s ease-out .3s both; }
+  white-space: nowrap; text-transform: uppercase; animation: m-entra var(--t-molla) var(--molla) .05s both; }
 #meteo .m-titolo { overflow: hidden; text-overflow: ellipsis; font: 200 15px/1.2 var(--sottile); letter-spacing: .26em; color: var(--ciano-vivo); text-shadow: var(--bagliore); }
 #meteo .m-top small { font: 400 9.5px/1 var(--mono); letter-spacing: .2em; color: var(--ciano); text-shadow: var(--bagliore); }
 #meteo .m-griglia { position: absolute; left: 2.2vw; right: 2.2vw; top: 6vh; bottom: 2.6vh; display: grid; gap: 14px;
   grid-template-columns: minmax(250px, 23fr) 54fr minmax(250px, 23fr); grid-template-rows: 54fr 40fr 33fr; }
 #meteo .m-mod { position: relative; min-width: 0; min-height: 0; overflow: hidden; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
   background: linear-gradient(160deg, rgba(62, 230, 255, .085), rgba(0, 18, 26, .5) 40%, rgba(0, 10, 16, .55));
-  box-shadow: inset 0 1px 0 rgba(62, 230, 255, .35), inset 0 0 22px rgba(62, 230, 255, .05); transition: box-shadow .25s;
-  animation: m-entra .6s cubic-bezier(.16, .84, .24, 1) both; animation-delay: var(--d, 0s); }
-@keyframes m-entra { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.97); filter: blur(10px); } }
+  box-shadow: inset 0 1px 0 rgba(62, 230, 255, .35), inset 0 0 22px rgba(62, 230, 255, .05); transition: box-shadow var(--t-lieve) var(--lieve);
+  animation: m-entra var(--t-molla) var(--molla) both; animation-delay: var(--d, 0s); }
+/* le schede entrano su molle (fisica.js), in ordine di distanza dal globo: un fronte d'onda, senza sfocature */
+@keyframes m-entra { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.96); } }
 #meteo .m-mod.mira { box-shadow: inset 0 1px 0 rgba(182, 248, 255, .8), inset 0 0 34px rgba(62, 230, 255, .18); }
 #meteo header { display: flex; justify-content: space-between; gap: 10px; flex: none; font: 400 8px/1.2 var(--mono); letter-spacing: .16em;
   color: var(--testo-2); text-transform: uppercase; white-space: nowrap; }
@@ -61,11 +62,11 @@ const CSS = `
 #meteo .m-rosa { position: relative; flex: none; width: min(58%, 190px); aspect-ratio: 1; }
 #meteo .m-rosa svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 #meteo .m-flusso { position: absolute; inset: 18%; border-radius: 50%; overflow: hidden; }
-#meteo .m-giro-f { position: absolute; inset: -50%; transition: transform .8s cubic-bezier(.2, .8, .2, 1); }
+#meteo .m-giro-f { position: absolute; inset: -50%; transition: transform var(--t-molla) var(--molla); }
 #meteo .m-strisce { position: absolute; top: 0; bottom: 0; left: calc(-1 * var(--passo, 48px)); right: 0; background-size: 48px 32px;
   animation: m-scorri var(--durata, 2s) linear infinite; }
 @keyframes m-scorri { to { transform: translateX(var(--passo, 48px)); } }
-#meteo .m-ago { transition: transform .8s cubic-bezier(.2, .8, .2, 1); transform-origin: 100px 100px; }
+#meteo .m-ago { transition: transform var(--t-molla) var(--molla); transform-origin: 100px 100px; } /* un ago vero: un filo di rimbalzo */
 #meteo .m-v-num { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
 #meteo .m-press { flex: none; display: flex; flex-direction: column; gap: 5px; }
 #meteo .m-press svg { width: 100%; height: 34px; overflow: visible; }
@@ -117,12 +118,12 @@ const CSS = `
 const SCHELETRO = `
 <div class="m-top"><span class="m-titolo"></span><small class="m-sotto"></small></div>
 <div class="m-griglia">
-  <section class="m-mod m-radar" style="--d:.05s">
+  <section class="m-mod m-radar" style="--d:0s">
     <header><span>RADAR // <b>RIFLETTIVITÀ · RAINVIEWER</b></span><span class="m-r-ora"></span></header>
     <div class="m-globo"><canvas class="m-etichette"></canvas></div>
     <div class="m-r-piede"><span class="m-riga m-r-eco"></span><span class="m-riga"><span>10</span><span class="m-legenda"></span><span>50+ DBZ</span></span></div>
   </section>
-  <section class="m-mod m-vento staffe" style="--d:.15s">
+  <section class="m-mod m-vento staffe" style="--d:.07s">
     <header><span>VENTO // <b class="m-v-dir"></b></span><span class="m-v-bf"></span></header>
     <div class="m-v-corpo">
       <div class="m-rosa"><div class="m-flusso"><div class="m-giro-f"><div class="m-strisce"></div></div></div><svg viewBox="0 0 200 200"></svg></div>
@@ -134,23 +135,23 @@ const SCHELETRO = `
         <line class="m-p-ora" y1="0" y2="34" stroke="rgba(62,230,255,.6)" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>
         <line class="m-p-cur" y1="0" y2="34" stroke="#d2fbff" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity="0"/></svg></div>
   </section>
-  <section class="m-mod m-oper staffe" style="--d:.35s">
+  <section class="m-mod m-oper staffe" style="--d:.11s">
     <header><span>OPERATIVITÀ</span><span class="m-o-giud"></span></header>
     <div class="m-riga">CONDIZIONI DI SPOSTAMENTO <b class="m-o-cond"></b></div><div class="m-barra m-o-bcond"></div>
     <div class="m-o-fattori"></div>
     <div class="m-nota">VALE IL FATTORE PEGGIORE · VISIBILITÀ: LA PARTE DEI 10 KM DEL METAR · VENTO: 0% CON RAFFICHE DA 62 KM/H (BEAUFORT 8) · PIOGGIA: 0% DA 8 MM/H</div>
   </section>
-  <section class="m-mod m-termico staffe" style="--d:.25s">
+  <section class="m-mod m-termico staffe" style="--d:.07s">
     <header><span>PROFILO TERMICO // <b class="m-t-cielo"></b></span></header>
     <div class="m-t-righe"></div>
     <div class="m-scala"><span>−10 °C</span><span>15</span><span>40 °C</span></div>
     <div class="m-riga m-t-scarto"></div>
   </section>
-  <section class="m-mod m-avvisi staffe" style="--d:.45s">
+  <section class="m-mod m-avvisi staffe" style="--d:.11s">
     <header><span>AVVISI // <b>PROSSIME 12 H</b></span><span class="m-a-n"></span></header>
     <div class="m-a-lista"></div>
   </section>
-  <section class="m-mod m-linea staffe" style="--d:.55s">
+  <section class="m-mod m-linea staffe" style="--d:.13s">
     <header><span class="m-l-frase"></span><span class="m-l-scala">MM/H · °C · ORA DEL POSTO</span></header>
     <div class="m-l-area"><canvas></canvas><div class="m-l-cur"><i></i><span></span></div></div>
   </section>
@@ -531,7 +532,7 @@ export function createVistaMeteo({ contenitore, prima = null, renderer, strato, 
       globo.tempo(null);
       clearInterval(timerOra); timerOra = setInterval(() => { if (aperto) scriviTutto(); }, 30_000); // «tra 42 min» scende, «ora» si sposta
       clearInterval(timerDati); timerDati = setInterval(rileggi, 5 * 60_000);
-      return primo ? { hero: 0.65, lands: [0.75, 0.85, 0.95, 1.05, 1.15] } : null;
+      return primo ? { hero: 0.21, lands: [0.28, 0.28, 0.32, 0.32, 0.34] } : null; // i ritardi di --d più 0,21 s della molla
     },
     chiudi() {
       if (!aperto) return;

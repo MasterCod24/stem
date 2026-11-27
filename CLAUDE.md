@@ -15,6 +15,26 @@ O.S.C.A.R. è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in as
 4. **Cosa resta aperto:** la sezione qui sotto.
 
 ## Aperto (al 27/11/2026)
+- **Restyling fisico dell'HUD: richiesta di Tony del 27/11, costruito e fotografato, mai visto da lui.** «Stessa palette, design computazionale guidato dalla fisica, animazioni fluide e brevi.» Ogni forma è calcolata e ogni moto segue un'equazione; la decorazione inventata è tolta. È su `main`. O.S.C.A.R.app gira dalla cartella del progetto, sul ramo `fix/rivoluzione-asse`: lo vede solo dopo un merge di `main` lì.
+  - **Il moto** (`public/fisica.js`): una molla smorzata in forma esatta. «Corpo» (nucleo, schede, scritte) è al 2% in 0,21 s con un rimbalzo del 2%; «lieve» (opacità) in 0,22 s senza rimbalzo. Le transizioni CSS usano la stessa curva, campionata in `linear()`. Prima c'erano durate scritte a mano, da 0,3 a 1,1 s.
+  - **Il nucleo** (`nucleo.js`, riscritto; com'è fatto in **Come è fatto**): la goccia coi modi di Rayleigh al posto della sfera, le linee di campo di sette dipoli al posto del gomitolo inventato, cinque anelli invece di nove (spettro vero, una corda con l'equazione delle onde, una scala con l'inerzia). Tolti: gradi ed esadecimali negli anelli, segmenti, ventaglio radar, scintille, il tremito della posizione nel critico (ora trema la goccia).
+  - **L'avvio:** pronto in 1,45 s invece di 6,5. Il suono dell'avvio dura quanto la formazione (0,85 s), ed è lo stesso suono compresso: non l'ha sentito nessuno.
+  - **Attorno:** scritte e fili su molle; via la colonna degli esadecimali a sinistra e la barra in basso; gli eventi si spengono col tempo di dimezzamento; il livello del microfono sotto la frase è una riga.
+  - **Report e meteo:** le schede entrano in ordine di distanza dal protagonista, come un fronte d'onda. Report: l'ultima scheda a posto in circa 0,54 s invece di 2; meteo in 0,34 s invece di 1,15. Tolti il lampo di copie e ogni sfocatura.
+  - **Corretto per strada:** le schede «dato» del report non si erano mai viste (vedi **Lezioni**). La prova nuova di `prove/hud-foto.mjs` fallisce sul codice di prima e passa ora.
+  - **Misurato** (27/11, M2, headless):
+    - banco della grafica, 7 stati: 2,62–2,89 ms a fotogramma contro 2,70–2,74 del nucleo di prima, 60 fps ovunque. Avevo previsto ±0,3 ms: giusto;
+    - entrata del report (`prove/hud-foto.mjs`, intervalli fra fotogrammi nei primi 2 s): il più lungo 16,8 ms in 2 giri su 2, come il codice di prima in 3 giri su 3. Le prime due versioni avevano un fotogramma da 33 ms all'apertura: `mete()` rileggeva la larghezza della scheda dell'ascolto a ogni passo del nucleo, forzando un layout; ora la rilegge solo quando cambiano classi o finestra. In headless anche il codice di prima non scattava: gli scatti del 1/11 erano con voce e browser veri.
+  - **Avevo sbagliato** la corda: senza la tensione del cerchio derivava senza fine. Trovato con una simulazione a parte, non a occhio.
+  - **Scelte mie, da guardare con Tony:**
+    - i tempi delle molle (0,3 e 0,22 s) e il rimbalzo del 2%;
+    - la goccia: 1,5 Hz per l = 2, deformazione del 4% con la voce e col pensiero, tremito nel critico;
+    - i sette dipoli, la corda (un giro in 1,6 s), l'onda d'urto a 0,9 unità al secondo;
+    - lo spettro: basse in basso e alte in alto, a specchio; il microfono pesa per intero solo mentre O.S.C.A.R. ascolta;
+    - cosa ho tolto: gradi, esadecimali, colonna di sinistra, barra in basso, i 24 trattini del livello;
+    - il tempo di dimezzamento degli eventi, 25 s.
+  - **Prove:** `prove/fisica.mjs` 13 su 13 (anche le armoniche ortonormali), `prove/hud-foto.mjs` 11 su 11, `prove/meteo-hud.mjs` 33 su 33, banco della grafica.
+  - **Mai provati:** sullo schermo di Tony e sul secondo monitor; con microfono e voce veri (spettro e corda li ho visti solo col dispositivo finto di Chrome e la voce finta); il suono dell'avvio corto.
 - **Finestra di Google dietro l'HUD: richiesta di Tony del 27/11, provata a pezzi, mai vista da lui.** Con due monitor l'HUD stava a schermo intero sull'esterno e la finestra di Google sul portatile, in vista. Ora l'HUD manda la sua posizione a ogni `/api/status` (`schermo`), il server la salva in `runtime/schermo-hud.json` e apre il Chrome di Google lì con `--window-position`. La finestra resta così sulla scrivania di quello schermo, coperta dallo Spazio dell'HUD. Per scriverci a mano (accessi, pagamenti) Tony clicca la seconda icona di Chrome nel Dock.
   - **Perché non nascosta:** nascosta, ridotta nel Dock o headless non funziona (vedi **Lezioni**). La finestra serve anche a Tony: nel profilo ci sono accessi fatti da lui a mano, e il 12/11 O.S.C.A.R. gli ha lasciato da inserire il pagamento del cinema.
   - **Prove:** server vero con un Chrome finto che scrive i suoi argomenti. Senza posizione salvata non cambia niente; con quella dell'HUD esce `--window-position=-232,-1080`; valori strani e richieste da altri siti sono ignorati. `prove/hud-foto.mjs` 9 su 9.
@@ -217,13 +237,13 @@ O.S.C.A.R. è l'assistente vocale di Tony sul Mac, stile JARVIS. È sempre in as
     Per alzare `assente_ms` servirebbe la durata dei buchi, che la riga non conta. Per `riposo_ms` serve sapere da Tony se le mani si spengono mentre le sta ancora usando.
   - **Banco su foto vere** (`prove/mani-foto.mjs`): due pizzichi veri a 0,08 e 0,10 U. Il pugno ha rapporto 0,27 contro la soglia 0,25: un falso pizzico è possibile.
   - HUD headless con due mani, due giri: p10 59 e 58 fps.
-- **HUD in stile JARVIS: costruito e fotografato, mai visto da Tony** (10/11). Al posto dell'umanoide c'è la sfera-cervello di `public/nucleo.js` dentro gli anelli. Le montagne sono state tolte e lo sfondo è nero.
+- **HUD in stile JARVIS: costruito e fotografato, mai visto da Tony** (10/11). Al posto dell'umanoide c'è la sfera-cervello di `public/nucleo.js` dentro gli anelli. Le montagne sono state tolte e lo sfondo è nero. Dal 27/11 la sfera è la goccia del restyling fisico (in cima a **Aperto**).
   - **Costo** (`prove/grafica-banco.mjs`, GPU libera): 2,76–3,00 ms a fotogramma in ogni stato, contro i 4,15 dell'umanoide. Il margine per le mani cresce invece di calare.
   - **Mani col nucleo nuovo** (`prove/ologramma-hud.mjs`, headless sulla GPU dell'M2, turbofan con le quote e due mani, due giri il 10/11): fotogrammi contati per secondo con mediana 60 e p10 60. Nella misura mandata alla chiusura il minimo è stato 32, 42 e 43. È sempre con l'ascolto spento e la foto al posto della fotocamera, e la traccia del compositore non è stata rifatta.
   - **Sforzi:** il rosso parte da fs 1, dove il materiale snerva, come dice il contratto. Prima il rosso pieno partiva già da fs 1,25. Sopra fs 1 la scala va dal blu al viola al magenta.
   - **Quote in mm:** le ha il pezzo scelto, e senza pezzo scelto l'ingombro del modello. Un cilindro è quotato sulla scatola che lo contiene, quindi le linee di riferimento possono partire da angoli vuoti. Va guardato con Tony.
   - **La scheda dell'ascolto mostra tutto quello che il microfono sente**, anche le frasi di altri nella stanza. Restano solo sullo schermo, mai nei registri. Se a Tony non va, si spegne nascondendo `#ascolto`.
-  - **Micro-dati:** quelli ai bordi e a raggiera sono numeri veri. Le coordinate e gli esadecimali che girano negli anelli sono decorazione.
+  - **Micro-dati:** quelli ai bordi e a raggiera sono numeri veri. Le coordinate e gli esadecimali che giravano negli anelli erano decorazione: tolti il 27/11.
   - **Mai provati:**
     - la scheda dell'ascolto con la voce vera di Tony, cioè con le parole parziali del riconoscitore locale;
     - l'HUD sul suo schermo, che ha accanto un secondo monitor 1920×1080;
@@ -273,7 +293,7 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **Mai provate:** le prestazioni dell'HUD nelle sessioni lunghe.
 - **Report a schermo intero: provato una volta con una ricerca vera** (1/11). Alla domanda «fammi una ricerca sullo stato della realtà virtuale… mettimela a schermo» il cervello ha chiamato `mostra_report` da solo dopo 54 s. Il report aveva 10 blocchi e 9 fonti (IDC, Wikimedia, due video YouTube), e video e immagine si sono caricati.
   - **Fluidità:** in quella prova, con la voce e il browser attivi, l'entrata ha avuto scatti fino a 284 ms. Riaprendo un report di prova a riposo, 24 aperture su 26 sono state pulite (circa 50 fotogrammi al secondo, il limite della grafica WebGL). I due blocchi, di 100 e 400 ms, sono capitati subito dopo la prova vera.
-  - Se gli scatti si notano, il primo indiziato è la sfocatura (`filter: blur`) delle schede in volo. Senza sfocatura sul lampo, però, le misure pulite non sono cambiate.
+  - Lampo e sfocature non ci sono più dal 27/11 (restyling fisico).
 
 ## Come è fatto
 - **`server.mjs`** avvia e collega tutto:
@@ -330,20 +350,25 @@ Restano decisioni di Tony, non lavoro sul codice:
   - `index.html`: la palette sta in variabili CSS.
     - Colori: `--ciano` dominante; `--arancio` e `--rosso` solo per le anomalie.
     - Caratteri: `--sottile` è Helvetica Neue, `--mono` è Menlo, tutti e due di sistema. L'HUD non chiede niente ad altri siti per disegnarsi.
-    - I moduli hanno angoli a staffa (`.staffe`) al posto delle cornici piene.
+    - I moduli hanno angoli a staffa (`.staffe`) al posto delle cornici piene, da un pixel e senza ombre.
+    - Il moto: ogni transizione usa `--molla`/`--t-molla` (le cose con una massa) o `--lieve`/`--t-lieve` (opacità e colori), che scrive `fisica.js`. Nessuna durata scritta a mano.
+  - `fisica.js` (dal 27/11): la molla dell'HUD, un oscillatore smorzato integrato in forma esatta (stabile anche con un fotogramma perso, e cambiare meta tiene la velocità). Due tipi: «corpo», al 2% in 0,21 s con un rimbalzo del 2%, e «lieve», in 0,22 s senza rimbalzo. `curvaCSS()` ne campiona la risposta in una `linear()` per CSS e animazioni. Le prove: `prove/fisica.mjs`.
   - `oscar.js`:
     - ascolto sempre acceso, decide se una frase è per O.S.C.A.R., coda audio, consegna dell'agenda;
     - **la scheda dell'ascolto** (`#ascolto`): le parole mentre arrivano e, a frase finita, cosa ne ha fatto O.S.C.A.R. Solo `textContent`, mai nei registri;
-    - **i dati a raggiera** appesi ad `anchor().R`, con i fili SVG: stato, voce, tempo di risposta, ingresso audio, sistemi, fps;
-    - **i micro-dati ai bordi**: lo spettro del microfono in esadecimale, gli eventi (tipi e nomi di strumenti, mai frasi), ora, memoria e livelli. Si aggiornano 8 volte al secondo;
+    - **i dati a raggiera** (classe `.raggio`) appesi ad `anchor().R`, con i fili SVG: stato, voce, tempo di risposta, ingresso audio, sistemi, fps. Ogni scritta è una massa su una molla agganciata al suo punto dell'anello: quando il nucleo si sposta lo segue con un filo di ritardo, e il filo si tende;
+    - **ai bordi**: in alto ora e memoria, a destra gli eventi (tipi e nomi di strumenti, mai frasi), ognuno che si spegne col suo tempo di dimezzamento (25 s). 4 volte al secondo;
+    - **lo spettro per il nucleo** (`S.spettro`): 64 bande da circa 94 Hz a 8 kHz, dal microfono o dalla voce quando parla. Sotto la frase dell'ascolto il livello del microfono è una riga sola;
     - **gli allarmi**: `allarme(causa, livello, testo, ms)` tiene le cause attive e ne ricava `S.allarme`.
       - 1, arancione: ascolto spento, calcolo degli sforzi fallito;
       - 2, rosso: server perso per due giri di `/api/status`, cervello in errore, un pezzo dell'ologramma con fs sotto 1.
-  - `report.js`: il report a schermo intero, ricalcato sui secondi 34–46 del video di ROSE. È una griglia 12×6; le ultime due colonne delle ultime due righe restano al nucleo, che ci scivola rimpicciolito (`S.dock` in `nucleo.js`). I blocchi entrano in quattro tempi: un lampo di copie in profondità (0–0,8 s), il primo video (0,4–0,9 s), gli altri uno alla volta (fino a circa 2 s), poi partono i video. I suoni dell'entrata stanno in `sfx.js` (`report`), agganciati ai tempi di atterraggio che `showReport` restituisce. I blocchi in più si impilano e cambiano ogni 9 s. Il testo del cervello entra solo con `textContent`, le immagini solo da `https`, i video solo come ID di YouTube;
-  - `nucleo.js`: la sfera-cervello e gli anelli (three.js 0.160 con bloom). Il contratto è quello che usava l'umanoide: `TIMING` e `createScene(canvas, S)`, che restituisce `frame`, `anchor` (con `R`, il raggio dell'anello più esterno), `assembling`, `renderer` e `strato`.
-    - Dall'esterno: un guscio di particelle che sente il microfono, un gomitolo di filamenti dove nel pensiero corrono gli impulsi, un nucleo che pulsa con la voce.
-    - Intorno ci sono anelli a velocità e versi diversi: gradi, tacche, segmenti, archi di dati, un arco che scansiona.
-    - Arancione e rosso arrivano solo con `S.allarme`.
+  - `report.js`: il report a schermo intero. È una griglia 12×6; le ultime due colonne delle ultime due righe restano al nucleo, che ci scivola rimpicciolito (`S.dock` in `nucleo.js`). Dal 27/11 le schede entrano su molle in ordine di distanza dal protagonista, come un fronte d'onda: l'ultima è a posto in circa 0,54 s; le barre dei grafici salgono su una molla. Niente lampo di copie né sfocature. I suoni dell'entrata stanno in `sfx.js` (`report`), agganciati ai tempi di atterraggio che `showReport` restituisce. I blocchi in più si impilano e cambiano ogni 9 s. Il testo del cervello entra solo con `textContent`, le immagini solo da `https`, i video solo come ID di YouTube;
+  - `nucleo.js` (riscritto il 27/11): la goccia e gli anelli (three.js 0.160 con bloom). Il contratto è quello di prima: `TIMING` e `createScene(canvas, S)`, che restituisce `frame`, `anchor` (con `R`, il raggio dell'anello più esterno), `assembling`, `renderer` e `strato`. Ogni forma è calcolata e ogni moto segue un'equazione:
+    - la goccia: 24.000 particelle che vibrano coi modi di Rayleigh (armoniche sferiche l = 2..5, 32 oscillatori smorzati integrati sulla CPU). A riposo le muove il rumore termico, con voce e microfono lo spettro vero, pensando una spinta che la fa ruotare allungata, nel critico un rumore forte sugli l alti: trema. Dove la superficie si muove più in fretta si schiarisce;
+    - dentro, le linee di campo di sette dipoli magnetici (uno al centro, sei vicino al bordo), tracciate una volta con Runge-Kutta, che ruotano con la goccia; quando pensa ci corrono le cariche;
+    - gli anelli, dall'interno: contatto; spettro vero (64 bande a specchio, basse in basso); una corda chiusa con l'equazione delle onde e la tensione del cerchio (la voce la spinge dall'alto, il microfono dal basso, il pensiero con impulsi che interferiscono); una scala graduata con l'inerzia di un giroscopio; l'esterno con le tacche ogni 5°;
+    - l'avvio: una nube che ruota collassa nella goccia (ogni particella un oscillatore smorzato, in forma esatta nello shader), poi un'onda d'urto disegna gli anelli. `assembling` è la frazione di particelle arrivate. Pronto in 1,45 s;
+    - arancione e rosso arrivano solo con `S.allarme`.
     - Il composer usa un render target con lo stencil (serviva alla sezione dell'ologramma, che ora sta in Blender). `strato` aggancia la scena del globo della meteo prima del bloom.
   - `ologramma/`: `forme.js` e `materiali.js` (anche nel server), `geometrie.js` (nel server, per le mesh delle forme native che vanno a Blender), `gesti.js` e `mani.js` (MediaPipe 0.10.35 in locale). L'ologramma lo disegna Blender (`mac/blender/vivo.py`);
   - in `oscar.js`, con l'ologramma aperto: le mani si accendono e i gesti vanno a `POST /api/blender/gesti`; il nucleo smette di disegnarsi; M accende o spegne le mani (la scelta resta in `localStorage` `oscar-mani`); Esc chiude l'ologramma e Blender. Gesti: un pizzico con una mano ruota, con due fa lo zoom, due mani aperte unite al centro e poi allargate esplodono, un pezzo afferrato si sposta e resta dove lo lasci, lanciato si toglie, e due pugni chiusi per mezzo secondo ricompongono tutto;
@@ -396,9 +421,10 @@ Restano decisioni di Tony, non lavoro sul codice:
 
   Alla fine chiudi quel Chrome tu: il server chiude solo quelli che ha aperto lui.
   - Per non far comparire la finestra di Google, prima del server avvia tu un Chrome headless con `--remote-debugging-port=9333` e un profilo temporaneo: il server lo trova sulla porta e lo usa. Sull'HUD di prova metti `--mute-audio`.
+- **Molle:** `node prove/fisica.mjs` (un secondo, senza browser): forma esatta contro l'equazione, assestamento, rimbalzo, fotogramma lungo, cambio di meta, curva CSS.
 - **Grafica, senza O.S.C.A.R. acceso:**
   - `node prove/grafica-banco.mjs [--modulo public/nucleo.js]` fa girare il modulo del nucleo in un Chrome headless sulla GPU, a 1470×956 punti e 2x.
-    - Per 12 stati (formazione, attesa, ascolto, pensiero, voce, i due allarmi, browser, angolo) misura:
+    - Per 12 stati (quattro istanti dell'avvio, attesa, ascolto, pensiero, voce, i due allarmi, browser, angolo) misura:
       - una foto;
       - gli fps contati per secondo;
       - il costo vero a fotogramma.
@@ -407,7 +433,7 @@ Restano decisioni di Tony, non lavoro sul codice:
   - `node prove/hud-foto.mjs [--uscita <cartella>]` fa girare l'HUD vero con un server finto:
     - cervello a copione, voce e riconoscimento finti;
     - foto di avvio, casa, ascolto, pensiero, voce, allarmi, browser, report, ologramma e server perso;
-    - controlla anche console e rete.
+    - controlla anche console e rete, che le schede «dato» del report si vedano e che nell'entrata del report nessun fotogramma superi 50 ms.
     - Porte 4481 e 9581, circa 2 minuti.
   - Con `?debug` ci sono anche:
     - `oscarParziale('frase')`: le parole parziali, per la scheda dell'ascolto;
@@ -511,6 +537,8 @@ Restano decisioni di Tony, non lavoro sul codice:
 - **In Blender 5.2 i piani di taglio scritti da Python non tagliano.** `region_3d.clip_planes` e `use_clip_planes` cambiano, ma il disegno resta intero (provato il 22/11 su un cubo). Tagliano solo dopo aver acceso il taglio a riquadro di Blender (`view3d.clip_border`), e allora si possono sostituire i suoi piani. In 5.2 il modo che colora i vertici si chiama `VERTEX`, non `ATTRIBUTE`.
 - **Una prova di regressione si lancia prima sul codice vecchio, e deve fallire.** Il 17/11 la prova della rivoluzione chiusa sull'asse chiamava `oggetto(..., 0)`, cioè senza il raccordo che produce il NaN, e passava anche sul codice rotto. Si scrive con gli argomenti dell'uso vero, compresi i default.
 - **In Chrome `gl.finish()` non aspetta la GPU.** Il 10/11 dava 0,1 ms a fotogramma per l'umanoide col bagliore a 2205×1434. Il costo vero si misura con n fotogrammi di fila e un solo `readPixels` alla fine, che deve restituire pixel veri: 4,15 ms, con tre giri uguali entro l'1%.
+- **Una classe CSS con un nome comune, usata in due posti, si pesta.** Dal 10/11 al 27/11 le schede «dato» del report non si sono mai viste: avevano la classe `dato`, la stessa delle scritte attorno al nucleo, e la regola che col report spegne le scritte (con `position: fixed` in più) spegneva anche loro. Le foto la mostravano come un buco nella griglia, e nessuno l'aveva contato. Una prova ora conta le schede.
+- **Un sistema senza richiamo per un suo modo deriva.** La corda dell'HUD (27/11) senza la tensione del cerchio: la spinta della voce ha la media positiva, e l'allargamento uniforme cresceva senza fine. Prima di tarare una forza, si simula a parte il sistema per qualche secondo e si guarda il massimo.
 - **Un Chrome nascosto non disegna** (27/11, Chrome 158). Nascosta l'app o ridotta la finestra nel Dock, la pagina diventa «hidden» anche con `--disable-backgrounding-occluded-windows`, che vale solo per le finestre coperte: `requestAnimationFrame` si ferma e lo screencast scende a 0–1 fotogrammi al secondo. Si fermano anche i clic di Playwright, che aspettano i fotogrammi. Le altre vie:
   - `open -j -g`: Chrome si mostra e si attiva lo stesso;
   - fuori dallo schermo (`--window-position` o CDP): Chrome riporta la finestra dentro uno schermo;

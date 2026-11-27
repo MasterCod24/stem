@@ -41,10 +41,10 @@ const DOCK = angolo(W, H);
 // t: secondi della formazione, fermi (null: scorrono da 10 s, formazione finita). audio/mic 'auto': voce finta.
 // allarme: 0 normale, 1 attenzione (arancione), 2 critico (rosso). split: browser aperto a destra. dock: nell'angolo.
 const TUTTI = {
-  'formazione-1': { t: 1.0 },
-  'formazione-3': { t: 3.0 },
-  'formazione-5': { t: 5.0 },
-  'rivelazione-6': { t: 6.0 },
+  'formazione-02': { t: 0.2 },  // tempi dell'avvio del 27/11 (TIMING: goccia fatta a 0,85 s, pronto a 1,45 s)
+  'formazione-05': { t: 0.5 },
+  'urto-095': { t: 0.95 },
+  'urto-11': { t: 1.1 },
   attesa: { mode: 'idle' },
   ascolto: { mode: 'listening', mic: 'auto', hearing: true },
   pensiero: { mode: 'thinking' },
@@ -204,7 +204,7 @@ try {
   risultati.gpu = await ev(`(() => { const g = document.createElement('canvas').getContext('webgl2'), x = g.getExtension('WEBGL_debug_renderer_info');
     return x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : '?'; })()`);
   risultati.timing = await ev('window.__TIMING');
-  risultati.assembling = await ev('[0.5, 1, 2, 3, 4, 5, 6, 6.5, 7].map((t) => +window.__assembling(t).toFixed(3))');
+  risultati.assembling = await ev('[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.85, 1].map((t) => +window.__assembling(t).toFixed(3))');
   for (const nome of NOMI) {
     const o = TUTTI[nome];
     await ev(`window.__imposta(${JSON.stringify(o)})`);
