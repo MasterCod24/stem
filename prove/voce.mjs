@@ -67,7 +67,7 @@ esito(v.status.provider === 'eleven' && v.status.voce === 'eleven_flash_v2_5', '
 let a = await v.speak('Guardo subito.');
 const r0 = richieste[0];
 esito(a.type === 'audio/mpeg' && a.data.toString() === 'ID3finto', 'la frase arriva da ElevenLabs in MP3');
-esito(r0?.url.startsWith('/v1/text-to-speech/cYUwsivXsYhRnPTjXRI4?') && r0.key === 'chiave-finta', 'voce di Tony e chiave nell\'intestazione', r0?.url);
+esito(r0?.url.startsWith('/v1/text-to-speech/AIJ0ViCZ83NSXLNIERjD?') && r0.key === 'chiave-finta', 'voce di Tony e chiave nell\'intestazione', r0?.url);
 esito(r0?.corpo.text === 'Guardo subito.' && r0.corpo.model_id === 'eleven_flash_v2_5' && r0.corpo.language_code === 'it', 'testo, modello e italiano imposto', JSON.stringify(r0?.corpo));
 
 const m = createVoice({ key: 'k', base, model: 'eleven_multilingual_v2' });

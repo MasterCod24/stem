@@ -1,4 +1,4 @@
-// La voce di O.S.C.A.R.: ElevenLabs con la voce scelta da Tony il 28/11 («Daniel», dalla Voice Library), se in .env c'è
+// La voce di O.S.C.A.R.: ElevenLabs con la voce scelta da Tony il 28/11 («Warm Agent Voice», americana, dalla Voice Library), se in .env c'è
 // ELEVENLABS_API_KEY; altrimenti quella del Mac, con `say`.
 // Le due voci non si alternano mai: fino al 22/11 succedeva coi crediti quasi finiti (le frasi corte passavano, le lunghe
 // no). Ora un rifiuto di ElevenLabs (chiave, permessi, crediti, piano: ogni 4xx tranne 408 e 429) spegne ElevenLabs fino
@@ -16,7 +16,7 @@ import { execFile } from 'node:child_process';
 const run = (cmd, args) => new Promise((ok, ko) => execFile(cmd, args, { maxBuffer: 4e6 }, (e, out) => (e ? ko(e) : ok(String(out)))));
 
 export function createVoice({
-  key = '', voiceId = 'cYUwsivXsYhRnPTjXRI4', model = 'eleven_flash_v2_5', macVoice,
+  key = '', voiceId = 'AIJ0ViCZ83NSXLNIERjD', model = 'eleven_flash_v2_5', macVoice,
   base = 'https://api.elevenlabs.io', onLog = () => {},
 } = {}) {
   let spenta = key ? '' : 'manca ELEVENLABS_API_KEY'; // perché ElevenLabs non parla: vuoto = parla
@@ -55,7 +55,7 @@ export function createVoice({
     const r = await fetch(`${base}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
       method: 'POST',
       headers: { 'xi-api-key': key, 'content-type': 'application/json', accept: 'audio/mpeg' },
-      // La lingua imposta: è una voce spagnola, e su una frase corta il riconoscimento della lingua può sbagliare.
+      // La lingua imposta: è una voce americana, e su una frase corta il riconoscimento della lingua può sbagliare.
       // I modelli v2.5 la accettano, multilingual v2 la rifiuta.
       body: JSON.stringify({ text, model_id: model, ...(/v2_5/.test(model) ? { language_code: 'it' } : {}) }),
       signal: AbortSignal.timeout(10_000), // una connessione bloccata non deve lasciare O.S.C.A.R. muto: l'HUD salta la frase
