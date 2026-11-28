@@ -2,7 +2,7 @@
 
 ![O.S.C.A.R.](public/icona.png)
 
-Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con la voce del Mac, naviga su Google, usa le app e lo schermo al posto tuo.
+Assistente vocale stile JARVIS per il Mac: ragiona col tuo `~/.claude/CLAUDE.md`, ascolta sempre, parla con una voce di ElevenLabs, naviga su Google, usa le app e lo schermo al posto tuo.
 
 ## Avvio
 Per l’agenda serve Node.js con il modulo integrato `node:sqlite`.
@@ -69,13 +69,14 @@ Se il cervello tace per 45 secondi, sullo schermo appare un avviso. Puoi dire «
 - **Orologio e agenda:** sa sempre che ore sono. Se gli chiedi qualcosa per dopo («ricordami alle 18 di chiamare la mamma», «tra un'ora guarda se è uscito il trailer di GTA 6»), se lo segna e all'ora giusta parla lui per primo, anche se nel frattempo O.S.C.A.R. si è riavviato. Funziona solo con O.S.C.A.R. acceso e il Mac sveglio: se a quell'ora era spento o in stop, te lo dice appena si riaccende. L’avviso resta in agenda finché l’interfaccia lo mostra o ne termina la lettura. Se perdi la consegna, riappare con il risultato salvato. Se l’esecuzione si è interrotta, indica che l’esito è da verificare. A batteria il Mac può andare in stop.
 
 ## La voce
-- È la voce del Mac: quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata. `OSCAR_MAC_VOICE` in `.env` la scavalca.
-- Gira tutta sul Mac: niente crediti, niente rete, la stessa voce sempre.
+- È «Daniel» di ElevenLabs, con l'accento imposto sull'italiano. Serve la chiave in `.env` (`ELEVENLABS_API_KEY`) e un piano a pagamento: col piano gratuito ElevenLabs non dà le voci della sua libreria. Un'altra voce si sceglie con `ELEVENLABS_VOICE_ID`.
+- Consuma crediti: col tuo Starter, circa 60.000 caratteri al mese. Quando finiscono, o se ElevenLabs rifiuta la chiave, parla la voce del Mac fino al riavvio: mai le due voci alternate. Se cade la rete, salta solo quella frase. Accanto alla goccia c'è scritto quale voce sta parlando: ELEVENLABS o MAC.
+- La voce del Mac è quella che scegli in Impostazioni di Sistema → Accessibilità → Contenuti letti → Voce di sistema (anche una voce di Siri), se è italiana; altrimenti la migliore italiana installata. `OSCAR_MAC_VOICE` in `.env` la scavalca.
 
 ## Come funziona
 - `server.mjs`: avvio, finestre, pannello del browser (screencast), voce e cervello.
 - `brain.mjs`: un processo Claude Code sempre acceso (stream-json), interrotto quando arriva una domanda nuova.
-- `voice.mjs`: la voce del Mac, con `say`.
+- `voice.mjs`: la voce, con ElevenLabs o col Mac (`say`).
 - `media.mjs`: le animazioni di Wikimedia; `schede.mjs`: le schede di quello che O.S.C.A.R. nomina, con le foto; `rete.mjs`: la guardia per scaricare dal web.
 - `orologio.mjs` fornisce l’ora. `agenda.mjs` conserva i promemoria in `runtime/agenda.sqlite` e importa automaticamente la precedente agenda JSON al primo avvio.
 - `ologramma.mjs`: lo stato degli ologrammi; `blender.mjs`: il collegamento con Blender, che li mostra; `fisica/`: il calcolo degli sforzi.
