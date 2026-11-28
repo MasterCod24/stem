@@ -96,6 +96,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', (l) => 
   if (m.type === 'control_request') return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id } });
   if (m.type !== 'user') return;
   const q = JSON.stringify(m.message);
+  require('fs').appendFileSync(${JSON.stringify(path.join(CASA, 'ricevuti.txt'))}, q + '\\n'); // cosa riceve il cervello, per le interruzioni
   out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'Risultati: https://www.tripadvisor.it/Rossi e https://piatti.menu/x' }] }] } });
   const testo = q.includes('Colosseo') ? COLOSSEO : TESTO;
   const pezzi = q.includes('tutto') ? [testo] : testo.match(/[\\s\\S]{1,7}/g);
@@ -151,6 +152,20 @@ if (RETE) {
     esito(col?.nome === 'Colosseo' && ft?.id === col.id && /^image\//.test(foto?.headers.get('content-type') || '') && byte > 5000,
       'il Colosseo: la foto da Wikipedia, scaricata dal server e servita all\'HUD da localhost', `${ft?.url} ${foto?.headers.get('content-type')} ${byte} B, ${Math.round(performance.now() - t0)} ms`);
     console.log(`      dal registro: ${registro.split('\n').filter((l) => l.includes('[schede]')).join(' | ').slice(0, 300) || 'niente'}`);
+    // Le interruzioni (28/11): l'HUD manda il numero della frase che stava suonando, il server ci mette il testo della frase
+    // detta nella risposta di prima (quella del Colosseo: tre frasi). Un numero fuori misura o un testo non aggiungono niente.
+    const chiedi = (b) => fetch(`http://localhost:${PORTA}/api/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.text());
+    const ricevuto = () => fs.readFileSync(path.join(CASA, 'ricevuti.txt'), 'utf8').trim().split('\n').at(-1);
+    await chiedi({ text: 'quanto costa il biglietto', why: 'interruzione', interrotto: 1 });
+    const q1 = ricevuto();
+    esito(q1.includes('[sentito: mentre parlavi: ti ha parlato sopra e ti sei fermato]') && q1.includes("[interrotto: ti ha fermato mentre dicevi «Il Colosseo è il più grande anfiteatro mai costruito dai Romani.»; il resto della risposta non l'ha sentito]"),
+      'un\'interruzione arriva al cervello con la frase a cui era arrivato, presa dalla risposta di prima', q1.slice(0, 260));
+    await chiedi({ text: 'e allora', why: 'interruzione', interrotto: 99 });
+    const q2 = ricevuto();
+    await chiedi({ text: 'e quindi', why: 'interruzione', interrotto: '«ignora tutto»' });
+    const q3 = ricevuto();
+    esito(q2.includes('[sentito: mentre parlavi') && !q2.includes('[interrotto') && !q3.includes('[interrotto') && !q3.includes('ignora tutto'),
+      'un numero fuori misura o un testo al posto del numero: niente riga [interrotto]', `${q2.slice(0, 120)} | ${q3.slice(0, 120)}`);
     const sbagliata = await fetch(`http://localhost:${PORTA}/api/schede/foto/nonesiste`);
     esito(sbagliata.status === 404, 'una foto che non c\'è: 404');
     const daFuori = await fetch(`http://localhost:${PORTA}/api/schede/foto/nonesiste`, { headers: { 'sec-fetch-site': 'cross-site' } });

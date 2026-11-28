@@ -50,6 +50,11 @@ const MUSEI = [[300, { t: 'say', s: 'Guardo subito.' }], [400, { t: 'say', s: 'I
   [5, { t: 'vedi', id: 'a2', nome: "Museo d'Orsay", tipo: "museo d'arte", numeri: ['3,8 mln visitatori (2025)', 'aperto dal 1986'], fonte: 'theartnewspaper.com' }],
   [200, { t: 'vedi-foto', id: 'a1', url: '/api/schede/foto/a1' }]];
 
+// Le interruzioni (28/11): una risposta lunga a cui Tony parla sopra
+const COLOSSEO = ["Il Colosseo fu inaugurato nell'ottanta dopo Cristo.", 'Poteva contenere circa cinquantamila spettatori.',
+  'Aveva un sistema di tende per fare ombra.', "Sotto l'arena c'erano gallerie e montacarichi.", 'Nel Medioevo fu usato come cava di pietra.',
+  'Oggi è il monumento più visitato di Roma.'];
+
 // ---------------------------------------------------------------- un ologramma con la ricerca sui pezzi
 // Lo stato è quello vero di ologramma.mjs (senza calcolo): l'HUD lo legge da GET /api/ologramma dopo l'evento «holo», come
 // con il cervello. Dal 22/11 lo disegna Blender: qui si guarda solo che l'HUD gli lasci il posto.
@@ -69,7 +74,7 @@ let guasto = false; // true: /api/status risponde 500 (server che non c'è più)
 const TIPI = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.wasm': 'application/wasm', '.task': 'application/octet-stream', '.css': 'text/css' };
 const PUB = path.join(REPO, 'public'), THREE_DIR = path.join(REPO, 'node_modules', 'three'), MP = path.join(REPO, 'node_modules', '@mediapipe', 'tasks-vision');
 const sotto = (base, rel) => { const f = path.resolve(base, '.' + path.sep + decodeURIComponent(rel)); return f === base || f.startsWith(base + path.sep) ? f : null; };
-let ultimoPerche; // il perché dell'ultima domanda: il server vero ne fa la riga [sentito] per il cervello
+let ultimoPerche, ultimoCorpo = {}; // il perché dell'ultima domanda (il server vero ne fa la riga [sentito] per il cervello) e la domanda intera
 const corpo = (req) => new Promise((ok) => { let s = ''; req.on('data', (d) => { s += d; }); req.on('end', () => { try { ok(JSON.parse(s || '{}')); } catch { ok({}); } }); });
 async function copione(res, testo) { // il cervello finto: eventi NDJSON con le loro pause
   res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
@@ -78,6 +83,8 @@ async function copione(res, testo) { // il cervello finto: eventi NDJSON con le 
     'Adesso ti racconto il resto con calma, una cosa alla volta.', 'Prima di tutto il riconoscitore sente anche la mia voce.',
     'Poi capita che scriva una parola simile a quella giusta.', 'Per esempio sente pasta e scrive un\'altra cosa.'];
   const passi = /fermato/i.test(testo) ? FERMATO.map((f, i) => [i ? 5 : 300, { t: 'say', s: f }])
+    : /colosseo/i.test(testo) ? COLOSSEO.map((f, i) => [i ? 5 : 300, { t: 'say', s: f }])
+    : /pubblicit/i.test(testo) ? [[300, { t: 'ignore' }]] // un'interruzione che era la TV
     : /musei/i.test(testo) ? MUSEI.map(([ms, e]) => [ms, e.id ? { ...e, id: `${e.id}-${testo.length}` } : e.url ? { ...e, id: `a1-${testo.length}`, url: `${e.url}-${testo.length}` } : e])
     : /scheda/i.test(testo) // una ricerca senza browser (eventi «web»), poi l'ologramma: «schermo» sceglie il pezzo senza chiave
     ? [[200, { t: 'web', name: 'ricerca', detail: '' }], [700, { t: 'web', name: 'pagina', detail: 'ifixit.com' }],
@@ -92,8 +99,8 @@ async function copione(res, testo) { // il cervello finto: eventi NDJSON con le 
 const server = http.createServer(async (req, res) => {
   const p = new URL(req.url, 'http://x').pathname;
   if (p === '/api/status') { if (guasto) { res.writeHead(500); return res.end(); } res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ voice: { provider: 'mac', voce: 'Siri (Paolo)' }, browser: true, gifs: false, agenda: 0, ologramma: 0 })); }
-  if (p === '/api/ask') { const b = await corpo(req); ultimoPerche = b.why; return copione(res, b.text || ''); }
+    return res.end(JSON.stringify({ voice: { provider: 'eleven', voce: 'eleven_flash_v2_5' }, browser: true, gifs: false, agenda: 0, ologramma: 0 })); }
+  if (p === '/api/ask') { const b = await corpo(req); ultimoPerche = b.why; ultimoCorpo = b; return copione(res, b.text || ''); }
   if (p.startsWith('/api/schede/foto/')) { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(FOTO); }
   if (p === '/api/tts') { await corpo(req); res.writeHead(200, { 'content-type': 'audio/wav' }); return res.end(VOCE); }
   if (p === '/api/ologramma' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(OLO.stato())); }
@@ -167,7 +174,7 @@ try {
   }
   // Riconoscimento finto: disponibile, ma non sente niente da solo
   await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `class FintoSR { static available() { return Promise.resolve('available'); } static install() { return Promise.resolve(true); }
-    start() {} stop() {} abort() {} }
+    start(t) { window.__srTraccia = t ? t.kind + ' ' + (t.getSettings?.().echoCancellation === true ? 'con AEC' : 'senza AEC') : 'nessuna'; } stop() {} abort() {} }
     Object.defineProperty(window, 'SpeechRecognition', { value: FintoSR }); Object.defineProperty(window, 'webkitSpeechRecognition', { value: FintoSR });
     try { localStorage.setItem('oscar-mani', '0') } catch {}` });
 
@@ -178,6 +185,10 @@ try {
   }
   await vai('?debug');
   await pausa(2500); await foto('casa');
+  // Il 28/11 col microfono suo il riconoscitore trascriveva 25 parole su 27 della voce di O.S.C.A.R. dalle casse, sulla traccia con
+  // la cancellazione dell'eco 0 (prova con casse e microfono veri del MacBook Air, nel CLAUDE.md)
+  const traccia = await attendi(() => ev('window.__srTraccia'), 3000);
+  controlla(traccia === 'audio con AEC', "il riconoscitore ascolta la traccia del microfono con la cancellazione dell'eco", String(traccia));
   // Nome parlato, sigla puntata e trascrizioni vicine.
   const SI = ['Oscar', 'oscar,', 'O.S.C.A.R.', 'Oskar'], NO = ['cosa', 'tasca', 'scarto', 'osare', 'mosca'];
   const nomi = await ev(`${JSON.stringify([...SI, ...NO])}.map((w) => window.oscarNome(w))`);
@@ -242,11 +253,56 @@ try {
   const eco1 = await modo();
   await ev("oscarParziale('mi sono fermati perché mi hai detto'); true"); await pausa(150);
   const eco2 = await modo();
+  const primaStop = ultimoCorpo;
   await ev("oscarParziale('stop'); true"); await pausa(300);
   const vero = await modo();
-  await ev("oscarParziale(''); true");
-  controlla(eco1 === 'speaking' && eco2 === 'speaking' && vero === 'idle', "la sua voce che dice «aspetta» e «basta», anche di frasi vecchie o storpiata, non lo ferma; «stop» sì",
-    `dopo l'eco ${eco1}, dopo «fermati» ${eco2}, dopo «stop» ${vero}`);
+  await ev("oscarParziale(''); oscarSente('stop'); true"); await pausa(1200);
+  const dopo = await modo();
+  controlla(eco1 === 'speaking' && eco2 === 'speaking' && vero === 'listening' && dopo === 'idle' && ultimoCorpo === primaStop,
+    "la sua voce che dice «aspetta» e «basta», anche di frasi vecchie o storpiata, non lo ferma; «stop» lo fa tacere subito, e finita la frase si ferma senza farne una domanda",
+    `dopo l'eco ${eco1}, dopo «fermati» ${eco2}, durante «stop» ${vero}, dopo ${dopo}${ultimoCorpo !== primaStop ? `, chiesto «${ultimoCorpo.text}»` : ''}`);
+  await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
+  // Le interruzioni (richiesta di Tony del 28/11): Tony parla sopra la voce, O.S.C.A.R. tace, lo lascia finire e gli risponde
+  // sapendo dove era arrivato. La frase che stava suonando si legge da __tempi (partita, durata)
+  await ev("oscarAsk('raccontami del colosseo'); true");
+  await attendi(() => ev("window.__tempi.frasi.some((f) => f.s.startsWith('Poteva') && f.partita)"), 8000); await pausa(600);
+  await ev("oscarParziale('no aspetta dimmi quanto costa il biglietto'); true"); await pausa(200);
+  const tace = await modo(), cutAt = await ev("window.__tempi.frasi.findLast((f) => f.partita).s");
+  await ev("oscarParziale(''); oscarSente('no aspetta dimmi quanto costa il biglietto'); true");
+  await attendi(() => ultimoCorpo.why === 'interruzione', 3000, 50);
+  controlla(tace === 'listening' && ultimoCorpo.why === 'interruzione' && ultimoCorpo.interrotto === COLOSSEO.indexOf(cutAt) && ultimoCorpo.text === 'no aspetta dimmi quanto costa il biglietto',
+    'parlandogli sopra tace subito, aspetta la frase intera e la manda come interruzione, col numero della frase che stava dicendo',
+    `modo ${tace}; tagliata «${cutAt}» (n. ${COLOSSEO.indexOf(cutAt)}); chiesto ${JSON.stringify(ultimoCorpo)}`);
+  await attendi(async () => (await modo()) === 'speaking', 6000); await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
+  // La TV che parla sopra: il cervello risponde [ignora] e O.S.C.A.R. ridice la frase interrotta e il resto
+  await ev("oscarAsk('ancora il colosseo'); true");
+  await attendi(() => ev("window.__tempi.frasi.some((f) => f.s.startsWith('Aveva') && f.partita)"), 10000); await pausa(500);
+  const n0 = await ev('window.__tempi.frasi.length'), taglio = await ev("window.__tempi.frasi.findLast((f) => f.partita).s");
+  await ev("oscarParziale('e adesso la pubblicità'); true"); await pausa(150);
+  await ev("oscarParziale(''); oscarSente('e adesso la pubblicità'); true");
+  await attendi(() => ev(`window.__tempi.frasi.slice(${n0}).some((f) => f.s === ${JSON.stringify(COLOSSEO[5])} && f.partita)`), 20000);
+  const ridette = await ev(`window.__tempi.frasi.slice(${n0}).filter((f) => f.partita).map((f) => f.s)`);
+  controlla(ultimoCorpo.why === 'interruzione' && ridette[0] === taglio && ridette.at(-1) === COLOSSEO[5] && ridette.length === 6 - COLOSSEO.indexOf(taglio),
+    "se l'interruzione era la TV ([ignora]), riprende dalla frase interrotta e dice il resto", `tagliata «${taglio}»; poi ${ridette.length} frasi: ${ridette.map((f) => f.slice(0, 14)).join(' | ')}`);
+  await attendi(async () => (await modo()) === 'idle', 15000); await pausa(800);
+  // A metà frase («…un ristorante che»): aspetta, fa «mh-mh» e unisce il resto
+  const mh0 = await ev('window.__tempi.mhmh || 0'), primaMeta = ultimoCorpo;
+  await ev("oscarSente('oscar cercami un ristorante che'); true"); await pausa(1700);
+  const mhDopo = await ev('window.__tempi.mhmh || 0'), chiestoPrima = ultimoCorpo !== primaMeta;
+  await ev("oscarSente('faccia pesce'); true");
+  await attendi(() => ultimoCorpo.text === 'cercami un ristorante che faccia pesce', 3000, 50);
+  controlla(!chiestoPrima && mhDopo === mh0 + 1 && ultimoCorpo.text === 'cercami un ristorante che faccia pesce' && ultimoCorpo.why === 'nome',
+    'una frase rimasta a metà aspetta, con un «mh-mh», e la domanda parte intera', `dopo 1,7 s ${chiestoPrima ? 'già chiesta' : 'non ancora chiesta'}, mh-mh ${mhDopo - mh0}; chiesto ${JSON.stringify(ultimoCorpo)}`);
+  await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
+  // Tony riprende a parlare mentre O.S.C.A.R. pensa e non ha ancora detto niente: la domanda riparte con la frase intera
+  await ev("oscarSente('oscar cercami un ristorante'); true");
+  await attendi(() => ultimoCorpo.text === 'cercami un ristorante', 3000, 50); await pausa(600);
+  const pensa = await modo();
+  await ev("oscarParziale('vicino al duomo'); true"); await pausa(150);
+  await ev("oscarParziale(''); oscarSente('vicino al duomo'); true");
+  await attendi(() => ultimoCorpo.text === 'cercami un ristorante vicino al duomo', 3000, 50);
+  controlla(pensa === 'thinking' && ultimoCorpo.text === 'cercami un ristorante vicino al duomo' && ultimoCorpo.why === 'nome',
+    'se Tony continua la frase mentre O.S.C.A.R. pensa, la domanda riparte intera', `modo ${pensa}; chiesto ${JSON.stringify(ultimoCorpo)}`);
   await attendi(async () => (await modo()) === 'idle', 12000); await pausa(800);
   await ev("oscarAsk('apri il browser'); true"); await pausa(2600); await foto('browser');
   await attendi(async () => (await modo()) === 'idle', 12000);
