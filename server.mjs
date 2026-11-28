@@ -220,8 +220,11 @@ const brain = createBrain({
 const media = createMedia({ onLog: (l) => console.error(l) });
 const schede = createSchede({ onLog: (l) => console.error(l) }); // le schede di quello che O.S.C.A.R. nomina mentre parla
 
-// --- Voce: quella del Mac (voice.mjs) ---
-const voice = createVoice({ macVoice: env.OSCAR_MAC_VOICE });
+// --- Voce: ElevenLabs se c'è la chiave, se no quella del Mac (voice.mjs) ---
+const voice = createVoice({
+  key: env.ELEVENLABS_API_KEY, voiceId: env.ELEVENLABS_VOICE_ID || undefined, model: env.ELEVENLABS_MODEL || undefined,
+  macVoice: env.OSCAR_MAC_VOICE, onLog: (l) => console.error(l),
+});
 
 // --- Registro dell'ascolto (runtime/ascolto.log, ultime 300 righe) ---
 const LOG_FILE = path.join(STATO, 'ascolto.log');
@@ -719,7 +722,7 @@ async function gestisci(req, res) {
     return res.writeHead(204).end();
   }
 
-  if (req.method === 'POST' && p === '/api/tts') { // una frase con la voce del Mac
+  if (req.method === 'POST' && p === '/api/tts') { // una frase: ElevenLabs (MP3) o la voce del Mac (WAV), mai alternate
     const { text } = body;
     try {
       const a = await voice.speak(String(text || '').slice(0, 2000));
