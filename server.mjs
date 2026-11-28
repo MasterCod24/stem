@@ -47,7 +47,12 @@ const EFFORT = env.OSCAR_EFFORT || 'low';
 const EFFORT_PENSA = env.OSCAR_EFFORT_PENSA || 'high';
 const effortDi = (e) => (e === 'default' ? undefined : e);
 // La riga [sentito: …] che precede ogni frase di Tony: perché l'HUD l'ha fatta passare (oscar.js, addressed)
-const SENTITO = { nome: 'col nome', conversazione: 'senza nome, cominciata nei 15 secondi dopo che hai finito di parlare' };
+const SENTITO = { nome: 'col nome', conversazione: 'senza nome, cominciata nei 15 secondi dopo che hai finito di parlare',
+  interruzione: 'mentre parlavi: ti ha parlato sopra e ti sei fermato' };
+// Le frasi dell'ultima risposta che ha detto qualcosa, nell'ordine in cui sono andate all'HUD: con un'interruzione l'HUD manda
+// il numero di quella che stava suonando, e il cervello sa fin dove Tony l'ha sentito. Dall'HUD arriva solo il numero, mai il
+// testo. Una risposta ancora muta non la sostituisce: Tony può continuare la sua interruzione prima che O.S.C.A.R. risponda.
+let frasiUltima = [];
 // Il secondo tempo di un compito annunciato con [[pensa]]: lo stesso turno di Tony, con l'effort alto
 const PENSA_TEXT = '[pensa] Adesso hai più tempo per ragionare: fai il compito che hai appena annunciato, senza ripetere la frase che hai già detto.';
 // Il giro di confronto (richiesta di Tony del 17/11): con le foto vere accanto alla foto dell'ologramma il cervello diceva «fatto,
@@ -646,7 +651,10 @@ async function gestisci(req, res) {
     // Perché la frase è passata dal filtro dell'HUD: senza nome può essere la TV o Tony che parla con altri, e la persona
     // decide [ignora] su questa riga. Solo i valori noti: dall'HUD non entra testo libero.
     const sentito = !body.agenda && Object.hasOwn(SENTITO, body.why) && SENTITO[body.why]; // hasOwn: «constructor» non passa
-    text = `[adesso: ${adesso()}]\n${sentito ? `[sentito: ${sentito}]\n` : ''}${text}`; // l'ora a ogni domanda: Claude Code gli dà solo la data
+    const prima = frasiUltima, dette = [];
+    const n = body.interrotto, dove = body.why === 'interruzione' && Number.isSafeInteger(n) && n >= 0 && n < prima.length
+      ? `[interrotto: ti ha fermato mentre dicevi «${prima[n]}»; ${n + 1 < prima.length ? 'il resto della risposta non l\'ha sentito' : 'era l\'ultima frase'}]\n` : '';
+    text = `[adesso: ${adesso()}]\n${sentito ? `[sentito: ${sentito}]\n` : ''}${dove}${text}`; // l'ora a ogni domanda: Claude Code gli dà solo la data
     res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' });
     let open = true, pending = 0, finished = false;
     const write = (ev) => { if (open) res.write(JSON.stringify(ev) + '\n'); };
@@ -654,6 +662,7 @@ async function gestisci(req, res) {
     res.on('close', () => { open = false; });
     const fonti = []; // gli indirizzi letti in questa risposta (anche nel [pensa]): le fonti che una scheda può citare
     const onEvent = (ev) => {
+      if (ev.t === 'say') { if (!dette.length) frasiUltima = dette; dette.push(ev.s); }
       if (ev.t === 'fonti') { for (const u of ev.indirizzi) if (fonti.length < 400 && !fonti.includes(u)) fonti.push(u); return; } // non va all'HUD
       if (ev.t === 'vedi') {
         // La scheda parte subito, nel punto del flusso dove l'ha messa il cervello (dopo la sua frase); la foto la segue

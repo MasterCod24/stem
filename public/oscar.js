@@ -438,13 +438,27 @@ async function ensureAudio() {
   }
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 }
+// Il microfono con la cancellazione dell'eco di Chrome, che toglie dal suono tutto quello che Chrome stesso fa uscire dalle
+// casse: la voce di O.S.C.A.R. Lo ascoltano il riconoscitore e il livello. Misurato il 28/11 con le casse e il microfono del
+// MacBook Air, la stessa frase di Warm Agent (27 parole): col microfono suo il riconoscitore ne trascriveva 25, su questa traccia 0
+// (due giri su due). Una voce che non esce da Chrome passava intera in tutti e due i casi; insieme alla sua, col microfono suo
+// si perdeva tutta, su questa traccia arrivava intera e di O.S.C.A.R. niente.
+let micStream = null, micSource = null, micChiesto = null; // micChiesto: una richiesta sola anche se la chiedono in due
+function microfono() {
+  if (micStream?.getAudioTracks()[0]?.readyState === 'live') return Promise.resolve(micStream);
+  return (micChiesto ||= navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    .catch(() => null).then((s) => {
+      micChiesto = null; micStream = s;
+      if (s && micAnalyser) { micSource?.disconnect(); micSource = ctx.createMediaStreamSource(s); micSource.connect(micAnalyser); } // microfono cambiato
+      return s;
+    }));
+}
 async function ensureMic() {
   if (micAnalyser || !ctx) return;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-    micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 1024;
-    ctx.createMediaStreamSource(stream).connect(micAnalyser);
-  } catch {}
+  const stream = await microfono();
+  if (!stream || micAnalyser) return;
+  micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 1024;
+  micSource = ctx.createMediaStreamSource(stream); micSource.connect(micAnalyser);
 }
 function rms(an) {
   an.getByteTimeDomainData(buf);
@@ -454,7 +468,7 @@ function rms(an) {
 }
 
 let generation = 0, queue = [], playing = false, streamDone = true, currentSource = null, ttsAbort = new AbortController();
-let spokeThisAnswer = false;
+let spokeThisAnswer = false, inOnda = null; // inOnda: la frase che sta suonando
 // Al massimo 2 sintesi insieme: la seconda frase si prepara mentre suona la prima
 let ttsActive = 0;
 const ttsWaiting = [];
@@ -491,11 +505,11 @@ async function playNext() {
     if (item.gen !== generation) return;
     const src = ctx.createBufferSource();
     src.buffer = audio; src.connect(outAnalyser);
-    currentSource = src;
+    currentSource = src; inOnda = item; ultimaPartita = item;
     spokeThisAnswer = true;
     recentSpoken.push({ text: item.job.text || '', at: performance.now() + audio.duration * 1000, gen: item.gen }); if (recentSpoken.length > 60) recentSpoken.shift();
     if (S.mode !== 'speaking') setMode('speaking');
-    src.onended = () => { item.finita = true; if (currentSource === src) currentSource = null; if (item.gen === generation) { item.riprodotta?.(); playNext(); } };
+    src.onended = () => { item.finita = true; if (currentSource === src) currentSource = null; if (inOnda === item) inOnda = null; if (item.gen === generation) { item.riprodotta?.(); playNext(); } };
     src.start();
     item.partita = performance.now(); item.durata = audio.duration;
     TEMPI?.frasi.push({ s: item.job.text, ricevuta: item.ricevuta, partita: item.partita, durata: audio.duration });
@@ -505,19 +519,23 @@ async function playNext() {
 function silence() {
   generation++;
   ttsAbort.abort(); ttsAbort = new AbortController(); // le sintesi della risposta vecchia liberano subito i posti
-  queue = []; playing = false;
+  queue = []; playing = false; inOnda = null;
   if (currentSource) { try { currentSource.stop(); } catch {} currentSource = null; }
 }
 
 // ---------- Cervello ----------
 let controller = null, lastReplyAt = -1e9, latenza = null; // latenza: secondi dalla domanda alla prima frase dell'ultima risposta
-async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente testo, il server prende i compiti arrivati all'ora
-  // why: perché la frase è passata (nome, conversazione, comando, saluto). Il cervello lo legge per decidere se rispondere
+// interrotto e ripresa: Tony ha parlato sopra la risposta di prima (sospendi). interrotto è il numero della frase che stava
+// suonando, da cui il server ricava fin dove Tony l'ha sentita; ripresa sono le frasi da ridire se il cervello risponde [ignora].
+async function ask(text, { agenda = false, why = '', interrotto, ripresa = null } = {}) { // agenda: niente testo, il server prende i compiti arrivati all'ora
+  // why: perché la frase è passata (nome, conversazione, interruzione). Il cervello lo legge per decidere se rispondere
   silence();
-  spokeThisAnswer = false; earlySent = '';
+  spokeThisAnswer = false;
+  sospesa = null; continua = null; clearTimeout(attesaTony); clearTimeout(mhTimer);
+  turno = agenda ? null : { text, why, interrotto, ripresa, fine: performance.now() }; // se Tony continua la frase prima che O.S.C.A.R. parli
   allarme('attesa', 0);
   const gen = generation, chiesto = performance.now();
-  let primaFrase = true, ultima = null; // ultima: la frase a cui si lega la prossima scheda
+  let primaFrase = true, ultima = null, nFrase = 0; // ultima: la frase a cui si lega la prossima scheda
   corsia.pulisci(); // una risposta nuova: via le schede di quella prima
   controller?.abort();
   controller = new AbortController();
@@ -525,7 +543,7 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
   sfx?.ack();
   streamDone = false;
   try {
-    const r = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(agenda ? { agenda } : { text, why }), signal: controller.signal });
+    const r = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(agenda ? { agenda } : { text, why, ...(Number.isInteger(interrotto) ? { interrotto } : {}) }), signal: controller.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const reader = r.body.getReader();
     const dec = new TextDecoder();
@@ -541,7 +559,7 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
         const ev = JSON.parse(line);
         if (ev.t === 'say') {
           if (primaFrase) { primaFrase = false; latenza = (performance.now() - chiesto) / 1000; evento(`VOICE OUT · ${latenza.toFixed(1)} S`); allarme('cervello', 0); }
-          ultima = speak(ev.s);
+          ultima = speak(ev.s); ultima.n = nFrase++; // il numero della frase, come lo conta il server
         }
         else if (ev.t === 'vedi') { evento(`VEDI · ${String(ev.nome || '').slice(0, 24)}`); legaScheda(ultima, ev); } // non chiude né ologramma né meteo
         else if (ev.t === 'vedi-foto') corsia.foto(ev.id, ev.url)
@@ -555,7 +573,10 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
         // Ricerca senza browser (WebSearch, WebFetch): un'etichetta piccola, e l'ologramma resta aperto. Dal server arriva
         // solo il tipo e, per una pagina, il nome del sito: mai le parole cercate.
         else if (ev.t === 'web') { const pagina = ev.name === 'pagina'; evento(`WEB · ${pagina ? 'PAGINA' : 'RICERCA'}`); showSmall(pagina ? 'Leggo' : 'Cerco in rete', pagina ? String(ev.detail || '').slice(0, 60) : ''); if (!playing) setMode('thinking'); }
-        else if (ev.t === 'ignore') { evento('IGNORE'); report('frase non per O.S.C.A.R. (ignorata dal cervello)'); lastReplyAt = -1e9; } // niente finestra di conversazione
+        else if (ev.t === 'ignore') {
+          evento('IGNORE'); report('frase non per O.S.C.A.R. (ignorata dal cervello)');
+          if (ripresa) riprendi(ripresa); else lastReplyAt = -1e9; // l'interruzione era la TV: riprende da dove si era fermato; se no niente finestra
+        }
         else if (ev.t === 'promemoria') mostraPromemoria(ev, () => gen === generation, speak);
         else if (ev.t === 'attesa') allarme('attesa', ev.attiva ? 1 : 0, 'IN ATTESA · ESC O «STOP» PER INTERROMPERE');
         else if (ev.t === 'error') {
@@ -571,7 +592,11 @@ async function ask(text, { agenda = false, why = '' } = {}) { // agenda: niente 
     if (gen === generation) { allarme('attesa', 0); streamDone = true; if (!playing && queue.length === 0) { setMode('idle'); if (spokeThisAnswer) lastReplyAt = performance.now(); } }
   }
 }
-function interrupt() { allarme('attesa', 0); evento('STOP'); silence(); controller?.abort(); fetch('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' } }); setMode('idle'); }
+function interrupt() {
+  allarme('attesa', 0); evento('STOP'); silence(); fermaCervello(); setMode('idle');
+  sospesa = null; continua = null; clearTimeout(attesaTony); clearTimeout(mhTimer); mhDetto = false;
+}
+function fermaCervello() { controller?.abort(); fetch('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' } }); }
 
 // ---------- Ascolto sempre acceso (riconoscimento locale: l'audio della stanza non esce dal Mac) ----------
 // Chrome tiene un solo riconoscimento per processo: con due HUD aperti si interromperebbero. Ascolta chi ha il lucchetto.
@@ -651,7 +676,7 @@ async function loadDebugTrack(file) {
   debugTrack = dest.stream.getAudioTracks()[0];
 }
 
-let earlySent = '', earlyTimer = 0, joinTimer = 0, pending = '', heardAt = 0, spokeUntil = -1e9;
+let joinTimer = 0, pending = '', heardAt = 0, spokeUntil = -1e9;
 // Eco: le ultime parole di O.S.C.A.R. arrivano al riconoscitore anche dopo che ha smesso di parlare.
 // Le scarto se arrivano entro 1,2 s dalla fine o se somigliano per più del 60% a ciò che ha appena detto.
 // Le parole della sua voce: tutte quelle della risposta in corso, più quelle finite da meno di 6 secondi. Mentre la voce va
@@ -684,7 +709,7 @@ function wantsStop(text) {
   const mine = text.split(/\s+/).filter((x) => !dettaDaLui(x, said));
   return mine.some((x) => STOP.test(x) || isName(x));
 }
-function startEar() {
+async function startEar() {
   if (ear !== 'on' || !earLock || rec) return;
   const r = new SR();
   r.lang = 'it-IT'; r.continuous = true; r.interimResults = true; r.processLocally = true;
@@ -709,77 +734,166 @@ function startEar() {
     }
   };
   r.onend = () => { if (rec === r) { rec = null; S.hearing = false; if (!pending) fraseDa = 0; scheduleEar(earBackoff); } }; // Chrome chiude dopo un po' di silenzio: riparto
-  try { if (debugTrack) r.start(debugTrack); else r.start(); } catch { rec = null; scheduleEar(1000); }
+  // La traccia con la cancellazione dell'eco (microfono): così sente Tony anche mentre O.S.C.A.R. parla. Senza, il microfono suo.
+  const traccia = debugTrack || (await microfono())?.getAudioTracks()[0];
+  if (rec !== r) return;
+  try { if (traccia) r.start(traccia); else r.start(); } catch { rec = null; scheduleEar(1000); }
 }
 
-// Parole parziali: mentre parli O.S.C.A.R. ti "guarda" (anelli e sfera); se ti fermi 0,8 s su una richiesta, parte già
+// ---------- Il turno di Tony: lasciarlo finire, anche quando parla sopra a O.S.C.A.R. o si ferma a pensare ----------
+// Richiesta di Tony del 28/11: «se la persona esita, lasciale il tempo di finire»; «continua ad ascoltare anche mentre parli: se
+// interviene, fermati, lasciala finire e tieni conto di ciò che ha aggiunto».
+// sospesa: Tony ha parlato sopra la voce. O.S.C.A.R. tace subito e aspetta la frase intera, che va al cervello come interruzione
+//   col numero della frase che stava dicendo; se il cervello la ignora (la TV, un'altra persona), ridice quella frase e il resto.
+// continua: Tony ha ripreso a parlare mentre O.S.C.A.R. pensava alla sua frase e non aveva ancora detto niente. Si era solo
+//   fermato a pensare: la domanda riparte con la frase intera.
+// Fino al 28/11 c'era la partenza in anticipo (0,8 s di silenzio su una frase parziale): è scattata 1 volta su 41 domande,
+// e quella volta il resto della frase di Tony è finito fra le «non per O.S.C.A.R.». Tolta.
+let sospesa = null, continua = null, turno = null, attesaTony = 0, mhTimer = 0;
+const CONTINUA_MS = 6000;
+// Le parole dopo cui una frase non è finita («cercami un posto dove…», «e…», «ehm»): si aspettano 2,6 s invece di 0,7, e dopo
+// 1,1 s O.S.C.A.R. fa «mh-mh». Gli accenti contano: «è» chiude una frase, «e» no. Fuori le parole che da sole sono una
+// domanda («come?», «perché?», «quando?») e «si», che il riconoscitore può scrivere per «sì».
+const SOSPESE = new Set(('e ed o oppure ma però che cioè tipo quindi allora di del dello della dei degli delle a al allo alla ai agli alle ' +
+  'da dal dallo dalla dai dagli dalle in nel nello nella nei negli nelle con col per su sul sullo sulla sui tra fra il lo la i gli le ' +
+  'un uno una mi ti ci vi se non eh ehm uhm mh mm mmm beh insomma praticamente diciamo').split(' '));
+const incompleta = (t) => SOSPESE.has((t.trim().split(/\s+/).pop() || '').toLowerCase().replace(/[^a-zàèéìíòóùú]/g, ''));
+// «basta», «stop grazie», «aspetta un attimo»: solo parole per fermarlo, che non diventano mai una domanda
+const SOLO_STOP = new Set('un attimo momento cosi ok okay grazie va bene per favore adesso ora dai ti prego no'.split(' '));
+const soloStop = (t) => { const w = t.split(/\s+/).filter((x) => norm(x)); return w.some((x) => STOP.test(x)) && w.every((x) => STOP.test(x) || SOLO_STOP.has(norm(x))); };
+
+// Sopra la sua voce conta come Tony: il nome, «stop» e simili, o due parole che la voce non ha detto. Sulla traccia con la
+// cancellazione dell'eco la voce di O.S.C.A.R. non arriva: il filtro delle parole resta per le casse che l'AEC non copre.
+function parlaSopra(text) {
+  const said = echoWords(), mie = text.split(/\s+/).filter((x) => norm(x) && !dettaDaLui(x, said));
+  return mie.some((x) => STOP.test(x) || isName(x)) || mie.length >= 2;
+}
+// Tony parla: sopra la voce di O.S.C.A.R. (sospende), o mentre pensa alla sua frase e non ha ancora detto niente (continua)
+function prendiParola(text) {
+  if (S.mode === 'speaking') { if (parlaSopra(text)) sospendi(); return; }
+  if (S.mode === 'thinking' && !spokeThisAnswer && turno && !continua && performance.now() - turno.fine < CONTINUA_MS && !isEcho(text)) {
+    continua = turno; evento('INPUT · CONTINUA'); report('continua la frase: riparto con la frase intera');
+    silence(); fermaCervello(); allarme('attesa', 0); setMode('listening'); aspettaTony();
+  }
+}
+let ultimaPartita = null; // l'ultima frase cominciata, per sapere dove Tony l'ha interrotto anche fra una frase e l'altra
+function sospendi() {
+  const ora = inOnda?.gen === generation ? inOnda : null;
+  const testi = [ora, ...queue].filter((i) => i && i.gen === generation && Number.isInteger(i.n)).map((i) => i.job.text);
+  const n = ora?.n ?? (ultimaPartita?.gen === generation ? ultimaPartita.n : undefined);
+  sospesa = { n, testi };
+  evento('VOICE · INTERROTTO'); report('mi parla sopra: taccio e ascolto');
+  silence(); fermaCervello(); allarme('attesa', 0); setMode('listening');
+  aspettaTony();
+}
+// Se dopo l'interruzione o la ripresa Tony non dice una frase intera (un colpo di tosse, una parola sola), dopo 4 s si va avanti
+function aspettaTony() { clearTimeout(attesaTony); attesaTony = setTimeout(() => { if (!pending && !S.hearing) nessunaDomanda(); }, 4000); }
+// La frase di Tony non è diventata una domanda: O.S.C.A.R. riprende da dove era (sospesa) o rifà la domanda di prima (continua)
+function nessunaDomanda() {
+  if (sospesa) riprendi(sospesa.testi);
+  else if (continua) { const c = continua; continua = null; ask(c.text, { why: c.why, interrotto: c.interrotto, ripresa: c.ripresa }); }
+}
+function riprendi(testi) {
+  sospesa = null; clearTimeout(attesaTony);
+  if (!testi?.length) { if (S.mode === 'listening') setMode('idle'); return; }
+  evento('VOICE · RIPRENDO'); report('riprendo da dove ero');
+  silence(); streamDone = true; spokeThisAnswer = false;
+  for (const t of testi) speak(t);
+}
+// «Mh-mh»: Tony si è fermato a metà frase, e O.S.C.A.R. gli fa sapere che lo ascolta. Uno per frase: senza l'AEC il riconoscitore
+// lo sentirebbe, la frase finirebbe di nuovo con «mh» e ne partirebbe un altro. Solo con la voce di ElevenLabs (quella del Mac
+// lo leggerebbe come una parola), sintetizzato una volta sola: «Mh-mh.» dura 0,55 s (28/11).
+let mhAudio = null, mhDetto = false;
+async function mhmh() {
+  if (ultimoStato?.voice?.provider !== 'eleven' || !ctx) return;
+  try {
+    mhAudio ||= fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Mh-mh.' }) })
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`)))).then((b) => ctx.decodeAudioData(b));
+    const audio = await mhAudio;
+    if (!pending || S.hearing || mhDetto) return; // ha già ripreso a parlare
+    mhDetto = true;
+    const src = ctx.createBufferSource(); src.buffer = audio; src.connect(outAnalyser); src.start();
+    if (TEMPI) TEMPI.mhmh = (TEMPI.mhmh || 0) + 1;
+    report('mh-mh: aspetto che finisca la frase');
+  } catch { mhAudio = null; }
+}
+
+// Parole parziali: mentre parli O.S.C.A.R. ti "guarda" (anelli e sfera). Sopra la sua voce si ferma subito ad ascoltarti
 function onInterim(text) {
   text = unisciSigla(text);
   S.hearing = Boolean(text);
   if (!text) { ascolto.viva(''); return; }
   dbg('parziale', text, '| modo', S.mode);
   heardAt = performance.now();
-  const said = echoWords();
-  if ((S.mode === 'speaking' || S.mode === 'thinking') && text.split(/\s+/).some((x) => STOP.test(x) && !dettaDaLui(x, said))) {
-    interrupt(); report('fermato a voce'); ascolto.esito('STOP', true); return; // "stop" funziona anche mentre clicca e scrive, senza aspettare la fine della frase
+  clearTimeout(mhTimer);
+  if (sospesa || continua) aspettaTony();
+  if (S.mode === 'thinking' && text.split(/\s+/).some((x) => STOP.test(x) && !dettaDaLui(x, echoWords()))) {
+    interrupt(); lastReplyAt = performance.now(); report('fermato a voce'); ascolto.esito('STOP', true); return; // "stop" funziona anche mentre clicca e scrive
   }
-  if (S.mode === 'speaking' || isEcho(text)) return; // mentre parla, e subito dopo, ignora l'eco della sua voce (e non la scrive)
+  prendiParola(text);
+  if (S.mode === 'speaking' || (!sospesa && !continua && isEcho(text))) return; // la sua voce dalle casse, e subito dopo: non la scrive
   if (!fraseDa) fraseDa = performance.now();
   ascolto.viva(text);
   if (pending) clearTimeout(joinTimer); // stai ancora parlando: la frase non è finita
-  clearTimeout(earlyTimer);
-  const a = addressed(pending ? `${pending} ${text}` : text);
-  if (!a) return;
-  if (S.mode === 'idle') { setMode('listening'); sfx?.listen(); }
-  earlyTimer = setTimeout(() => {
-    if (a.text.split(/\s+/).length < 3 || norm(a.text) === norm(earlySent)) return;
-    earlySent = a.text; report(`parto in anticipo (${a.why})`); evento(`ASK · ${a.why.toUpperCase()} · IN ANTICIPO`);
-    ascolto.esito(`PER O.S.C.A.R. · ${PERCHE[a.why]}`, true); ask(a.text, { why: a.why });
-  }, 800);
+  if (S.mode === 'idle' && addressed(pending ? `${pending} ${text}` : text)) { setMode('listening'); sfx?.listen(); }
 }
 
-// Frase finita: decido se è per O.S.C.A.R., poi aspetto 0,6 s nel caso continui
+// Frase finita: decido se è per O.S.C.A.R., poi aspetto 0,7 s nel caso continui (2,6 s se è rimasta a metà)
 function heard(text) {
   text = unisciSigla(text);
   dbg('finale', text, '| modo', S.mode);
   S.hearing = false;
-  clearTimeout(earlyTimer);
-  if (S.mode === 'speaking' || S.mode === 'thinking') { // si può interrompere: "stop", "basta", oppure chiamandolo per nome
-    if (wantsStop(text)) {
-      interrupt(); report('interrotto a voce');
-      const a = addressed(text), riparte = a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1;
-      ascolto.fissa(text); ascolto.esito(riparte ? `PER O.S.C.A.R. · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
-      if (riparte) ask(a.text, { why: a.why });
-      fraseDa = 0;
-      return;
-    }
-    if (S.mode === 'speaking') return;
+  clearTimeout(mhTimer);
+  prendiParola(text);
+  if (S.mode === 'thinking' && wantsStop(text)) { // mentre lavora: "stop", "basta", oppure chiamandolo per nome
+    interrupt(); lastReplyAt = performance.now(); report('interrotto a voce');
+    const a = addressed(text), riparte = a && a.why === 'nome' && !STOP.test(a.text) && a.text.split(/\s+/).length > 1;
+    ascolto.fissa(text); ascolto.esito(riparte ? `PER O.S.C.A.R. · ${PERCHE.nome}` : 'STOP', true); // chiamato per nome: riparte con la frase intera, non si ferma
+    if (riparte) ask(a.text, { why: a.why });
+    fraseDa = 0;
+    return;
   }
-  if (isEcho(text)) { report('scartata: eco della voce di O.S.C.A.R.'); evento('INPUT · ECO'); ascolto.viva(''); if (!pending) fraseDa = 0; return; }
+  if (S.mode === 'speaking') return; // la sua voce dalle casse
+  const tony = sospesa || continua; // sopra la sua voce, o la continuazione: è Tony, non l'eco
+  if (!tony && isEcho(text)) { report('scartata: eco della voce di O.S.C.A.R.'); evento('INPUT · ECO'); ascolto.viva(''); if (!pending) fraseDa = 0; return; }
   if (!fraseDa) fraseDa = performance.now(); // frase finita senza parole parziali prima
   pending = pending ? `${pending} ${text}` : text;
   ascolto.fissa(pending);
   clearTimeout(joinTimer);
-  // Solo il nome ("O.S.C.A.R.…"): aspetto di più, probabilmente stai per dire la domanda
-  const onlyName = pending.trim().split(/\s+/).every(isName);
-  joinTimer = setTimeout(() => {
-    const full = pending; pending = '';
-    const a = addressed(full);
-    fraseDa = 0;
-    dbg('decido', full, '->', a ? a.why + ': ' + a.text : 'non per O.S.C.A.R.');
-    if (!a) { report(`non per O.S.C.A.R.; ${clue(full)}`); evento('INPUT · NON PER O.S.C.A.R.'); ascolto.esito('NON PER O.S.C.A.R.', false); if (S.mode === 'listening') setMode('idle'); return; }
-    ascolto.esito(`PER O.S.C.A.R. · ${PERCHE[a.why]}`, true);
-    // già partito in anticipo con lo stesso identico testo: non ricomincio; se è cambiato anche di una parola, riparto
-    const sameAsEarly = earlySent && norm(a.text) === norm(earlySent);
-    earlySent = '';
-    if (sameAsEarly) return;
-    report(`domanda (${a.why})`); evento(`ASK · ${a.why.toUpperCase()}`);
-    ask(a.text, { why: a.why });
-  }, onlyName ? 2000 : 700);
+  // Solo il nome ("O.S.C.A.R.…"): aspetto di più, probabilmente stai per dire la domanda. A metà frase: anche, con un «mh-mh»
+  const onlyName = pending.trim().split(/\s+/).every(isName), aMeta = !onlyName && incompleta(pending);
+  if (aMeta && (tony || addressed(pending))) mhTimer = setTimeout(mhmh, 1100);
+  joinTimer = setTimeout(decidi, onlyName ? 2000 : aMeta ? 2600 : 700);
+}
+function decidi() {
+  const full = pending; pending = '';
+  clearTimeout(mhTimer); mhDetto = false;
+  fraseDa = 0;
+  const a = addressed(full), testo = a?.why === 'nome' ? a.text : full; // il nome si toglie anche sopra la sua voce
+  dbg('decido', full, '->', sospesa ? 'interruzione' : continua ? 'continua' : a ? a.why + ': ' + a.text : 'non per O.S.C.A.R.');
+  if (soloStop(full)) { // «basta», «aspetta un attimo»: si ferma, e nient'altro
+    if (sospesa || continua) { interrupt(); lastReplyAt = performance.now(); report('fermato a voce'); }
+    ascolto.esito('STOP', true); if (S.mode === 'listening') setMode('idle');
+    return;
+  }
+  if (sospesa) {
+    const s = sospesa;
+    report('domanda (interruzione)'); evento('ASK · INTERRUZIONE'); ascolto.esito(`PER O.S.C.A.R. · ${PERCHE.interruzione}`, true);
+    return ask(testo, { why: 'interruzione', interrotto: s.n, ripresa: s.testi });
+  }
+  if (continua) {
+    const c = continua;
+    report(`domanda (${c.why}, continuata)`); evento(`ASK · ${c.why.toUpperCase()} · CONTINUATA`); ascolto.esito(`PER O.S.C.A.R. · ${PERCHE[c.why]}`, true);
+    return ask(`${c.text} ${testo}`, { why: c.why, interrotto: c.interrotto, ripresa: c.ripresa });
+  }
+  if (!a) { report(`non per O.S.C.A.R.; ${clue(full)}`); evento('INPUT · NON PER O.S.C.A.R.'); ascolto.esito('NON PER O.S.C.A.R.', false); if (S.mode === 'listening') setMode('idle'); return; }
+  ascolto.esito(`PER O.S.C.A.R. · ${PERCHE[a.why]}`, true);
+  report(`domanda (${a.why})`); evento(`ASK · ${a.why.toUpperCase()}`);
+  ask(a.text, { why: a.why });
 }
 
 // ---------- La scheda dell'ascolto: le parole mentre arrivano, poi cosa ne ha fatto O.S.C.A.R. Solo sullo schermo: mai nei registri ----------
-const PERCHE = { nome: 'NOME', conversazione: 'CONVERSAZIONE' };
+const PERCHE = { nome: 'NOME', conversazione: 'CONVERSAZIONE', interruzione: 'INTERRUZIONE' };
 const ascolto = (() => {
   const box = $('ascolto'), elFissa = $('frase-fissa'), elViva = $('frase-viva'), elEsito = $('esito');
   let fissa = '', viva = '', timer = 0;
@@ -801,7 +915,7 @@ const ascolto = (() => {
 
 // ---------- Tastiera e mouse: niente più push-to-talk. Esc zittisce e chiude, un clic sblocca l'audio se Chrome lo blocca ----------
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape') { pending = ''; earlySent = ''; interrupt(); closeReport(); chiudiOlo(true); chiudiMeteo(); corsia.pulisci(); }
+  if (e.code === 'Escape') { pending = ''; clearTimeout(joinTimer); interrupt(); closeReport(); chiudiOlo(true); chiudiMeteo(); corsia.pulisci(); }
   else if (holoAperto && e.key.toLowerCase() === 'm' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) { cambiaMani(); e.preventDefault(); }
   else if (meteo?.aperto && tastoMeteo(e)) e.preventDefault();
 });
