@@ -841,7 +841,7 @@ function aggiornaBordi() {
   scrivi($('cima-dati'), `UPTIME ${due(Math.floor(su / 3600))}:${due(Math.floor(su / 60) % 60)}:${due(su % 60)}${heap}`);
   // I valori a raggiera
   const v = ultimoStato?.voice;
-  scrivi($('d-voce').lastChild, !v ? '—' : `MAC · ${String(v.voce || 'SISTEMA').toUpperCase().slice(0, 22)}`);
+  scrivi($('d-voce').lastChild, !v ? '—' : `${v.provider === 'eleven' ? 'ELEVENLABS' : 'MAC'} · ${String(v.voce || 'SISTEMA').toUpperCase().slice(0, 22)}`);
   scrivi($('d-latenza').lastChild, latenza === null ? '—' : `${latenza.toFixed(1).replace('.', ',')} S`);
   const db = micLivello > 0 ? Math.max(-60, Math.round(20 * Math.log10(micLivello))) : null;
   scrivi($('d-ascolto').lastChild, ear !== 'on' ? EAR_TEXT[ear].toUpperCase() : db === null ? 'IN ATTESA' : `${db} DB`);
